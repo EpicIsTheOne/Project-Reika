@@ -4,5 +4,6 @@ export const serverConfig = {
   host: '127.0.0.1',
   port: 47840,
   externalUplinkEnabled: false,
-  providerConnectionsEnabled: false
+  providerConnectionsEnabled: true,
+  chatTransportEnabled: false
 } as const;

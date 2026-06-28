@@ -1,6 +1,6 @@
 # Connection Plan Placeholder
 
-No external provider connection code is implemented in this phase.
+Local provider detection is implemented for CommandCenter, OpenClaw direct, and Hermes direct. Chat/session transport and external uplink behavior are not implemented in this phase.
 
 This repository represents the **device agent server**. Later, it should connect upward to the main app client, likely through a local bridge/WebSocket/uplink layer after the contract is planned.
 

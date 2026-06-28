@@ -19,16 +19,18 @@ Included now:
   - Agent
   - Event
   - Uplink
-- mock/offline provider state
+- local provider detection for CommandCenter, OpenClaw direct, and Hermes direct
+- CommandCenter-first active provider selection
+- mock/offline fallback provider state
 - explicit planned uplink placeholder
-- no external provider connection code yet
-- no main app client connection code yet
+- no chat transport implementation yet
+- no external/main app client uplink code yet
 
 ## Not included yet
 
-- CommandCenter local API adapter
-- OpenClaw direct adapter
-- Hermes direct adapter
+- CommandCenter chat/session adapter
+- OpenClaw direct chat/session adapter
+- Hermes direct chat adapter
 - WebSocket uplink to the main app client
 - remote sync
 - real chat/session transport
@@ -73,8 +75,10 @@ Development endpoints:
 - `GET /health`
 - `GET /state`
 - `GET /events`
+- `GET /providers`
+- `POST /providers/refresh`
 
-These endpoints expose mock local state only. They are not the final external connection contract.
+These endpoints expose local server/provider state for development. They are not the final external connection contract.
 
 ## Provider priority, later
 
@@ -85,7 +89,7 @@ When provider connectivity is planned, intended priority is:
 3. Hermes direct
 4. Mock/offline
 
-For now, only `mock/offline` exists in code.
+Provider detection now exists for CommandCenter, OpenClaw, and Hermes. Chat/session transport is still intentionally deferred.
 
 ## Design intent
 
