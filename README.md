@@ -1,142 +1,55 @@
-# Project Reika Agent Server
+# Project Reika
 
-Project Reika Agent Server is the **device-side service** for Reika.
+Project Reika is the workspace for Reika's multi-device AgentHub system.
 
-This is not the main visual app client. It is the local agent/device server that reports device/provider/agent state upward once a relay contract exists.
+This repo is intentionally split into clear lanes so Astra and Codex can work in parallel without turning the architecture into soup.
 
-## Current phase
-
-**Phase 1: local device agent server + safe uplink skeleton**
-
-Included now:
-
-- Node/TypeScript device-agent service scaffold
-- Reika as the represented mascot/agent fallback
-- local HTTP status surface for development
-- modular boundaries for Device, Provider, Agent, Event, Commands, Uplink, and shared protocol
-- local provider detection for CommandCenter, OpenClaw direct, and Hermes direct
-- CommandCenter-first active provider selection
-- mock/offline fallback provider state
-- versioned shared `AgentHubEnvelope` protocol
-- disabled-by-default outbound relay client skeleton
-- safe command dispatcher for read-only/provider-refresh commands
-- no chat transport implementation yet
-- no external uplink enabled by default
-
-## Not included yet
-
-- CommandCenter chat/session adapter
-- OpenClaw direct chat/session adapter
-- Hermes direct chat adapter
-- production relay/pairing credentials
-- per-device keypair challenge auth
-- remote sync persistence
-- real chat/session transport
-- voice
-- UI/client screens
-- Live2D / VRM
-- Twitch integration
-- additional mascots
-
-## Architecture rule
-
-The hierarchy stays clean:
+## Folders
 
 ```text
-Account -> Device -> Provider -> Agent -> Session -> Message/Event
+server/  Device-side agent server owned by Astra's current work
+client/  Main app/client workspace for Codex
+Relay/   Relay service workspace for Codex
 ```
 
-Important boundaries:
+## Current status
 
-- This repo is the **device agent server**, not the app client.
-- Devices are not providers.
-- Providers are not agents.
-- CommandCenter is the preferred rich local provider when available.
-- Project Reika owns normalized state and protocol envelopes.
-- The relay should route envelopes; it should not scan providers or execute local work.
-- The device agent executes only explicitly supported safe commands.
+### `server/`
 
-## Local development
+Implemented and pushed:
 
-```bash
-npm install
-npm run build
-npm run dev
-```
+- device-agent server scaffold
+- local provider detection for CommandCenter, OpenClaw direct, Hermes direct, and mock fallback
+- CommandCenter-first provider priority
+- versioned `AgentHubEnvelope` protocol
+- safe command dispatcher
+- disabled-by-default outbound WSS relay/uplink skeleton
+- local development endpoints for health/state/providers/uplink/events
 
-Default local server:
+See:
 
 ```text
-http://127.0.0.1:47840
+server/README.md
+server/docs/CONNECTION-PLAN.md
 ```
 
-Development endpoints:
+### `client/`
 
-- `GET /health`
-- `GET /state`
-- `GET /events`
-- `GET /providers`
-- `GET /uplink`
-- `POST /providers/refresh`
-- `POST /commands/simulate`
+Reserved for the main app/client implementation.
 
-These endpoints expose local server/provider/uplink state for development. They are not the final external connection contract.
+Codex should save client-side work here.
 
-## Uplink config
+### `Relay/`
 
-Outbound relay mode is disabled by default.
+Reserved for the tiny relay service implementation.
 
-```env
-REIKA_UPLINK_ENABLED=false
-REIKA_RELAY_URL=wss://relay.techexplore.us/v1/device
-REIKA_DEVICE_ID=linux-device-local
-REIKA_DEVICE_KEY_PATH=
-REIKA_PAIRING_TOKEN=
-REIKA_HEARTBEAT_MS=25000
-REIKA_RECONNECT_MIN_MS=1000
-REIKA_RECONNECT_MAX_MS=30000
+Codex should save relay-side work here.
+
+## Architecture summary
+
+```text
+Device Agent Server  --->  Reika Relay  <---  Main App Client
+          outbound WSS 443          outbound WSS 443
 ```
 
-When enabled, the server connects outward to the relay over WSS and sends:
-
-- `device.hello`
-- `device.heartbeat`
-- `device.state.snapshot`
-- `device.provider.snapshot`
-- `agent.roster.snapshot`
-
-## Supported command envelopes
-
-The current command dispatcher only supports:
-
-- `device.state.request`
-- `provider.refresh.request`
-- `agent.roster.request`
-
-Unsupported messages return `command.rejected` with `UNSUPPORTED_COMMAND`.
-
-Intentionally unsupported in this phase:
-
-- shell execution
-- arbitrary file access
-- process/service control
-- provider mutation
-- agent install/update
-- chat transport
-
-No cute remote-admin malware. We are behaving, unfortunately.
-
-## Provider priority
-
-Active-provider priority is:
-
-1. CommandCenter local API
-2. OpenClaw direct
-3. Hermes direct
-4. Mock/offline
-
-Provider detection exists for CommandCenter, OpenClaw, and Hermes. Chat/session transport is still intentionally deferred.
-
-## Design intent
-
-Reika gets the first real vertical slice. The server should become the boring, reliable local daemon underneath the pretty app. Yes, tragic: the foundation has to be useful before it gets sparkles.
+No port forwarding. No public device IPs. No generic remote shell. Keep command scope narrow until presence, pairing, and state sync are boringly reliable.

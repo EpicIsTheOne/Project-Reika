@@ -5,3 +5,10 @@ dist
 !.env.example
 *.tsbuildinfo
 .DS_Store
+
+server/node_modules
+server/dist
+client/node_modules
+client/dist
+Relay/node_modules
+Relay/dist
