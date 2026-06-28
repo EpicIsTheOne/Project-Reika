@@ -1,0 +1,1 @@
+{"root":["./src/main.tsx","./src/vite-env.d.ts","./src/app/App.tsx","./src/app/mockData.ts","./src/modules/agent/types.ts","./src/modules/asset/types.ts","./src/modules/chat/types.ts","./src/modules/device/types.ts","./src/modules/notification/types.ts","./src/modules/provider/types.ts","./src/modules/settings/types.ts"],"version":"5.6.3"}
