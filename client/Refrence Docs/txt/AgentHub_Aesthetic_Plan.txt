@@ -1,0 +1,170 @@
+AgentHub Aesthetic & Visual Identity Plan
+
+Core Design Philosophy
+
+AgentHub should not feel like: - Discord - ChatGPT - VSCode - An admin
+dashboard - A settings application
+
+AgentHub should feel like:
+
+“What if Zenless Zone Zero, Persona, JARVIS, and a visual novel had a
+baby?”
+
+The user should feel like they are entering a character’s space, not
+opening software.
+
+------------------------------------------------------------------------
+
+Aesthetic Pillars
+
+1. Futuristic
+
+Use: - Glass panels - Subtle glow effects - Holographic styling - Smooth
+animations
+
+Avoid: - Generic sci-fi - Overly technical dashboards
+
+------------------------------------------------------------------------
+
+2. Cozy
+
+Use: - Soft lighting - Ambient gradients - Rounded corners - Blur
+effects
+
+Goal: Make the interface feel comfortable and alive.
+
+------------------------------------------------------------------------
+
+3. Character-Focused
+
+Characters are the stars.
+
+The UI exists to showcase: - Personalities - Art - Expressions - Rooms -
+Interactions
+
+------------------------------------------------------------------------
+
+Official Color Palette
+
+Primary Background: Deep Space #0B1020
+
+Secondary Background: Midnight Blue #131B33
+
+Primary Accent: Electric Blue #4D8DFF
+
+Secondary Accent: Sky Blue #7AB7FF
+
+Glow Accent: Cyan Glow #6FEFFF
+
+Primary Text: #FFFFFF
+
+Secondary Text: #B7C0D8
+
+------------------------------------------------------------------------
+
+Background Style
+
+Avoid: - Pure black
+
+Use: - Dark blue gradients - Ambient lighting - Subtle noise textures
+
+Example gradient:
+
+#090B17 ↓ #101B33 ↓ #182A52
+
+------------------------------------------------------------------------
+
+Visual Components
+
+Use: - 20–30px border radius - Glassmorphism - Soft shadows - Subtle
+glow - Blur
+
+Avoid: - Sharp corners - Flat panels - Generic UI styling
+
+------------------------------------------------------------------------
+
+Animation Style
+
+Preferred: - Fade - Slide - Scale - Glow pulse
+
+Avoid: - Excessive bouncing - Spinning transitions - Flashy effects
+
+------------------------------------------------------------------------
+
+Character Rooms
+
+Reika
+
+Theme: - Cozy bedroom - Blue LED lighting - Rain outside window - Soft
+ambience
+
+Astra
+
+Theme: - Futuristic command bridge - Holograms - Space backdrop
+
+Nyxie
+
+Theme: - Cyberpunk office - Dark lighting - Monitors and neon
+
+Miyabi
+
+Theme: - Traditional-modern Japanese room - Warm lighting - Lanterns
+
+Possible variants: - Day - Night - Seasonal - Event
+
+------------------------------------------------------------------------
+
+Typography
+
+Headers: - Orbitron - Exo 2
+
+Body: - Inter
+
+------------------------------------------------------------------------
+
+Sound Design
+
+Include: - Startup chime - Button click sounds - Notification sounds -
+Connection sounds - Ambient background audio
+
+Goal: Make AgentHub feel alive.
+
+------------------------------------------------------------------------
+
+Visual Inspirations
+
+Primary inspirations:
+
+-   Zenless Zone Zero
+-   Persona 5
+-   Detroit: Become Human
+-   Iron Man JARVIS
+
+Take inspiration from:
+
+Zenless Zone Zero: - Character presentation - Cards - Menus
+
+Persona 5: - Personality - Transitions - Presentation
+
+Detroit: Become Human: - Clean futuristic UI
+
+JARVIS: - Holographic atmosphere
+
+------------------------------------------------------------------------
+
+Branding Rule
+
+Do NOT use purple as the primary aesthetic.
+
+Many AI applications use: - Purple - More purple - Even more purple
+
+AgentHub’s identity should be:
+
+“The blue anime AI operating system.”
+
+------------------------------------------------------------------------
+
+Guiding Principle
+
+“The user should feel like they entered a living digital space, not
+launched a program.”

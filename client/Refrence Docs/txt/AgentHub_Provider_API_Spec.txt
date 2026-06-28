@@ -1,0 +1,113 @@
+AgentHub Provider API Specification
+
+Purpose
+
+Every provider should follow the same interface so AgentHub can connect
+to Hermes, OpenClaw, mock providers, and future providers without
+rewriting the app.
+
+------------------------------------------------------------------------
+
+Provider Definition
+
+A provider is an agent runtime or service running on a device.
+
+Examples: - Hermes - OpenClaw - Mock Provider - Future custom providers
+
+A provider is not a device.
+
+------------------------------------------------------------------------
+
+Required Provider Functions
+
+Each provider adapter should support:
+
+connect() - Attempts to connect to the provider.
+
+disconnect() - Closes the provider connection.
+
+getStatus() - Returns provider online/offline/busy/error state.
+
+getAgents() - Returns available agents from the provider.
+
+sendMessage(agentId, message) - Sends a message to one agent.
+
+stopGeneration(agentId) - Stops an active response if supported.
+
+healthCheck() - Tests if the provider is reachable.
+
+------------------------------------------------------------------------
+
+Optional Provider Functions
+
+Providers may optionally support:
+
+getCapabilities() - Returns supported features.
+
+getLogs() - Returns provider logs.
+
+getTools(agentId) - Returns tools available to an agent.
+
+uploadFile(agentId, file) - Sends a file to an agent.
+
+streamMessage(agentId, message) - Streams token-by-token response.
+
+------------------------------------------------------------------------
+
+Provider Status Values
+
+Allowed statuses: - online - offline - connecting - busy - error -
+unknown
+
+------------------------------------------------------------------------
+
+Agent Status Values
+
+Allowed statuses: - online - offline - busy - thinking - error - unknown
+
+------------------------------------------------------------------------
+
+Message Format
+
+Basic request: - agentId - message - conversationId - timestamp
+
+Basic response: - agentId - message - timestamp - status - error
+
+------------------------------------------------------------------------
+
+Error Handling
+
+A provider error should not crash AgentHub.
+
+Examples: - If OpenClaw fails, Hermes should still work. - If one VPS is
+offline, local agents should still load. - If one agent errors, other
+agents should still be usable.
+
+------------------------------------------------------------------------
+
+Adapter Rule
+
+AgentHub should never directly depend on provider-specific logic in the
+UI.
+
+Bad: Chat UI directly calls Hermes-specific code.
+
+Good: Chat UI calls the provider adapter interface.
+
+------------------------------------------------------------------------
+
+Mock Provider Rule
+
+Create a mock provider first.
+
+The mock provider should support: - fake devices - fake providers - fake
+agents - fake responses - fake online/offline states
+
+This allows the UI to be built before real networking is added.
+
+------------------------------------------------------------------------
+
+Guiding Principle
+
+“Providers can be different internally, but AgentHub should talk to them
+the same way.”

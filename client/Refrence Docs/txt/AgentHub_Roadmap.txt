@@ -1,0 +1,106 @@
+AgentHub Roadmap
+
+Development Philosophy
+
+Build in small stable phases.
+
+Each phase should produce something usable before moving on.
+
+------------------------------------------------------------------------
+
+Phase 0: Planning
+
+Goals: - Define architecture - Define page layouts - Define art usage -
+Define aesthetic - Define provider model - Define scope
+
+Status: Complete when all planning documents exist.
+
+------------------------------------------------------------------------
+
+Phase 1: Static Prototype
+
+Goals: - Loading screen - Homepage - Settings page - Chat page - Mock
+data only
+
+Features: - Fake devices - Fake providers - Fake agents - Static
+character art placeholders
+
+No real networking yet.
+
+------------------------------------------------------------------------
+
+Phase 2: Mock Chat
+
+Goals: - Make the chat UI work before real agents exist.
+
+Features: - Select an agent - Send a message - Receive fake response -
+Store local chat history - Show agent portrait/expression
+
+------------------------------------------------------------------------
+
+Phase 3: Local Provider Connection
+
+Goals: - Connect one real local provider.
+
+Recommended first provider: - Hermes local
+
+Features: - Test connection - Discover local agents - Send messages -
+Receive responses - Handle provider offline state
+
+------------------------------------------------------------------------
+
+Phase 4: Remote Device Support
+
+Goals: - Allow remote machines to appear as devices.
+
+Features: - Remote device registration - Provider discovery on remote
+device - Online/offline detection - Remote agent messaging
+
+------------------------------------------------------------------------
+
+Phase 5: OpenClaw Support
+
+Goals: - Add OpenClaw as a provider.
+
+Features: - OpenClaw adapter - Agent discovery - Messaging - Status
+handling
+
+------------------------------------------------------------------------
+
+Phase 6: Character Polish
+
+Goals: - Add stronger visual identity.
+
+Features: - Splash art - Agent cards - Expressions - Empty state art -
+Character rooms
+
+------------------------------------------------------------------------
+
+Phase 7: Notifications
+
+Goals: - Make agents feel alive without bloating the app.
+
+Features: - Agent online notifications - Task complete notifications -
+Provider offline warnings - Character notification portraits
+
+------------------------------------------------------------------------
+
+Phase 8: Advanced Features
+
+Only after the core app is stable.
+
+Possible features: - Voice - Live2D/VRM - Twitch integration - YouTube
+integration - Advanced memory controls - Tool usage display - Workflow
+automation
+
+------------------------------------------------------------------------
+
+Roadmap Rule
+
+Do not skip phases unless the previous phase is stable.
+
+------------------------------------------------------------------------
+
+Guiding Principle
+
+“Every phase should reduce chaos, not create more of it.”

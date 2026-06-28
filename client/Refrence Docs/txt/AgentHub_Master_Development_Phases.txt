@@ -1,0 +1,177 @@
+AgentHub Master Development Phases
+
+Purpose
+
+This document defines the official development phases of AgentHub.
+
+Its purpose is to: - Prevent feature creep - Prevent architecture
+mistakes - Prevent massive rewrites - Keep development modular - Prevent
+“2 AM Epic feature additions”
+
+------------------------------------------------------------------------
+
+Global Rules
+
+Before moving to the next phase:
+
+✓ Current phase is functional ✓ Current phase is stable ✓ Major bugs are
+resolved ✓ Architecture remains modular ✓ Scope has not expanded
+unexpectedly
+
+Rule: DO NOT skip phases.
+
+------------------------------------------------------------------------
+
+Phase 0 — Project Planning
+
+Goal: Create the project foundation.
+
+Deliverables: - Art Plan - Page Layout Plan - Architecture Plan -
+Aesthetic Plan - Project Scope - Roadmap - Provider API Spec - Character
+System Spec - Audio Guide - UI Component Library - Master Development
+Phases
+
+Success Criteria: - All planning documents exist. - The project vision
+is clear. - The MVP scope is defined.
+
+Status: COMPLETE
+
+------------------------------------------------------------------------
+
+Phase 1 — Static UI Prototype
+
+Goal: Build a beautiful app with zero real functionality.
+
+Pages: - Loading screen - Homepage - Chat UI - Settings
+
+Features: - Fake devices - Fake providers - Fake agents - Fake statuses
+
+Art: - Placeholder splash art - Placeholder portraits - Placeholder
+rooms
+
+Success Criteria: - User can navigate entire app. - No networking
+exists. - UI feels cohesive.
+
+Forbidden: - Real providers - Networking - Voice - Streaming
+
+------------------------------------------------------------------------
+
+Phase 2 — Mock Agent Simulation
+
+Goal: Make the app feel alive.
+
+Features: - Fake conversations - Fake typing - Expression changes -
+Status changes - Local chat history - Notifications
+
+Success Criteria: - App feels functional without AI.
+
+Forbidden: - Real providers - Remote networking
+
+------------------------------------------------------------------------
+
+Phase 3 — First Real Provider
+
+Goal: Connect the first provider.
+
+Recommended: - Hermes Local
+
+Features: - Provider discovery - Agent discovery - Messaging - Status
+updates - Error handling
+
+Success Criteria: - One real provider works reliably.
+
+Rule: Do not add a second provider yet.
+
+------------------------------------------------------------------------
+
+Phase 4 — Device Networking
+
+Goal: Support multiple devices.
+
+Features: - Device discovery - Remote registration - Online/offline
+status - Provider discovery - Agent synchronization
+
+Success Criteria: - Multiple devices appear correctly.
+
+Rule: Devices are not providers.
+
+------------------------------------------------------------------------
+
+Phase 5 — Second Provider
+
+Goal: Support a second provider.
+
+Recommended: - OpenClaw
+
+Features: - Adapter implementation - Discovery - Messaging - Status
+handling
+
+Success Criteria: - Multiple provider types work.
+
+------------------------------------------------------------------------
+
+Phase 6 — Character Integration
+
+Goal: Replace placeholder assets.
+
+Features: - Splash screens - Agent cards - Expressions - Character
+rooms - Empty states
+
+Success Criteria: - AgentHub has a visual identity.
+
+------------------------------------------------------------------------
+
+Phase 7 — Polish
+
+Goal: Make AgentHub feel alive.
+
+Features: - Notifications - Audio - Animations - Transitions - Ambient
+effects
+
+Success Criteria: - User experience feels premium.
+
+------------------------------------------------------------------------
+
+Phase 8 — Advanced Features
+
+Goal: Expand safely.
+
+Potential features: - Voice - Live2D - VRM - Twitch integration -
+YouTube integration - Tool displays - Memory controls
+
+Rule: These are optional.
+
+------------------------------------------------------------------------
+
+Emergency Feature Control Rule
+
+Before adding a feature ask:
+
+1.  Does this help the current phase?
+2.  Can this wait until a later phase?
+3.  Will this create architectural debt?
+4.  Will this require a future rewrite?
+
+If any answer is “yes”:
+
+DO NOT IMPLEMENT IT YET.
+
+------------------------------------------------------------------------
+
+The 2 AM Epic Rule
+
+If an idea sounds like:
+
+“What if I added…”
+
+Then:
+
+1.  Write it down.
+2.  Add it to future phases.
+3.  Go back to the current phase.
+
+------------------------------------------------------------------------
+
+Final Principle
+
+“Build the smallest thing that works, then make it beautiful.”

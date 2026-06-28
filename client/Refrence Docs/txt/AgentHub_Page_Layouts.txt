@@ -1,0 +1,77 @@
+AgentHub Page Layout Plan
+
+Design Philosophy
+
+Start small. Every page must serve a core function before adding
+advanced features.
+
+------------------------------------------------------------------------
+
+1. Loading Screen
+
+Purpose: - Authenticate account - Discover devices - Discover
+providers - Verify agent connectivity
+
+Layout: - Full-screen character splash art - Progress indicators -
+Device/provider connection status - Error/retry state
+
+Example: Connecting to AgentHub… ✓ Epic PC ✓ Hostinger VPS ○ Remote
+server
+
+------------------------------------------------------------------------
+
+2. Homepage
+
+Purpose: - Display all connected devices - Display providers running on
+each device - Display agents within providers
+
+Hierarchy:
+
+Account └── Device └── Provider └── Agent
+
+Homepage sections: - Featured hero character - Device groups - Provider
+groups - Agent cards
+
+Agent card contents: - Character art - Agent name - Provider name -
+Device name - Online/offline state - Last activity
+
+------------------------------------------------------------------------
+
+3. Chat UI
+
+Purpose: - Communicate with a single agent
+
+Layout: - Back button - Agent header - Large portrait - Status
+indicator - Chat history - Input box - Send button
+
+Future additions: - Voice - File upload - Tool display - Memory controls
+
+------------------------------------------------------------------------
+
+4. Settings
+
+Purpose: - Configure AgentHub
+
+Sections: - Providers - Devices - Account - Appearance - Developer
+
+Initial MVP settings: - Add provider - Remove provider - Test provider -
+Theme selection
+
+------------------------------------------------------------------------
+
+5. Empty States
+
+Examples: - No devices - No providers - No agents - No chat history
+
+Each should use character art.
+
+------------------------------------------------------------------------
+
+MVP Build Order
+
+1.  Loading screen
+2.  Homepage
+3.  Agent cards
+4.  Chat UI
+5.  Settings
+6.  Empty states
