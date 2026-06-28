@@ -2,11 +2,11 @@
 
 Project Reika Agent Server is the **device-side service** for Reika.
 
-This is not the main visual app client. It is the local agent/device server that reports device/provider/agent state upward once a relay contract exists.
+This is not the main visual app client. It is the local agent/device server that reports device/provider/agent state upward through the relay.
 
-## Current phase
+## Current Phase
 
-**Phase 1: local device agent server + safe uplink skeleton**
+**Phase 1: local device agent server + safe relay uplink**
 
 Included now:
 
@@ -18,12 +18,13 @@ Included now:
 - CommandCenter-first active provider selection
 - mock/offline fallback provider state
 - versioned shared `AgentHubEnvelope` protocol
-- disabled-by-default outbound relay client skeleton
+- disabled-by-default outbound relay client
 - safe command dispatcher for read-only/provider-refresh commands
+- tested against the dev relay in `../Relay`
 - no chat transport implementation yet
 - no external uplink enabled by default
 
-## Not included yet
+## Not Included Yet
 
 - CommandCenter chat/session adapter
 - OpenClaw direct chat/session adapter
@@ -33,12 +34,12 @@ Included now:
 - remote sync persistence
 - real chat/session transport
 - voice
-- UI/client screens
+- production UI wiring beyond the Phase 1 relay/device surface
 - Live2D / VRM
 - Twitch integration
 - additional mascots
 
-## Architecture rule
+## Architecture Rule
 
 The hierarchy stays clean:
 
@@ -48,15 +49,15 @@ Account -> Device -> Provider -> Agent -> Session -> Message/Event
 
 Important boundaries:
 
-- This repo is the **device agent server**, not the app client.
+- This folder is the **device agent server**, not the app client.
 - Devices are not providers.
 - Providers are not agents.
 - CommandCenter is the preferred rich local provider when available.
 - Project Reika owns normalized state and protocol envelopes.
-- The relay should route envelopes; it should not scan providers or execute local work.
+- The relay routes envelopes; it should not scan providers or execute local work.
 - The device agent executes only explicitly supported safe commands.
 
-## Local development
+## Local Development
 
 ```bash
 cd server
@@ -83,7 +84,7 @@ Development endpoints:
 
 These endpoints expose local server/provider/uplink state for development. They are not the final external connection contract.
 
-## Uplink config
+## Uplink Config
 
 Outbound relay mode is disabled by default.
 
@@ -98,7 +99,16 @@ REIKA_RECONNECT_MIN_MS=1000
 REIKA_RECONNECT_MAX_MS=30000
 ```
 
-When enabled, the server connects outward to the relay over WSS and sends:
+For local dev relay testing:
+
+```env
+REIKA_UPLINK_ENABLED=true
+REIKA_RELAY_URL=ws://127.0.0.1:8790/v1/device
+REIKA_PAIRING_TOKEN=<approved pairing code>
+REIKA_DEVICE_ID=linux-device-local
+```
+
+When enabled, the server connects outward to the relay over WS/WSS and sends:
 
 - `device.hello`
 - `device.heartbeat`
@@ -106,7 +116,7 @@ When enabled, the server connects outward to the relay over WSS and sends:
 - `device.provider.snapshot`
 - `agent.roster.snapshot`
 
-## Supported command envelopes
+## Supported Command Envelopes
 
 The current command dispatcher only supports:
 
@@ -115,6 +125,8 @@ The current command dispatcher only supports:
 - `agent.roster.request`
 
 Unsupported messages return `command.rejected` with `UNSUPPORTED_COMMAND`.
+
+Supported requests return snapshot envelopes directly. The current dispatcher does not emit a separate `command.completed` envelope after every successful request.
 
 Intentionally unsupported in this phase:
 
@@ -125,9 +137,9 @@ Intentionally unsupported in this phase:
 - agent install/update
 - chat transport
 
-No cute remote-admin malware. We are behaving, unfortunately.
+No remote-admin nonsense. We are behaving, unfortunately.
 
-## Provider priority
+## Provider Priority
 
 Active-provider priority is:
 
@@ -138,6 +150,6 @@ Active-provider priority is:
 
 Provider detection exists for CommandCenter, OpenClaw, and Hermes. Chat/session transport is still intentionally deferred.
 
-## Design intent
+## Design Intent
 
-Reika gets the first real vertical slice. The server should become the boring, reliable local daemon underneath the pretty app. Yes, tragic: the foundation has to be useful before it gets sparkles.
+Reika gets the first real vertical slice. The server should become the boring, reliable local daemon underneath the pretty app. Tragic, yes. Useful, also yes.

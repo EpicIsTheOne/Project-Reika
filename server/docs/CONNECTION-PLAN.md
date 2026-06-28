@@ -9,31 +9,33 @@ Device Agent Server  --->  Reika Relay  <---  Main App Client
 
 No port forwarding. No public device IPs. No raw inbound device sockets.
 
-## Current server-side implementation
+## Current Implementation
 
 Implemented in this repo:
 
-- local device/provider state server
+- local device/provider state server in `server/`
 - CommandCenter/OpenClaw/Hermes/mock provider detection
 - CommandCenter-first active provider selection
 - versioned shared `AgentHubEnvelope` protocol
-- disabled-by-default outbound relay client skeleton
+- disabled-by-default outbound relay client
 - heartbeat/hello/snapshot senders
 - safe command dispatcher
-- local `/commands/simulate` endpoint for contract testing before the relay exists
+- local `/commands/simulate` endpoint for contract testing
+- Phase 1 dev relay in `Relay/`
+- Phase 1 client relay UI in `client/`
 
 Still intentionally not implemented:
 
-- production relay service
-- pairing storage
+- production relay deployment
+- durable pairing storage
 - per-device keypair challenge auth
 - chat transport
 - shell/file/system commands
 - provider mutation
 
-## Shared protocol
+## Shared Protocol
 
-Envelope shape:
+The server's envelope shape:
 
 ```ts
 interface AgentHubEnvelope<TPayload = unknown> {
@@ -41,8 +43,8 @@ interface AgentHubEnvelope<TPayload = unknown> {
   id: string;
   type: AgentHubMessageType;
   timestamp: string;
-  source: { kind: 'app' | 'device' | 'relay'; id: string };
-  target?: { kind: 'app' | 'device' | 'relay'; id: string };
+  source: { kind: "app" | "device" | "relay"; id: string };
+  target?: { kind: "app" | "device" | "relay"; id: string };
   replyTo?: string;
   correlationId?: string;
   payload: TPayload;
@@ -66,13 +68,15 @@ command.completed
 command.failed
 ```
 
-## Safe command scope
+The Phase 1 relay also accepts the simpler client envelope shape that uses top-level `deviceId`. Long term, all packages should import one shared protocol package instead of carrying compatibility shims.
+
+## Safe Command Scope
 
 Accepted inbound commands:
 
-- `device.state.request` — return current normalized local state
-- `provider.refresh.request` — re-run provider detection and return provider snapshot
-- `agent.roster.request` — return active provider's visible agent roster
+- `device.state.request` - return current normalized local state
+- `provider.refresh.request` - re-run provider detection and return provider snapshot
+- `agent.roster.request` - return active provider's visible agent roster
 
 Everything else is rejected with:
 
@@ -85,24 +89,30 @@ Everything else is rejected with:
 }
 ```
 
-## Relay responsibilities
+## Relay Responsibilities
 
-The relay should:
+The Phase 1 dev relay in `Relay/` does:
 
-- pair devices
-- authenticate app/device sockets
-- maintain presence
-- route envelopes between app and device
-- enforce account/device boundaries
+- create short-lived pairing codes
+- let devices claim pairing codes
+- let the app approve claimed devices
+- accept outbound device WebSockets at `WS /v1/device`
+- accept app WebSockets at `WS /v1/app`
+- maintain in-memory presence
+- store latest provider and roster snapshots
+- route only safe request envelopes between app and device
+- adapt the app envelope shape to the server envelope shape
 
-The relay should not:
+The relay does not:
 
 - scan local providers
 - execute commands locally
 - mutate provider configuration
-- become a generic remote shell
+- route chat
+- touch files
+- provide shell access
 
-## Device responsibilities
+## Device Responsibilities
 
 The device agent should:
 
@@ -112,24 +122,38 @@ The device agent should:
 - send `device.hello`, `device.heartbeat`, and snapshots
 - respond only to safe command envelopes
 
-## Client responsibilities
+## Client Responsibilities
 
-The app/client should:
+The Phase 1 client in `client/` does:
 
 - show paired devices
 - show online/offline presence
 - request state/provider/agent snapshots
-- display provider and agent roster state
+- display provider snapshots
+- display active provider
+- display agent roster state
 - avoid chat/file/system controls until the safe relay foundation works
 
-## Security staging
+## Local Phase 1 Flow
+
+```text
+1. Start Relay with `cd Relay && npm run dev`.
+2. Start client with `cd client && npm run dev`.
+3. Create a pairing code in the Devices UI or via `POST /v1/pairing/create`.
+4. Claim and approve the device.
+5. Start server uplink with `REIKA_UPLINK_ENABLED=true` and `REIKA_PAIRING_TOKEN=<code>`.
+6. The Devices UI should show the connected device, providers, active provider, and roster.
+```
+
+## Security Staging
 
 Phase 1:
 
-- WSS/TLS
+- WS/WSS relay connection
 - pairing token/dev auth
 - command allowlist
 - disabled-by-default server uplink
+- in-memory relay state
 
 Phase 2:
 
@@ -137,13 +161,14 @@ Phase 2:
 - signed relay challenge
 - device revocation
 - key rotation
+- durable pairing/session storage
 
 Phase 3:
 
 - optional end-to-end encrypted envelopes
 - offline delivery/storage policy
 
-## Provider priority
+## Provider Priority
 
 The device server chooses providers in this order:
 
