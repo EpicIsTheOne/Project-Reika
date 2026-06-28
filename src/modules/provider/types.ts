@@ -1,5 +1,5 @@
 export type ProviderKind = 'commandcenter' | 'openclaw' | 'hermes' | 'mock';
-export type ProviderStatus = 'available' | 'preferred' | 'offline' | 'planned';
+export type ProviderStatus = 'preferred' | 'available' | 'planned' | 'offline';
 
 export interface ProviderCapability {
   id: string;
@@ -7,12 +7,11 @@ export interface ProviderCapability {
   planned?: boolean;
 }
 
-export interface ProviderSummary {
+export interface ProviderRecord {
   id: string;
-  name: string;
   kind: ProviderKind;
+  name: string;
   status: ProviderStatus;
-  endpointLabel: string;
   capabilities: ProviderCapability[];
   notes: string;
 }

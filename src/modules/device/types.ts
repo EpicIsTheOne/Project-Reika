@@ -1,9 +1,11 @@
-export type DeviceStatus = 'this-device' | 'online' | 'planned' | 'offline';
+export type DevicePlatform = 'linux';
+export type DeviceServerStatus = 'booting' | 'ready' | 'degraded' | 'offline';
 
-export interface DeviceSummary {
+export interface DeviceIdentity {
   id: string;
   name: string;
-  platform: 'linux' | 'windows' | 'android' | 'ios' | 'macos' | 'web';
-  status: DeviceStatus;
-  description: string;
+  platform: DevicePlatform;
+  hostname: string;
+  status: DeviceServerStatus;
+  startedAt: string;
 }

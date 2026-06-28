@@ -1,37 +1,39 @@
-# Project Reika
+# Project Reika Agent Server
 
-Project Reika is the Linux-first agent client shell for **Reika**, the main agent mascot for the app.
+Project Reika Agent Server is the **Linux device-side service** for Reika.
 
-This repository intentionally starts with the client shape before real external provider wiring. The goal is to make the app model clean before networking tries to turn it into soup.
+This is not the main visual app client. It is the local agent/device server that will eventually report device/provider/agent state upward to the main app client after that connection contract is planned.
 
 ## Current phase
 
-**Phase 0: local shell + mock runtime**
+**Phase 0: local device agent server scaffold**
 
 Included now:
 
-- Linux-first Vite/React/TypeScript client shell
-- Reika as the only active mascot/agent
+- Linux-first Node/TypeScript service scaffold
+- Reika as the only represented mascot/agent
+- local HTTP status surface for development
 - modular boundaries for:
   - Device
   - Provider
   - Agent
-  - Chat
-  - Settings
-  - Notification
-  - Asset
-- mock provider state
-- planned CommandCenter provider boundary
+  - Event
+  - Uplink
+- mock/offline provider state
+- explicit planned uplink placeholder
 - no external provider connection code yet
+- no main app client connection code yet
 
-Not included yet:
+## Not included yet
 
-- CommandCenter local API connection
-- OpenClaw direct connection
-- Hermes direct connection
+- CommandCenter local API adapter
+- OpenClaw direct adapter
+- Hermes direct adapter
+- WebSocket uplink to the main app client
 - remote sync
-- real WebSocket uplink
+- real chat/session transport
 - voice
+- UI/client screens
 - Live2D / VRM
 - Twitch integration
 - additional mascots
@@ -46,14 +48,37 @@ Account -> Device -> Provider -> Agent -> Session -> Message/Event
 
 Important boundaries:
 
+- This repo is the **device agent server**, not the app client.
 - Devices are not providers.
 - Providers are not agents.
-- CommandCenter can become the preferred rich local provider, but it is not the canonical Project Reika data model.
-- The client should normalize provider events into its own internal model.
+- CommandCenter can become the preferred rich local provider later, but Project Reika owns its own normalized state model.
+- The future uplink should send normalized state/events to the main app client, not leak raw provider internals everywhere.
+
+## Local development
+
+```bash
+npm install
+npm run build
+npm run dev
+```
+
+Default local server:
+
+```text
+http://127.0.0.1:47840
+```
+
+Development endpoints:
+
+- `GET /health`
+- `GET /state`
+- `GET /events`
+
+These endpoints expose mock local state only. They are not the final external connection contract.
 
 ## Provider priority, later
 
-When external connectivity is planned, the intended discovery/activation priority is:
+When provider connectivity is planned, intended priority is:
 
 1. CommandCenter
 2. OpenClaw direct
@@ -62,18 +87,6 @@ When external connectivity is planned, the intended discovery/activation priorit
 
 For now, only `mock/offline` exists in code.
 
-## Development
+## Design intent
 
-```bash
-npm install
-npm run dev
-npm run build
-```
-
-## Design target
-
-Aesthetic direction:
-
-> What if Zenless Zone Zero, Persona, JARVIS, and a visual novel had a baby?
-
-Reika gets the first real vertical slice. Everybody else can wait their turn like civilized chaos gremlins.
+Reika gets the first real vertical slice. The Linux server should become the boring, reliable local daemon underneath the pretty app. Yes, tragic: the foundation has to be useful before it gets sparkles.

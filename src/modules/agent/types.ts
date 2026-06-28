@@ -1,12 +1,11 @@
-export type AgentMood = 'ready' | 'thinking' | 'idle' | 'offline';
+export type AgentState = 'ready' | 'thinking' | 'responding' | 'idle' | 'offline';
 
-export interface AgentSummary {
+export interface AgentRecord {
   id: string;
   name: string;
   callsign: string;
   role: string;
-  mood: AgentMood;
+  state: AgentState;
   providerId: string;
-  accent: string;
-  isMascot?: boolean;
+  isMascot: boolean;
 }
