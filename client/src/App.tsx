@@ -49,10 +49,10 @@ import {
   claimRelayPairingCode,
   connectRelayApp,
   createRelayPairingCode,
-  getRelayDeviceWebSocketUrl,
   type RelayDeviceRecord,
   type RelayPairing
 } from "./data/relay";
+import { linuxInstallCommand, reikaRelayDeviceUrl } from "./config/relay";
 import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "./data/startup";
 import { chatMessages, devices as mockDevices, reikaProfile } from "./data/mockData";
 import type { Agent, Device, Provider, Status, View } from "./types";
@@ -974,6 +974,7 @@ function DevicesView({ onScanProviders }: { onScanProviders: () => void }) {
           pairing={relayPairing}
           claimedDeviceName={claimedDeviceName}
           error={relayError}
+          relayUrl={reikaRelayDeviceUrl}
           onCreate={handleCreatePairing}
           onDevClaim={handleDevClaimPairing}
           onApprove={handleApprovePairing}
@@ -1048,6 +1049,7 @@ function PairingPanel({
   pairing,
   claimedDeviceName,
   error,
+  relayUrl,
   onCreate,
   onDevClaim,
   onApprove
@@ -1055,13 +1057,12 @@ function PairingPanel({
   pairing: RelayPairing | null;
   claimedDeviceName: string | null;
   error: string | null;
+  relayUrl: string;
   onCreate: () => void;
   onDevClaim: () => void;
   onApprove: () => void;
 }) {
-  const linuxCommand = pairing
-    ? `curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh | bash -s -- --code ${pairing.code} --relay ws://127.0.0.1:8790/v1/device`
-    : "";
+  const linuxCommand = pairing ? linuxInstallCommand(pairing.code) : "";
   const canApprove = pairing?.status === "claimed";
 
   const copyLinuxCommand = () => {
@@ -1095,6 +1096,10 @@ function PairingPanel({
           <article>
             <small>Claimed Device</small>
             <strong>{claimedDeviceName ?? pairing.deviceId ?? "Waiting for device"}</strong>
+          </article>
+          <article>
+            <small>Relay URL</small>
+            <strong>{relayUrl}</strong>
           </article>
         </div>
       ) : null}
@@ -1660,7 +1665,7 @@ function mapRelayDeviceRecord(record: RelayDeviceRecord): DevicePageRow {
     lastConnected,
     localIp: record.device.location === "local" ? "Local relay" : "Outbound WSS",
     version: record.device.agentVersion,
-    relayUrl: getRelayDeviceWebSocketUrl(),
+    relayUrl: reikaRelayDeviceUrl,
     startupDeviceId: record.device.id
   };
 }
