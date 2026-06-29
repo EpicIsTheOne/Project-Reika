@@ -72,7 +72,7 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
 
   const connect = () => {
     onStatus("connecting");
-    socket = new WebSocket(getRelayWebSocketUrl());
+    socket = new WebSocket(getRelayAppWebSocketUrl());
 
     socket.addEventListener("open", () => {
       onStatus("online");
@@ -192,9 +192,13 @@ function upsertRelayRecord(records: RelayDeviceRecord[], next: RelayDeviceRecord
   );
 }
 
-function getRelayWebSocketUrl() {
+export function getRelayAppWebSocketUrl() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}/v1/app`;
+}
+
+export function getRelayDeviceWebSocketUrl() {
+  return getRelayAppWebSocketUrl().replace(/\/v1\/app$/, "/v1/device");
 }
 
 function getEnvelopeDeviceId(envelope: AgentHubEnvelope) {

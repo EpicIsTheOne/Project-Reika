@@ -1994,6 +1994,31 @@ img {
   object-fit: contain;
 }
 
+.startup-device-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  min-height: 64px;
+  padding: 0.75rem;
+  border: 1px solid rgba(87, 148, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(8, 18, 39, 0.45);
+}
+
+.startup-device-row strong {
+  display: block;
+  color: #eef4ff;
+  font-weight: 600;
+}
+
+.startup-device-row small {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .relay-provider-list,
 .relay-agent-list {
   display: grid;

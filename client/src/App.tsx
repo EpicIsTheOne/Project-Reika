@@ -49,6 +49,7 @@ import {
   claimRelayPairingCode,
   connectRelayApp,
   createRelayPairingCode,
+  getRelayDeviceWebSocketUrl,
   type RelayDeviceRecord,
   type RelayPairing
 } from "./data/relay";
@@ -660,6 +661,8 @@ type DevicePageRow = {
   lastConnected: string;
   localIp: string;
   version: string;
+  relayUrl?: string;
+  startupDeviceId?: string;
 };
 
 const deviceRows: DevicePageRow[] = [
@@ -1165,6 +1168,66 @@ function DeviceDetailPanel({
   relayConnected: boolean;
   onRelayRequest: (type: "device.state.request" | "provider.refresh.request" | "agent.roster.request") => void;
 }) {
+  const [startupStatus, setStartupStatus] = useState<LocalAgentStartupStatus | null>(null);
+  const [startupError, setStartupError] = useState<string | null>(null);
+  const [startupBusy, setStartupBusy] = useState(false);
+  const canManageStartup = Boolean(device.relayUrl && device.startupDeviceId);
+  const startupEnabledForDevice = Boolean(startupStatus?.enabled && startupMatchesDevice(startupStatus, device));
+
+  useEffect(() => {
+    let active = true;
+    setStartupStatus(null);
+    setStartupError(null);
+
+    if (!canManageStartup) return () => {
+      active = false;
+    };
+
+    getLocalAgentStartup()
+      .then((status) => {
+        if (!active) return;
+        setStartupStatus(status);
+      })
+      .catch(() => {
+        if (!active) return;
+        setStartupError("Selected device agent is not reachable.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canManageStartup, device.id]);
+
+  const updateStartup = async () => {
+    if (!startupStatus?.supported || startupBusy || !device.relayUrl || !device.startupDeviceId) return;
+    setStartupBusy(true);
+    setStartupError(null);
+    try {
+      const next = await setLocalAgentStartup(!startupEnabledForDevice, {
+        relayUrl: device.relayUrl,
+        deviceId: device.startupDeviceId
+      });
+      setStartupStatus(next);
+    } catch {
+      setStartupError("Could not update startup for this device.");
+    } finally {
+      setStartupBusy(false);
+    }
+  };
+
+  const startupDetail =
+    startupError ??
+    startupStatus?.message ??
+    (startupStatus
+      ? startupEnabledForDevice
+        ? `Startup is enabled for ${device.name}.`
+        : startupStatus.enabled
+          ? "Startup is enabled for a different device context."
+          : `Startup is disabled for ${device.name}.`
+      : canManageStartup
+        ? "Checking startup registration for this device."
+        : "Pair this device through the relay before managing startup.");
+
   const overview = [
     { label: "CPU Usage", value: `${device.metrics?.cpu ?? 0}%`, icon: Cpu, bar: device.metrics?.cpu ?? 0 },
     { label: "RAM Usage", value: `${device.metrics?.ram ?? 0}%`, detail: "5.1 GB / 15.9 GB", icon: Activity, bar: device.metrics?.ram ?? 0 },
@@ -1234,7 +1297,19 @@ function DeviceDetailPanel({
           <DetailRow label="Last Connected" value={device.lastConnected} icon={Activity} />
           <DetailRow label="Local IP" value={device.localIp} icon={Globe2} />
           <DetailRow label="Agent Version" value={device.version} icon={Info} />
+          {device.relayUrl ? <DetailRow label="Startup Relay" value={device.relayUrl} icon={Link2} /> : null}
           {device.lastCommand ? <DetailRow label="Relay" value={device.lastCommand} icon={ShieldCheck} /> : null}
+        </section>
+
+        <section className="device-detail-section">
+          <h3>Startup</h3>
+          <div className="startup-device-row">
+            <span>
+              <strong>Auto Start Agent</strong>
+              <small>{startupDetail}</small>
+            </span>
+            <Toggle checked={startupEnabledForDevice} disabled={!canManageStartup || !startupStatus?.supported || startupBusy} onClick={updateStartup} />
+          </div>
         </section>
 
         <section className="device-detail-section">
@@ -1424,46 +1499,6 @@ function NotificationDetailPanel({ item, onOpenChat }: { item: NotificationItem;
 }
 
 function SettingsView({ backendMode, backendError }: { backendMode: BackendMode; backendError: string | null }) {
-  const [startupStatus, setStartupStatus] = useState<LocalAgentStartupStatus | null>(null);
-  const [startupError, setStartupError] = useState<string | null>(null);
-  const [startupBusy, setStartupBusy] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    getLocalAgentStartup()
-      .then((status) => {
-        if (!active) return;
-        setStartupStatus(status);
-        setStartupError(null);
-      })
-      .catch(() => {
-        if (!active) return;
-        setStartupError("Local agent is not reachable.");
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const updateStartup = async () => {
-    if (!startupStatus?.supported || startupBusy) return;
-    setStartupBusy(true);
-    setStartupError(null);
-    try {
-      const next = await setLocalAgentStartup(!startupStatus.enabled);
-      setStartupStatus(next);
-    } catch {
-      setStartupError("Could not update local agent startup.");
-    } finally {
-      setStartupBusy(false);
-    }
-  };
-
-  const startupDetail =
-    startupError ??
-    startupStatus?.message ??
-    (startupStatus ? `Local agent startup is ${startupStatus.enabled ? "enabled" : "disabled"}.` : "Checking local agent startup.");
-
   const settingsTabs = [
     { title: "General", detail: "Basic preferences", icon: Brush, active: true },
     { title: "Devices", detail: "Manage your devices", icon: Monitor },
@@ -1530,9 +1565,6 @@ function SettingsView({ backendMode, backendError }: { backendMode: BackendMode;
             </SettingRow>
             <SettingRow title="Minimize to Tray" detail="Keep AgentHub running in the background.">
               <Toggle checked />
-            </SettingRow>
-            <SettingRow title="Auto Start" detail={startupDetail}>
-              <Toggle checked={Boolean(startupStatus?.enabled)} disabled={!startupStatus?.supported || startupBusy} onClick={updateStartup} />
             </SettingRow>
             <SettingRow title="Data & Cache" detail={backendError ?? `Backend mode: ${backendMode}.`}>
               <button className="secondary-action small">Manage</button>
@@ -1627,7 +1659,9 @@ function mapRelayDeviceRecord(record: RelayDeviceRecord): DevicePageRow {
     lastCommand: record.lastCommand,
     lastConnected,
     localIp: record.device.location === "local" ? "Local relay" : "Outbound WSS",
-    version: record.device.agentVersion
+    version: record.device.agentVersion,
+    relayUrl: getRelayDeviceWebSocketUrl(),
+    startupDeviceId: record.device.id
   };
 }
 
@@ -1642,6 +1676,11 @@ function mapRelayAgent(agent: RelayDeviceRecord["agents"][number]): Agent {
     lastActivity: agent.lastActivity ?? "Relay roster",
     characterId: agent.characterId
   };
+}
+
+function startupMatchesDevice(status: LocalAgentStartupStatus, device: DevicePageRow) {
+  if (!status.command || !device.startupDeviceId || !device.relayUrl) return false;
+  return status.command.includes(device.startupDeviceId) && status.command.includes(device.relayUrl);
 }
 
 function getDeviceIcon(type: Device["type"]) {
