@@ -53,11 +53,75 @@ async function runStartupCli(options: CliOptions) {
   }
 }
 
+function formatUpdateStatus(status: Awaited<ReturnType<typeof getUpdateStatus>>) {
+  const lines = [
+    `Supported: ${status.supported ? 'yes' : 'no'}`,
+    `Available: ${status.available ? 'yes' : 'no'}`,
+    `Behind: ${status.behindBy}`,
+    `Ahead: ${status.aheadBy}`,
+    `Branch: ${status.branch || 'unknown'}`,
+    `Local: ${status.localSha?.slice(0, 12) || 'unknown'}`,
+    `Remote: ${status.remoteSha?.slice(0, 12) || 'unknown'}`,
+    `Auto update server: ${status.settings?.autoUpdateServer ? 'on' : 'off'}`,
+    `Auto update client: ${status.settings?.autoUpdateClient ? 'on' : 'off'}`,
+    `Message: ${status.message}`
+  ];
+  if (status.descriptions.length > 0) {
+    lines.push('', 'Update descriptions:');
+    for (const item of status.descriptions.slice(0, 8)) {
+      lines.push(`- ${item.sha ? `${item.sha} ` : ''}${item.title}`);
+      if (item.body) lines.push(`  ${item.body.replace(/\n/g, '\n  ')}`);
+    }
+  }
+  if (status.files.length > 0) {
+    lines.push('', 'Changed files:');
+    for (const file of status.files.slice(0, 40)) lines.push(`- ${file.status} ${file.path}`);
+    if (status.files.length > 40) lines.push(`- ...and ${status.files.length - 40} more`);
+  }
+  return lines.join('\n');
+}
+
+async function runUpdatesCli(options: CliOptions) {
+  const cliSettings = new SettingsStore();
+  try {
+    await cliSettings.load();
+    const action = options.updatesAction ?? 'status';
+    if (action === 'enable' || action === 'disable') {
+      const target = options.updatesTarget ?? 'all';
+      const enabled = action === 'enable';
+      const next = cliSettings.update({
+        autoUpdateServer: target === 'server' || target === 'all' ? enabled : undefined,
+        autoUpdateClient: target === 'client' || target === 'all' ? enabled : undefined
+      });
+      await cliSettings.flush();
+      console.log(`Auto update server: ${next.autoUpdateServer ? 'on' : 'off'}`);
+      console.log(`Auto update client: ${next.autoUpdateClient ? 'on' : 'off'}`);
+      process.exit(0);
+    }
+    if (action === 'apply') {
+      const result = await applyGitHubUpdate(cliSettings.get());
+      console.log(formatUpdateStatus(result));
+      if (result.applyOutput) console.log(`\nApply output:\n${result.applyOutput}`);
+      process.exit(0);
+    }
+    const status = await getUpdateStatus(cliSettings.get());
+    console.log(formatUpdateStatus(status));
+    process.exit(0);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
 if (cli.mode === 'startup') {
   void runStartupCli(cli);
 }
 
-if (cli.mode !== 'startup') {
+if (cli.mode === 'updates') {
+  void runUpdatesCli(cli);
+}
+
+if (cli.mode !== 'startup' && cli.mode !== 'updates') {
 const events = new EventBus();
 const state = new StateStore();
 const sessions = new SessionStore();
@@ -153,6 +217,11 @@ function updateDescriptionText(descriptions: { title: string; body?: string }[])
 
 function notifyUpdateAvailable(status: Awaited<ReturnType<typeof getUpdateStatus>>) {
   if (!status.available) return;
+  const alreadyUnread = notifications.list({ unreadOnly: true, limit: 200 }).some((item) => {
+    const update = typeof item.data?.update === 'object' && item.data.update ? item.data.update as { remoteSha?: unknown } : undefined;
+    return item.source === 'github' && item.title === 'AgentHub update available' && update?.remoteSha === status.remoteSha;
+  });
+  if (alreadyUnread) return;
   notifications.add({
     kind: 'system',
     title: 'AgentHub update available',

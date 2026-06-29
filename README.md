@@ -205,6 +205,19 @@ POST /updates/apply
 
 Update notifications include the update description and changed file list so users can see what changed before or after applying. Packaged self-replacement is intentionally not part of this pass; installed `.exe` builds should still be rebuilt from the updated repo.
 
+When auto-update is off, AgentHub still checks GitHub on server startup and creates a local notification if a new update is available. The notification includes the changed files and update description.
+
+CLI update controls:
+
+```bash
+reika-agent-server updates status
+reika-agent-server updates check
+reika-agent-server updates apply
+reika-agent-server updates enable all
+reika-agent-server updates enable server
+reika-agent-server updates disable client
+```
+
 ## Guardrails
 
 Phase 1 intentionally does not include chat routing, file operations, shell commands, provider mutation, service control, or generic remote administration.

@@ -1,6 +1,8 @@
 export interface CliOptions {
-  mode: 'server' | 'pair' | 'startup' | 'help';
+  mode: 'server' | 'pair' | 'startup' | 'updates' | 'help';
   startupAction?: 'status' | 'enable' | 'disable';
+  updatesAction?: 'status' | 'check' | 'apply' | 'enable' | 'disable';
+  updatesTarget?: 'server' | 'client' | 'all';
   relayUrl?: string;
   code?: string;
   deviceId?: string;
@@ -28,6 +30,21 @@ export function parseCliArgs(argv = process.argv.slice(2)): CliOptions {
     }
     options.startupAction = action;
     index = argv[1] ? 2 : 1;
+  } else if (argv[0] === 'updates' || argv[0] === 'update') {
+    options.mode = 'updates';
+    const action = argv[1] ?? 'status';
+    if (action !== 'status' && action !== 'check' && action !== 'apply' && action !== 'enable' && action !== 'disable') {
+      throw new Error(`Unknown updates action: ${action}`);
+    }
+    options.updatesAction = action;
+    const maybeTarget = argv[2];
+    if (maybeTarget && !maybeTarget.startsWith('-')) {
+      if (maybeTarget !== 'server' && maybeTarget !== 'client' && maybeTarget !== 'all') throw new Error(`Unknown updates target: ${maybeTarget}`);
+      options.updatesTarget = maybeTarget;
+      index = 3;
+    } else {
+      index = argv[1] ? 2 : 1;
+    }
   } else if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
     return { mode: 'help' };
   }
@@ -71,11 +88,17 @@ export function helpText() {
     '  reika-agent-server startup status          Show startup status',
     '  reika-agent-server startup enable          Start this agent when you sign in',
     '  reika-agent-server startup disable         Disable automatic startup',
+    '  reika-agent-server updates status          Show GitHub update status',
+    '  reika-agent-server updates check           Check GitHub for updates',
+    '  reika-agent-server updates apply           Apply a safe fast-forward update',
+    '  reika-agent-server updates enable all      Enable auto update for server and client',
+    '  reika-agent-server updates disable client  Disable client auto update',
     '',
     'Commands:',
     '  help                                      Show this help',
     '  pair                                      Connect outbound to the relay with a pairing code',
     '  startup                                   Manage OS startup registration',
+    '  updates                                   Manage GitHub repo-backed updates',
     '',
     'Options:',
     '  --relay <url>       Relay device WebSocket URL. Default: env REIKA_RELAY_URL or bundled default',
@@ -88,6 +111,7 @@ export function helpText() {
     '  1. Create a pairing code in AgentHub.',
     '  2. Run: reika-agent-server pair --code YOUR_CODE --relay ws://relay-host:8790/v1/device',
     '  3. Approve the device in AgentHub.',
-    '  4. Run: reika-agent-server startup enable --relay ws://relay-host:8790/v1/device'
+    '  4. Run: reika-agent-server startup enable --relay ws://relay-host:8790/v1/device',
+    '  5. Optional: reika-agent-server updates enable all'
   ].join('\n');
 }

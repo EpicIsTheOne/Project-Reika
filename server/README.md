@@ -145,6 +145,20 @@ REIKA_GITHUB_API_BASE=https://api.github.com
 
 `POST /updates/apply` runs a conservative `git pull --ff-only origin main` when the server is running from a git clone. It refuses automatic application if the local clone has commits ahead of GitHub. Settings has separate `autoUpdateServer` and `autoUpdateClient` toggles; if either is enabled, startup checks GitHub and applies a safe fast-forward update.
 
+If auto-update is off, startup still checks GitHub and creates a local notification when an update is available. That notification includes the update description and changed file list. Duplicate unread notifications for the same remote commit are suppressed.
+
+CLI controls:
+
+```bash
+reika-agent-server updates status
+reika-agent-server updates check
+reika-agent-server updates apply
+reika-agent-server updates enable all
+reika-agent-server updates enable server
+reika-agent-server updates enable client
+reika-agent-server updates disable all
+```
+
 ## Uplink Config
 
 Outbound relay mode is disabled by default.

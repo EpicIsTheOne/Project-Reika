@@ -77,6 +77,8 @@ The UI reads update status from the local agent server at `/agent/updates/status
 
 Auto-update applies only when the project is running from a git clone and the server can fast-forward from `origin/main`. The browser/Vite workflow remains intact, and packaged desktop builds still need to be rebuilt after repo files update.
 
+If auto-update is off, the server still creates a local notification when GitHub has a newer update. The notification includes the same changed-file list and update description shown in Settings.
+
 ## Main Folders
 
 ```text
