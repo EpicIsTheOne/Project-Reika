@@ -20,7 +20,7 @@ Usage:
 
 Options:
   --code <code>       Pairing code created in AgentHub.
-  --relay <url>       Relay device WebSocket URL, for example ws://127.0.0.1:8790/v1/device.
+  --relay <url>       Relay device WebSocket URL. Defaults to REIKA_RELAY_URL or the bundled server default.
   --device-id <id>    Override the generated device id.
   --install-only      Install the CLI wrapper without starting the agent.
   --no-startup        Do not enable the user-level startup service.
@@ -85,6 +85,10 @@ need_command() {
 need_command git
 need_command npm
 need_command node
+
+if [[ -z "$RELAY_URL" && -n "${REIKA_RELAY_URL:-}" ]]; then
+  RELAY_URL="$REIKA_RELAY_URL"
+fi
 
 mkdir -p "$INSTALL_DIR" "$BIN_DIR"
 

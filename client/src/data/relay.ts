@@ -1,4 +1,5 @@
 import type { AgentHubAgent, AgentHubDevice } from "../shared/agenthub";
+import { reikaRelayAppWebSocketUrl, relayApiUrl } from "../config/relay";
 import {
   createEnvelope,
   isAgentHubEnvelope,
@@ -33,7 +34,7 @@ interface PairingResponse {
 }
 
 export async function createRelayPairingCode() {
-  const response = await fetch("/v1/pairing/create", {
+  const response = await fetch(relayApiUrl("/pairing/create"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({})
@@ -44,7 +45,7 @@ export async function createRelayPairingCode() {
 }
 
 export async function claimRelayPairingCode(code: string, device: Partial<AgentHubDevice>) {
-  const response = await fetch("/v1/pairing/claim", {
+  const response = await fetch(relayApiUrl("/pairing/claim"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, device })
@@ -55,7 +56,7 @@ export async function claimRelayPairingCode(code: string, device: Partial<AgentH
 }
 
 export async function approveRelayPairingCode(code: string) {
-  const response = await fetch("/v1/pairing/approve", {
+  const response = await fetch(relayApiUrl("/pairing/approve"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code })
@@ -193,8 +194,7 @@ function upsertRelayRecord(records: RelayDeviceRecord[], next: RelayDeviceRecord
 }
 
 function getRelayWebSocketUrl() {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/v1/app`;
+  return reikaRelayAppWebSocketUrl;
 }
 
 function getEnvelopeDeviceId(envelope: AgentHubEnvelope) {

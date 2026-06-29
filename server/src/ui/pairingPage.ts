@@ -1,6 +1,7 @@
 import type { RelayClientSnapshot } from '../modules/uplink/relayClient.js';
 import type { DeviceIdentity } from '../modules/device/types.js';
 import type { StartupStatus } from '../platform/startup.js';
+import { serverConfig } from '../config/defaults.js';
 
 function escapeHtml(value: string) {
   return value
@@ -11,7 +12,7 @@ function escapeHtml(value: string) {
 }
 
 export function pairingPage(device: DeviceIdentity, uplink: RelayClientSnapshot, startup: StartupStatus) {
-  const defaultRelayUrl = uplink.relayUrl || 'ws://127.0.0.1:8790/v1/device';
+  const defaultRelayUrl = uplink.relayUrl || serverConfig.uplink.relayUrl;
   return `<!doctype html>
 <html lang="en">
 <head>
