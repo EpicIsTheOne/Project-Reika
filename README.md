@@ -53,6 +53,7 @@ server/docs/CONNECTION-PLAN.md
 Implemented:
 
 - Vite + React AgentHub UI
+- Windows desktop client shell using Electron
 - generated/local Reika and AgentHub visual assets
 - local/dev app backend for provider scanning
 - Devices page relay integration
@@ -121,6 +122,29 @@ relay:           http://127.0.0.1:8790
 device server:   http://127.0.0.1:47840
 ```
 
+Run the Windows desktop client during development:
+
+```powershell
+cd client
+npm run dev:desktop
+```
+
+Build the Windows desktop `.exe`:
+
+```powershell
+cd client
+npm run build:desktop
+```
+
+Create or refresh the Desktop shortcut:
+
+```powershell
+cd client
+npm run desktop:shortcut
+```
+
+The desktop shell packages the React client in a normal app window while keeping the browser/Vite path available for fast testing.
+
 To connect the device server through the relay, create/claim/approve a pairing code through the relay and run the server with:
 
 ```env
@@ -159,6 +183,27 @@ reika-agent-server startup status
 reika-agent-server startup enable --relay ws://relay-host:8790/v1/device
 reika-agent-server startup disable
 ```
+
+## GitHub Auto Updates
+
+AgentHub can check the Project Reika GitHub repo for updates from the local device-agent server.
+
+Settings includes separate toggles for:
+
+- Server Auto Update
+- Client Auto Update
+
+Phase 1 auto-update is git-clone based. When the app is running from a local clone, the server compares the current `HEAD` against `EpicIsTheOne/Project-Reika` on `main`, reports available commit descriptions, and lists changed files. If either auto-update toggle is enabled, startup will attempt a safe `git pull --ff-only origin main`. If the local clone has commits ahead of GitHub, the updater refuses to apply automatically.
+
+Update API:
+
+```text
+GET  /updates/status
+POST /updates/check
+POST /updates/apply
+```
+
+Update notifications include the update description and changed file list so users can see what changed before or after applying. Packaged self-replacement is intentionally not part of this pass; installed `.exe` builds should still be rebuilt from the updated repo.
 
 ## Guardrails
 

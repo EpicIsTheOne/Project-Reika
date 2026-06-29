@@ -5,12 +5,14 @@ import type { ProviderRecord } from '../modules/provider/types.js';
 export class StateStore {
   readonly device = createDeviceIdentity();
   private providers: ProviderRecord[] = [];
-  private activeProviderId = 'mock-local';
+  private activeProviderId = '';
   private lastDetectionAt = '';
+  private mockEnabled = true;
 
-  async refreshProviders() {
-    this.providers = await detectProviders();
-    this.activeProviderId = chooseActiveProvider(this.providers).id;
+  async refreshProviders(options: { mockEnabled?: boolean } = {}) {
+    this.mockEnabled = options.mockEnabled !== false;
+    this.providers = await detectProviders({ mockEnabled: this.mockEnabled });
+    this.activeProviderId = chooseActiveProvider(this.providers, { mockEnabled: this.mockEnabled })?.id ?? '';
     this.lastDetectionAt = new Date().toISOString();
   }
 
@@ -20,17 +22,18 @@ export class StateStore {
       activeProviderId: this.activeProviderId,
       providerDetection: {
         lastDetectionAt: this.lastDetectionAt,
-        priority: ['CommandCenter', 'OpenClaw direct', 'Hermes direct', 'Mock/offline']
+        priority: this.mockEnabled ? ['CommandCenter', 'OpenClaw direct', 'Hermes direct', 'Mock/offline'] : ['CommandCenter', 'OpenClaw direct', 'Hermes direct']
       },
       providers: this.providers,
       agents: baseAgents.map((agent) => ({
         ...agent,
-        providerId: this.activeProviderId
+        providerId: this.activeProviderId || 'unavailable'
       })),
       connectionPolicy: {
         externalUplinkEnabled: false,
         providerConnectionsEnabled: true,
         chatTransportEnabled: true,
+        mockEnabled: this.mockEnabled,
         note: 'Local provider detection and direct provider chat are enabled. External uplink remains opt-in.'
       }
     };

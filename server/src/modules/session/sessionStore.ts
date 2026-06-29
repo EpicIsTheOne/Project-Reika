@@ -68,7 +68,7 @@ export class SessionStore {
   async load() {
     try {
       const raw = await readFile(this.path, 'utf8');
-      const parsed = JSON.parse(raw) as Partial<PersistedSessionStore>;
+      const parsed = JSON.parse(raw.replace(/^\uFEFF/, '')) as Partial<PersistedSessionStore>;
       this.sessions.clear();
       for (const session of parsed.sessions || []) {
         if (isSessionRecord(session)) this.sessions.set(session.id, session);

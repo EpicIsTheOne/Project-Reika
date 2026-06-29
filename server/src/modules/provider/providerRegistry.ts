@@ -21,13 +21,14 @@ const mockProvider: ProviderRecord = {
 
 const adapters: ProviderAdapter[] = [commandCenterProvider, openClawProvider, hermesProvider];
 
-export async function detectProviders(): Promise<ProviderRecord[]> {
+export async function detectProviders(options: { mockEnabled?: boolean } = {}): Promise<ProviderRecord[]> {
   const detected = await Promise.all(adapters.map((adapter) => adapter.detect()));
-  return [...detected, mockProvider].sort((a, b) => a.priority - b.priority);
+  const providers = options.mockEnabled === false ? detected : [...detected, mockProvider];
+  return providers.sort((a, b) => a.priority - b.priority);
 }
 
-export function chooseActiveProvider(providers: ProviderRecord[]): ProviderRecord {
+export function chooseActiveProvider(providers: ProviderRecord[], options: { mockEnabled?: boolean } = {}): ProviderRecord | undefined {
   return providers.find((provider) => provider.status === 'preferred')
     || providers.find((provider) => provider.status === 'available')
-    || mockProvider;
+    || (options.mockEnabled === false ? undefined : mockProvider);
 }

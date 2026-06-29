@@ -66,7 +66,7 @@ export class FileStore {
     await mkdir(this.dir, { recursive: true });
     try {
       const raw = await readFile(this.manifestPath, 'utf8');
-      const parsed = JSON.parse(raw) as FileStoreSnapshot;
+      const parsed = JSON.parse(raw.replace(/^\uFEFF/, '')) as FileStoreSnapshot;
       this.items = new Map((Array.isArray(parsed.items) ? parsed.items : []).filter((item) => item && item.id).map((item) => [item.id, item]));
     } catch (error) {
       const code = (error as { code?: string }).code;

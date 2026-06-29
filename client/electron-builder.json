@@ -1,0 +1,33 @@
+{
+  "appId": "dev.agenthub.reika",
+  "productName": "AgentHub",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist-desktop/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "dist",
+      "to": "client-dist"
+    },
+    {
+      "from": "assets/agenthub_phase1/brand",
+      "to": "assets/brand"
+    }
+  ],
+  "win": {
+    "target": ["nsis"],
+    "signAndEditExecutable": false,
+    "signDlls": false
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "AgentHub"
+  }
+}

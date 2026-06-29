@@ -6,9 +6,12 @@ import { EventBus } from './core/eventBus.js';
 import { StateStore } from './core/stateStore.js';
 import { CommandDispatcher } from './modules/commands/dispatcher.js';
 import { FileStore, publicFile } from './modules/file/fileStore.js';
+import { NotificationStore } from './modules/notification/notificationStore.js';
 import { getProviderHistoryMessages, listProviderHistorySessions, runProviderChat, type ProviderChatEvent, type ProviderChatMessage, type ProviderHistoryMessage, type ProviderHistorySession } from './modules/provider/providerRuntime.js';
+import { SettingsStore } from './modules/settings/settingsStore.js';
 import { SessionStore, type ChatMessageRecord, type ChatSessionRecord } from './modules/session/sessionStore.js';
 import { RelayClient } from './modules/uplink/relayClient.js';
+import { applyGitHubUpdate, getUpdateStatus, updateTargetsEnabled } from './modules/update/updateService.js';
 import { openLocalUrl } from './platform/openBrowser.js';
 import { shouldOpenPairingUi } from './platform/runtime.js';
 import { disableStartup, enableStartup, formatStartupStatus, getStartupStatus } from './platform/startup.js';
@@ -59,6 +62,8 @@ const events = new EventBus();
 const state = new StateStore();
 const sessions = new SessionStore();
 const files = new FileStore();
+const settings = new SettingsStore();
+const notifications = new NotificationStore();
 const deviceEndpoint = { kind: 'device' as const, id: serverConfig.uplink.deviceId };
 const appEndpoint = { kind: 'app' as const, id: 'local-simulator' };
 const dispatcher = new CommandDispatcher(state, deviceEndpoint, async (payload) => {
@@ -99,11 +104,15 @@ const relayClient = new RelayClient(state, events, async (payload) => {
 events.emit('server.boot', { serviceName: serverConfig.serviceName });
 
 async function boot() {
+  await settings.load();
+  await notifications.load();
   await sessions.load();
   await files.load();
+  events.emit('settings.loaded', settings.snapshot());
+  events.emit('notifications.loaded', notifications.snapshot());
   events.emit('session.store.loaded', sessions.snapshot());
   events.emit('file.store.loaded', files.snapshot());
-  await state.refreshProviders();
+  await state.refreshProviders({ mockEnabled: settings.get().mockEnabled });
   events.emit('provider.state', state.snapshot().providers);
   relayClient.start();
   if (cli.mode === 'pair') {
@@ -114,15 +123,81 @@ async function boot() {
     });
   }
   events.emit('server.ready', fullSnapshot());
+  void runConfiguredUpdateCheck();
 }
 
 function fullSnapshot() {
   return {
     ...state.snapshot(),
+    settings: settings.get(),
+    settingsStore: settings.snapshot(),
+    notifications: notifications.snapshot(),
     sessionStore: sessions.snapshot(),
     fileStore: files.snapshot(),
     uplink: relayClient.snapshot()
   };
+}
+
+function summarizeUpdateFiles(files: { path: string }[]) {
+  if (!files.length) return 'No file list was reported.';
+  const first = files.slice(0, 6).map((file) => file.path).join(', ');
+  const extra = files.length > 6 ? `, and ${files.length - 6} more` : '';
+  return `${first}${extra}`;
+}
+
+function updateDescriptionText(descriptions: { title: string; body?: string }[]) {
+  if (!descriptions.length) return 'No update description was provided.';
+  const [first] = descriptions;
+  return first.body ? `${first.title}: ${first.body}` : first.title;
+}
+
+function notifyUpdateAvailable(status: Awaited<ReturnType<typeof getUpdateStatus>>) {
+  if (!status.available) return;
+  notifications.add({
+    kind: 'system',
+    title: 'AgentHub update available',
+    body: `${status.message} Changed files: ${summarizeUpdateFiles(status.files)}. ${updateDescriptionText(status.descriptions)}`,
+    source: 'github',
+    tone: 'blue',
+    data: { update: status }
+  });
+}
+
+function notifyUpdateApplied(result: Awaited<ReturnType<typeof applyGitHubUpdate>>) {
+  notifications.add({
+    kind: 'system',
+    title: result.applied ? 'AgentHub updated from GitHub' : 'AgentHub update checked',
+    body: `${result.message} Changed files: ${summarizeUpdateFiles(result.files)}. ${updateDescriptionText(result.descriptions)}`,
+    source: 'github',
+    tone: result.applied ? 'green' : 'blue',
+    data: { update: result }
+  });
+}
+
+async function runConfiguredUpdateCheck() {
+  const currentSettings = settings.get();
+  try {
+    const status = await getUpdateStatus(currentSettings);
+    events.emit('updates.checked', status);
+    if (!status.available) return;
+    if (updateTargetsEnabled(currentSettings)) {
+      const result = await applyGitHubUpdate(currentSettings);
+      events.emit('updates.applied', result);
+      notifyUpdateApplied(result);
+      return;
+    }
+    notifyUpdateAvailable(status);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    events.emit('updates.error', { error: message });
+    notifications.add({
+      kind: 'warning',
+      title: 'AgentHub update check failed',
+      body: message,
+      source: 'github',
+      tone: 'orange'
+    });
+  }
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown) {
@@ -295,6 +370,7 @@ async function runChatTurn(input: { sessionId?: string; providerId?: string; age
   const context = attachmentContext(input.fileIds);
   const userMessage = appendMessage(session, 'user', input.message, { providerId: session.providerId, agent: session.agent, files: attachedFiles });
   const providers = state.snapshot().providers;
+  if (input.providerId === 'mock-local' && !settings.get().mockEnabled) throw new Error('Mock provider is disabled in AgentHub settings.');
   const handler = (event: ProviderChatEvent) => {
     emitChatEvent(event, session);
     onEvent?.(event);
@@ -316,13 +392,22 @@ async function runChatTurn(input: { sessionId?: string; providerId?: string; age
     session.providerId = result.providerId;
     session.agent = result.agentId;
     if (result.metadata?.hermesProfile) session.metadata.hermesProfile = result.metadata.hermesProfile;
+    if (result.metadata?.hermesSource) session.metadata.hermesSource = result.metadata.hermesSource;
     const providerSessionIds = typeof session.metadata.providerSessionIds === 'object' && session.metadata.providerSessionIds
       ? session.metadata.providerSessionIds as Record<string, string>
       : {};
     providerSessionIds[result.providerId] = result.sessionId;
     session.metadata.providerSessionIds = providerSessionIds;
-    if (result.runtime === 'hermes') session.metadata.hermesSessionId = result.sessionId;
+    if (result.runtime === 'hermes') session.metadata.hermesSessionId = typeof result.metadata?.hermesSessionId === 'string' ? result.metadata.hermesSessionId : result.sessionId;
     const assistantMessage = appendMessage(session, 'assistant', result.text, { providerId: result.providerId, agent: result.agentId, runtime: result.runtime, files: [] });
+    notifications.add({
+      kind: 'chat',
+      title: `${result.runtime === 'mock' ? 'Mock' : result.agentId} replied`,
+      body: result.text.slice(0, 160) || 'A chat response completed.',
+      source: result.providerId,
+      tone: result.runtime === 'mock' ? 'gray' : 'blue',
+      data: { sessionId: session.id, providerId: result.providerId, agent: result.agentId }
+    });
     return { session, userMessage, assistantMessage, result };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -336,12 +421,20 @@ function writeSse(res: http.ServerResponse, event: string, data: unknown) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+function providerTone(kind: string) {
+  if (kind === 'commandcenter') return 'blue';
+  if (kind === 'openclaw') return 'purple';
+  if (kind === 'hermes') return 'green';
+  if (kind === 'mock') return 'gray';
+  return 'blue';
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host || `${serverConfig.host}:${serverConfig.port}`}`);
 
     if (req.method === 'GET' && url.pathname === '/health') {
-      sendJson(res, 200, { ok: true, service: serverConfig.serviceName, status: 'ready', uplink: relayClient.snapshot() });
+      sendJson(res, 200, { ok: true, service: serverConfig.serviceName, status: 'ready', settings: settings.snapshot(), notifications: notifications.snapshot(), uplink: relayClient.snapshot() });
       return;
     }
 
@@ -353,10 +446,116 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && url.pathname === '/providers/refresh') {
-      await state.refreshProviders();
+      await state.refreshProviders({ mockEnabled: settings.get().mockEnabled });
       events.emit('provider.state', state.snapshot().providers);
+      const snapshot = state.snapshot();
+      const activeProvider = snapshot.providers.find((provider) => provider.id === snapshot.activeProviderId);
+      notifications.add({
+        kind: activeProvider ? 'provider' : 'warning',
+        title: activeProvider ? `${activeProvider.name} is active` : 'No active provider found',
+        body: activeProvider ? activeProvider.notes : settings.get().mockEnabled ? 'No provider was selected.' : 'Mock is disabled and no live provider is available.',
+        source: activeProvider?.id ?? 'provider-refresh',
+        tone: activeProvider ? providerTone(activeProvider.kind) : 'orange',
+        data: { activeProviderId: snapshot.activeProviderId, providerCount: snapshot.providers.length }
+      });
       relayClient.sendStateSnapshots();
       sendJson(res, 200, { ok: true, ...fullSnapshot() });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/settings') {
+      sendJson(res, 200, { ok: true, settings: settings.get(), storage: settings.snapshot() });
+      return;
+    }
+
+    if (req.method === 'PATCH' && url.pathname === '/settings') {
+      const body = await readJson(req);
+      const before = settings.get();
+      const next = settings.update({
+        language: typeof body.language === 'string' ? body.language : undefined,
+        startupView: typeof body.startupView === 'string' ? body.startupView as typeof before.startupView : undefined,
+        minimizeToTray: typeof body.minimizeToTray === 'boolean' ? body.minimizeToTray : undefined,
+        mockEnabled: typeof body.mockEnabled === 'boolean' ? body.mockEnabled : undefined,
+        autoUpdateServer: typeof body.autoUpdateServer === 'boolean' ? body.autoUpdateServer : undefined,
+        autoUpdateClient: typeof body.autoUpdateClient === 'boolean' ? body.autoUpdateClient : undefined,
+        developerDiagnostics: typeof body.developerDiagnostics === 'boolean' ? body.developerDiagnostics : undefined
+      });
+      if (before.mockEnabled !== next.mockEnabled) {
+        await state.refreshProviders({ mockEnabled: next.mockEnabled });
+        events.emit('provider.state', state.snapshot().providers);
+        relayClient.sendStateSnapshots();
+        notifications.add({
+          kind: 'system',
+          title: next.mockEnabled ? 'Mock provider enabled' : 'Mock provider disabled',
+          body: next.mockEnabled ? 'Mock fallback is available again.' : 'Mock fallback is disabled across the local app.',
+          source: 'settings',
+          tone: next.mockEnabled ? 'green' : 'orange',
+          data: { mockEnabled: next.mockEnabled }
+        });
+      }
+      if ((!before.autoUpdateServer && next.autoUpdateServer) || (!before.autoUpdateClient && next.autoUpdateClient)) {
+        void runConfiguredUpdateCheck();
+      }
+      events.emit('settings.updated', next);
+      sendJson(res, 200, { ok: true, settings: next, state: fullSnapshot() });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/updates/status') {
+      const status = await getUpdateStatus(settings.get());
+      if (status.available) notifyUpdateAvailable(status);
+      sendJson(res, 200, status);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/updates/check') {
+      const status = await getUpdateStatus(settings.get());
+      events.emit('updates.checked', status);
+      if (status.available) notifyUpdateAvailable(status);
+      sendJson(res, 200, status);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/updates/apply') {
+      const result = await applyGitHubUpdate(settings.get());
+      events.emit('updates.applied', result);
+      notifyUpdateApplied(result);
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/notifications') {
+      const unreadOnly = url.searchParams.get('unread') === 'true';
+      const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') || 100) || 100));
+      sendJson(res, 200, { ok: true, storage: notifications.snapshot(), notifications: notifications.list({ unreadOnly, limit }) });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/notifications/read-all') {
+      const count = notifications.markAllRead();
+      sendJson(res, 200, { ok: true, count, storage: notifications.snapshot(), notifications: notifications.list() });
+      return;
+    }
+
+    const notificationReadMatch = url.pathname.match(/^\/notifications\/([^/]+)\/read$/);
+    if (req.method === 'POST' && notificationReadMatch) {
+      const notification = notifications.markRead(decodeURIComponent(notificationReadMatch[1] || ''));
+      if (!notification) {
+        sendJson(res, 404, { ok: false, error: 'Notification not found', code: 'NOTIFICATION_NOT_FOUND' });
+        return;
+      }
+      sendJson(res, 200, { ok: true, notification, storage: notifications.snapshot() });
+      return;
+    }
+
+    const notificationDeleteMatch = url.pathname.match(/^\/notifications\/([^/]+)$/);
+    if (req.method === 'DELETE' && notificationDeleteMatch) {
+      const deleted = notifications.delete(decodeURIComponent(notificationDeleteMatch[1] || ''));
+      if (!deleted) {
+        sendJson(res, 404, { ok: false, error: 'Notification not found', code: 'NOTIFICATION_NOT_FOUND' });
+        return;
+      }
+      sendJson(res, 200, { ok: true, storage: notifications.snapshot(), notifications: notifications.list() });
       return;
     }
 
@@ -531,6 +730,7 @@ const server = http.createServer(async (req, res) => {
       }
       const item = await files.link({ url: sourceUrl, name: typeof body.name === 'string' ? body.name : undefined, notes: typeof body.notes === 'string' ? body.notes : undefined });
       events.emit('file.linked', publicFile(item));
+      notifications.add({ kind: 'file', title: 'Link attached', body: `${item.name} is available for Reika chat context.`, source: 'files', tone: 'purple', data: { fileId: item.id } });
       sendJson(res, 200, { ok: true, item: publicFile(item) });
       return;
     }
@@ -554,6 +754,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       events.emit('file.uploaded', { count: items.length });
+      notifications.add({ kind: 'file', title: 'File upload complete', body: `${items.length} ${items.length === 1 ? 'file is' : 'files are'} available for chat context.`, source: 'files', tone: 'purple', data: { count: items.length } });
       sendJson(res, 200, { ok: true, items });
       return;
     }
@@ -608,6 +809,7 @@ const server = http.createServer(async (req, res) => {
         imported.push({ providerSessionId: record.providerSessionId, session: publicSession(result.session), created: result.created, messageCount: result.messageCount });
       }
       events.emit('chat.history.imported', { providerId, count: imported.length });
+      notifications.add({ kind: 'provider', title: 'Provider history imported', body: `${imported.length} sessions imported from ${providerId}.`, source: providerId, tone: 'green', data: { providerId, count: imported.length } });
       sendJson(res, 200, { ok: true, providerId, imported });
       return;
     }
@@ -653,6 +855,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       relayClient.connectWith({ relayUrl, pairingToken, deviceId: deviceId || undefined });
+      notifications.add({ kind: 'device', title: 'Relay uplink connecting', body: `Connecting this device to ${relayUrl}.`, source: 'uplink', tone: 'blue', data: { relayUrl, deviceId: deviceId || undefined } });
       sendJson(res, 200, { ok: true, uplink: relayClient.snapshot() });
       return;
     }
@@ -675,6 +878,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && url.pathname === '/uplink/disconnect') {
       relayClient.stop();
+      notifications.add({ kind: 'device', title: 'Relay uplink disconnected', body: 'This device stopped its relay uplink.', source: 'uplink', tone: 'orange' });
       sendJson(res, 200, { ok: true, uplink: relayClient.snapshot() });
       return;
     }
@@ -690,6 +894,15 @@ const server = http.createServer(async (req, res) => {
       endpoints: [
         'GET /health',
         'GET /state',
+        'GET /settings',
+        'PATCH /settings',
+        'GET /updates/status',
+        'POST /updates/check',
+        'POST /updates/apply',
+        'GET /notifications',
+        'POST /notifications/:id/read',
+        'POST /notifications/read-all',
+        'DELETE /notifications/:id',
         'GET /providers',
         'GET /providers/:id/agents',
         'GET /providers/:id/history',

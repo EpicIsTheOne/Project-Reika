@@ -11,5 +11,7 @@ server/dist
 server/release
 client/node_modules
 client/dist
+client/dist-desktop
+client/release
 Relay/node_modules
 Relay/dist

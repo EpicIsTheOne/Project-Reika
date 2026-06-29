@@ -31,6 +31,7 @@ Included now:
 - provider-native session id mapping persistence for provider continuity
 - provider-native history preview/import for CommandCenter and Hermes
 - CommandCenter-style session search/detail and file/link attachment endpoints
+- GitHub update check/apply endpoints with changed-file and description reporting
 - SSE turn lifecycle events for local chat calls
 - tested against the dev relay in `../Relay`
 - no external uplink enabled by default
@@ -91,6 +92,9 @@ Development endpoints:
 - `GET /providers/:id/agents`
 - `GET /providers/:id/history`
 - `POST /providers/:id/history/import`
+- `GET /updates/status`
+- `POST /updates/check`
+- `POST /updates/apply`
 - `GET /sessions`
 - `GET /sessions/search`
 - `GET /sessions/:id`
@@ -114,6 +118,32 @@ Development endpoints:
 - `POST /commands/simulate`
 
 These endpoints expose local server/provider/uplink state for development. They are not the final external connection contract.
+
+## GitHub Updates
+
+The server can compare the local clone against:
+
+```text
+EpicIsTheOne/Project-Reika main
+```
+
+Override targets with:
+
+```env
+REIKA_UPDATE_REPO_OWNER=EpicIsTheOne
+REIKA_UPDATE_REPO_NAME=Project-Reika
+REIKA_UPDATE_BRANCH=main
+REIKA_GITHUB_API_BASE=https://api.github.com
+```
+
+`GET /updates/status` and `POST /updates/check` report:
+
+- update availability
+- commit titles/bodies as update descriptions
+- changed file paths and statuses
+- local/remote git state
+
+`POST /updates/apply` runs a conservative `git pull --ff-only origin main` when the server is running from a git clone. It refuses automatic application if the local clone has commits ahead of GitHub. Settings has separate `autoUpdateServer` and `autoUpdateClient` toggles; if either is enabled, startup checks GitHub and applies a safe fast-forward update.
 
 ## Uplink Config
 

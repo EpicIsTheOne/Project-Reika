@@ -105,10 +105,91 @@ export interface ReikaStartupStatus {
   message?: string;
 }
 
+export interface ReikaHealthResponse {
+  ok: true;
+  service: string;
+  status: string;
+  settings?: unknown;
+  notifications?: unknown;
+  uplink?: ReikaUplinkSnapshot;
+}
+
+export interface ReikaSettings {
+  version: 1;
+  language: string;
+  startupView: "home" | "chat" | "devices" | "notifications" | "settings";
+  minimizeToTray: boolean;
+  mockEnabled: boolean;
+  autoUpdateServer: boolean;
+  autoUpdateClient: boolean;
+  developerDiagnostics: boolean;
+  updatedAt: string;
+}
+
+export interface ReikaUpdateFileChange {
+  path: string;
+  status: string;
+  additions?: number;
+  deletions?: number;
+}
+
+export interface ReikaUpdateDescription {
+  sha: string;
+  title: string;
+  body?: string;
+  author?: string;
+  date?: string;
+}
+
+export interface ReikaUpdateStatus {
+  ok: true;
+  supported: boolean;
+  repoRoot?: string;
+  branch?: string;
+  localSha?: string;
+  remoteSha?: string;
+  behindBy: number;
+  aheadBy: number;
+  available: boolean;
+  files: ReikaUpdateFileChange[];
+  descriptions: ReikaUpdateDescription[];
+  message: string;
+  checkedAt: string;
+  settings?: {
+    autoUpdateServer: boolean;
+    autoUpdateClient: boolean;
+  };
+  applied?: boolean;
+  applyOutput?: string;
+}
+
+export type ReikaNotificationKind = "agent" | "device" | "provider" | "chat" | "file" | "system" | "warning";
+export type ReikaNotificationTone = "blue" | "green" | "purple" | "orange" | "red" | "gray" | "pink";
+
+export interface ReikaNotification {
+  id: string;
+  kind: ReikaNotificationKind;
+  title: string;
+  body: string;
+  source: string;
+  tone: ReikaNotificationTone;
+  unread: boolean;
+  createdAt: string;
+  readAt?: string;
+  data?: Record<string, unknown>;
+}
+
 export interface ReikaStateResponse {
   ok: true;
   device: ReikaDeviceSnapshot;
   activeProviderId: string;
+  settings?: ReikaSettings;
+  notifications?: {
+    count: number;
+    unreadCount: number;
+    loaded: boolean;
+    path?: string;
+  };
   providerDetection?: {
     lastDetectionAt?: string;
     priority?: string[];
@@ -163,8 +244,61 @@ export class ReikaApiError extends Error {
 
 const API_BASE = "/agent";
 
+export async function getHealth() {
+  return request<ReikaHealthResponse>("/health");
+}
+
 export async function getState() {
   return request<ReikaStateResponse>("/state");
+}
+
+export async function getSettings() {
+  return request<{ ok: true; settings: ReikaSettings; storage?: unknown }>("/settings");
+}
+
+export async function patchSettings(input: Partial<Omit<ReikaSettings, "version" | "updatedAt">>) {
+  return request<{ ok: true; settings: ReikaSettings; state: ReikaStateResponse }>("/settings", {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getUpdateStatus() {
+  return request<ReikaUpdateStatus>("/updates/status");
+}
+
+export async function checkForUpdates() {
+  return request<ReikaUpdateStatus>("/updates/check", { method: "POST" });
+}
+
+export async function applyUpdates() {
+  return request<ReikaUpdateStatus>("/updates/apply", { method: "POST" });
+}
+
+export async function listNotifications(input: { unreadOnly?: boolean; limit?: number } = {}) {
+  const params = compactParams({
+    unread: input.unreadOnly ? "true" : undefined,
+    limit: input.limit
+  });
+  return request<{ ok: true; storage: { count: number; unreadCount: number; loaded: boolean }; notifications: ReikaNotification[] }>(`/notifications${params}`);
+}
+
+export async function markNotificationRead(id: string) {
+  return request<{ ok: true; notification: ReikaNotification; storage: { count: number; unreadCount: number; loaded: boolean } }>(`/notifications/${encodeURIComponent(id)}/read`, {
+    method: "POST"
+  });
+}
+
+export async function markAllNotificationsRead() {
+  return request<{ ok: true; count: number; storage: { count: number; unreadCount: number; loaded: boolean }; notifications: ReikaNotification[] }>("/notifications/read-all", {
+    method: "POST"
+  });
+}
+
+export async function deleteNotification(id: string) {
+  return request<{ ok: true; storage: { count: number; unreadCount: number; loaded: boolean }; notifications: ReikaNotification[] }>(`/notifications/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
 }
 
 export async function getProviders() {

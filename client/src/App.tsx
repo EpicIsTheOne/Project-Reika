@@ -57,22 +57,34 @@ import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatu
 import { chatMessages, devices as mockDevices, reikaProfile } from "./data/mockData";
 import {
   chat,
+  applyUpdates,
+  checkForUpdates,
   createSession,
+  deleteNotification,
+  getHealth,
   getSessionMessages,
+  getSettings,
   getState,
-  importProviderHistory,
+  getUpdateStatus,
+  getUplink,
   linkFile,
-  listFiles,
+  listNotifications,
   listSessions,
+  markAllNotificationsRead,
+  markNotificationRead,
+  patchSettings,
   postSessionMessage,
   refreshProviders,
   searchSessions,
   uploadFiles,
   type ReikaChatMessage,
   type ReikaFileItem,
+  type ReikaNotification,
   type ReikaProviderRecord,
   type ReikaSessionSummary,
-  type ReikaStateResponse
+  type ReikaSettings,
+  type ReikaStateResponse,
+  type ReikaUpdateStatus
 } from "./lib/reikaApi";
 import type { Agent, ChatMessage, Device, Provider, Status, View } from "./types";
 
@@ -87,40 +99,136 @@ const statusLabels: Record<Status, string> = {
 };
 
 type BackendMode = "loading" | "live" | "fallback";
+type BootStepState = "idle" | "active" | "done" | "error";
+
+interface BootStep {
+  id: "health" | "settings" | "state" | "notifications" | "uplink" | "startup" | "relay";
+  label: string;
+  icon: ElementType;
+  state: BootStepState;
+  detail?: string;
+}
 
 const navItems = [
   { key: "home", route: "home" as const, label: "Home", icon: Home },
   { key: "chat", route: "chat" as const, label: "Chats", icon: MessageCircle },
   { key: "devices", route: "devices" as const, label: "Devices", icon: Monitor },
-  { key: "notifications", route: "notifications" as const, label: "Notifications", icon: Bell, badge: "3" },
+  { key: "notifications", route: "notifications" as const, label: "Notifications", icon: Bell },
   { key: "settings", route: "settings" as const, label: "Settings", icon: Settings }
 ];
+
+const defaultSettings: ReikaSettings = {
+  version: 1,
+  language: "English",
+  startupView: "home",
+  minimizeToTray: true,
+  mockEnabled: true,
+  autoUpdateServer: false,
+  autoUpdateClient: false,
+  developerDiagnostics: false,
+  updatedAt: new Date(0).toISOString()
+};
+
+const emptyDevice: Device = {
+  id: "offline-local",
+  name: "Local Agent Offline",
+  type: "unknown",
+  status: "offline",
+  location: "Local",
+  providers: []
+};
 
 export function App() {
   const [view, setView] = useState<View>("loading");
   const [selectedAgentId, setSelectedAgentId] = useState("reika");
   const [appDevices, setAppDevices] = useState<Device[]>(mockDevices);
   const [reikaState, setReikaState] = useState<ReikaStateResponse | null>(null);
+  const [settings, setSettings] = useState<ReikaSettings>(defaultSettings);
+  const [notifications, setNotifications] = useState<ReikaNotification[]>([]);
+  const [bootSteps, setBootSteps] = useState<BootStep[]>(() => createBootSteps());
+  const [bootReady, setBootReady] = useState(false);
   const [backendMode, setBackendMode] = useState<BackendMode>("loading");
   const [backendError, setBackendError] = useState<string | null>(null);
+  const [pairingOpenRequest, setPairingOpenRequest] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    const startedAt = Date.now();
 
-    getState()
-      .then((state) => {
+    const markBootStep = (id: BootStep["id"], state: BootStepState, detail?: string) => {
+      if (cancelled) return;
+      setBootSteps((current) => current.map((step) => (step.id === id ? { ...step, state, detail } : step)));
+    };
+
+    const runBoot = async () => {
+      setBackendMode("loading");
+      setBackendError(null);
+      markBootStep("health", "active");
+      try {
+        await getHealth();
+        markBootStep("health", "done", "Server ready");
+      } catch (error) {
+        markBootStep("health", "error", "Server offline");
+        throw error;
+      }
+
+      markBootStep("settings", "active");
+      const settingsResponse = await getSettings();
+      if (cancelled) return;
+      setSettings(settingsResponse.settings);
+      markBootStep("settings", "done", settingsResponse.settings.mockEnabled ? "Mock available" : "Mock disabled");
+
+      markBootStep("state", "active");
+      const state = await getState();
+      if (cancelled) return;
+      setReikaState(state);
+      if (state.settings) setSettings(state.settings);
+      setAppDevices([mapReikaStateToDevice(state)]);
+      markBootStep("state", "done", `${state.providers.length} providers`);
+
+      markBootStep("notifications", "active");
+      try {
+        const notificationResponse = await listNotifications({ limit: 100 });
+        if (!cancelled) setNotifications(notificationResponse.notifications);
+        markBootStep("notifications", "done", `${notificationResponse.storage.unreadCount} unread`);
+      } catch (error) {
+        markBootStep("notifications", "error", "Inbox unavailable");
+      }
+
+      markBootStep("uplink", "active");
+      markBootStep("startup", "active");
+      const [uplinkResult, startupResult] = await Promise.allSettled([getUplink(), getLocalAgentStartup()]);
+      markBootStep("uplink", uplinkResult.status === "fulfilled" ? "done" : "error", uplinkResult.status === "fulfilled" ? String(uplinkResult.value.uplink.status ?? "Checked") : "Unavailable");
+      markBootStep("startup", startupResult.status === "fulfilled" ? "done" : "error", startupResult.status === "fulfilled" ? (startupResult.value.enabled ? "Enabled" : "Disabled") : "Unavailable");
+
+      markBootStep("relay", "active");
+      try {
+        const response = await fetch("/v1/health");
+        markBootStep("relay", response.ok ? "done" : "error", response.ok ? "Relay ready" : "Relay offline");
+      } catch {
+        markBootStep("relay", "error", "Relay offline");
+      }
+
+      if (cancelled) return;
+      setBackendMode("live");
+      setBackendError(null);
+      const wait = Math.max(0, 650 - (Date.now() - startedAt));
+      window.setTimeout(() => {
         if (cancelled) return;
-        setReikaState(state);
-        setAppDevices([mapReikaStateToDevice(state)]);
-        setBackendMode("live");
-        setBackendError(null);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setAppDevices(mockDevices);
-        setBackendMode("fallback");
-        setBackendError(error instanceof Error ? error.message : String(error));
-      });
+        setBootReady(true);
+        setView((current) => (current === "loading" ? state.settings?.startupView ?? settingsResponse.settings.startupView : current));
+      }, wait);
+    };
+
+    runBoot().catch((error) => {
+      if (cancelled) return;
+      const message = error instanceof Error ? error.message : String(error);
+      setBackendMode("fallback");
+      setBackendError(message);
+      setBootReady(true);
+      setBootSteps((current) => current.map((step) => (step.state === "idle" || step.state === "active" ? { ...step, state: "error", detail: "Skipped" } : step)));
+      setAppDevices(settings.mockEnabled ? mockDevices : [emptyDevice]);
+    });
 
     return () => {
       cancelled = true;
@@ -158,22 +266,35 @@ export function App() {
       });
   };
 
+  const unreadCount = notifications.filter((item) => item.unread).length;
+
+  const refreshNotifications = () => {
+    listNotifications({ limit: 100 })
+      .then((response) => setNotifications(response.notifications))
+      .catch(() => undefined);
+  };
+
   if (view === "loading") {
     return (
       <div className="app-root">
-        <LoadingScreen mode={backendMode} error={backendError} onEnter={() => setView("home")} />
+        <LoadingScreen steps={bootSteps} ready={bootReady} mode={backendMode} error={backendError} onEnter={() => setView(settings.startupView)} />
       </div>
     );
   }
 
   return (
     <div className="app-root">
-      <AppShell activeView={view} backendMode={backendMode} onNavigate={setView}>
+      <AppShell activeView={view} backendMode={backendMode} notificationCount={unreadCount} onNavigate={setView}>
         {view === "home" && (
           <HomePage
             devices={presentationDevices}
             backendMode={backendMode}
             onScanProviders={handleScanProviders}
+            onOpenNotifications={() => setView("notifications")}
+            onAddDevice={() => {
+              setPairingOpenRequest((value) => value + 1);
+              setView("devices");
+            }}
             onOpenChat={(agentId) => {
               setSelectedAgentId(agentId);
               setView("chat");
@@ -181,40 +302,57 @@ export function App() {
           />
         )}
         {view === "chat" && <ChatView agent={selectedAgent} initialState={reikaState} onBack={() => setView("home")} />}
-        {view === "devices" && <DevicesView localDevices={appDevices} onScanProviders={handleScanProviders} />}
+        {view === "devices" && <DevicesView localDevices={appDevices} pairingOpenRequest={pairingOpenRequest} onScanProviders={handleScanProviders} />}
         {view === "notifications" && (
           <NotificationsView
+            notifications={notifications}
+            onRefresh={refreshNotifications}
+            onUpdateNotifications={setNotifications}
             onOpenChat={() => {
               setSelectedAgentId("reika");
               setView("chat");
             }}
           />
         )}
-        {view === "settings" && <SettingsView backendMode={backendMode} backendError={backendError} />}
+        {view === "settings" && (
+          <SettingsView
+            settings={settings}
+            backendMode={backendMode}
+            backendError={backendError}
+            onSettingsChange={(nextSettings, nextState) => {
+              setSettings(nextSettings);
+              if (nextState) {
+                setReikaState(nextState);
+                setAppDevices([mapReikaStateToDevice(nextState)]);
+              }
+              refreshNotifications();
+            }}
+          />
+        )}
       </AppShell>
     </div>
   );
 }
 
 function LoadingScreen({
+  steps,
+  ready,
   mode,
   error,
   onEnter
 }: {
+  steps: BootStep[];
+  ready: boolean;
   mode: BackendMode;
   error: string | null;
   onEnter: () => void;
 }) {
-  const bootSteps = [
-    { label: "Initializing", icon: Activity, state: "active" },
-    { label: "Connecting", icon: Link2, state: "idle" },
-    { label: "Authenticating", icon: ShieldCheck, state: "idle" },
-    { label: "Loading Agents", icon: Users, state: "idle" },
-    { label: "Preparing Environment", icon: Box, state: "idle" },
-    { label: "Finalizing", icon: CheckCircle2, state: "idle" }
-  ];
+  const doneCount = steps.filter((step) => step.state === "done").length;
+  const completeCount = steps.filter((step) => step.state === "done" || step.state === "error").length;
+  const progress = Math.max(8, Math.round((completeCount / Math.max(steps.length, 1)) * 100));
+  const activeStep = steps.find((step) => step.state === "active") ?? [...steps].reverse().find((step) => step.state === "done") ?? steps[0];
   const systemStatus =
-    mode === "fallback" ? "Fallback mode active" : mode === "live" ? "All systems nominal" : "Scanning local providers";
+    mode === "fallback" ? "Fallback mode active" : mode === "live" ? "All systems nominal" : activeStep?.detail ?? "Scanning local providers";
 
   return (
     <main className="loading-screen">
@@ -229,7 +367,7 @@ function LoadingScreen({
         </div>
 
         <ol className="boot-steps">
-          {bootSteps.map((step) => {
+          {steps.map((step) => {
             const Icon = step.icon;
             return (
               <li className={`boot-step ${step.state}`} key={step.label}>
@@ -265,11 +403,11 @@ function LoadingScreen({
 
         <div className="boot-progress" aria-label="Initializing secure connection">
           <div className="boot-progress-label">
-            <span>Initializing secure connection...</span>
-            <strong>72%</strong>
+            <span>{activeStep?.label ?? "Finalizing"}...</span>
+            <strong>{progress}%</strong>
           </div>
           <div className="boot-progress-track">
-            <span />
+            <span style={{ width: `${progress}%` }} />
           </div>
         </div>
 
@@ -278,10 +416,10 @@ function LoadingScreen({
           <figcaption>Astra</figcaption>
         </figure>
 
-        {error ? <p className="boot-note">{error}</p> : null}
+        {error ? <p className="boot-note">{error}</p> : <p className="boot-note">{doneCount} checks passed. {ready ? "Entering AgentHub." : "Still loading."}</p>}
 
         <button className="boot-enter" onClick={onEnter}>
-          Enter AgentHub
+          {ready ? "Enter AgentHub" : "Skip Boot"}
           <ChevronRight size={18} />
         </button>
       </section>
@@ -298,14 +436,28 @@ function LoadingScreen({
   );
 }
 
+function createBootSteps(): BootStep[] {
+  return [
+    { id: "health", label: "Initializing", icon: Activity, state: "idle" },
+    { id: "settings", label: "Loading Settings", icon: Brush, state: "idle" },
+    { id: "state", label: "Loading Agents", icon: Users, state: "idle" },
+    { id: "notifications", label: "Syncing Notifications", icon: Bell, state: "idle" },
+    { id: "uplink", label: "Checking Relay Uplink", icon: Link2, state: "idle" },
+    { id: "startup", label: "Checking Startup", icon: ShieldCheck, state: "idle" },
+    { id: "relay", label: "Finalizing", icon: CheckCircle2, state: "idle" }
+  ];
+}
+
 function AppShell({
   activeView,
   backendMode,
+  notificationCount,
   onNavigate,
   children
 }: {
   activeView: View;
   backendMode: BackendMode;
+  notificationCount: number;
   onNavigate: (view: View) => void;
   children: ReactNode;
 }) {
@@ -325,10 +477,10 @@ function AppShell({
             const Icon = item.icon;
             const active = activeView === item.route;
             return (
-              <button className={active ? "nav-item active" : "nav-item"} key={item.label} onClick={() => onNavigate(item.route)}>
+              <button className={active ? "nav-item active" : "nav-item"} key={item.label} aria-label={item.label} onClick={() => onNavigate(item.route)}>
                 <Icon size={22} />
                 <span>{item.label}</span>
-                {item.badge ? <strong>{item.badge}</strong> : null}
+                {item.route === "notifications" && notificationCount > 0 ? <strong>{notificationCount}</strong> : null}
               </button>
             );
           })}
@@ -368,11 +520,15 @@ function HomePage({
   devices,
   backendMode,
   onScanProviders,
+  onOpenNotifications,
+  onAddDevice,
   onOpenChat
 }: {
   devices: Device[];
   backendMode: BackendMode;
   onScanProviders: () => void;
+  onOpenNotifications: () => void;
+  onAddDevice: () => void;
   onOpenChat: (agentId: string) => void;
 }) {
   const onlineAgents = devices
@@ -394,7 +550,7 @@ function HomePage({
             <b>{onlineAgents} agents online</b>
           </>
         }
-        action={<NotificationButton />}
+        action={<NotificationButton onClick={onOpenNotifications} />}
       />
 
       <section className="feature-hero">
@@ -428,7 +584,7 @@ function HomePage({
 
       <section className="section-title-row">
         <h2>Your Devices</h2>
-        <button className="secondary-action small" onClick={onScanProviders}>
+        <button className="secondary-action small" onClick={onAddDevice}>
           <Plus size={18} />
           Add Device
         </button>
@@ -468,9 +624,9 @@ function HeaderBar({ title, subtitle, action }: { title: ReactNode; subtitle: Re
   );
 }
 
-function NotificationButton() {
+function NotificationButton({ onClick }: { onClick: () => void }) {
   return (
-    <button className="notification-button" aria-label="Notifications">
+    <button className="notification-button" aria-label="Notifications" onClick={onClick}>
       <Bell size={22} />
       <span />
     </button>
@@ -553,7 +709,10 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
   const [linkName, setLinkName] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Connecting to Reika server...");
-  const [error, setError] = useState<string | null>(null);
+  const [stateError, setStateError] = useState<string | null>(null);
+  const [sessionListError, setSessionListError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.id === selectedProviderId) ?? providers.find((provider) => provider.status === "preferred") ?? providers[0],
@@ -565,6 +724,13 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
   const headerAgentName = selectedLiveAgent?.name ?? agent.name;
   const providerLabel = selectedProvider?.name ?? "Reika Server";
   const deviceName = getReikaDeviceName(serverState) || "Epic PC";
+  const selectedAttachments = files.filter((file) => selectedFileIds.includes(file.id));
+
+  const normalizeChatError = (value: unknown, fallback = "Something went wrong.") => {
+    const raw = value instanceof Error ? value.message : String(value || fallback);
+    if (/^(fetch failed|failed to fetch)$/i.test(raw.trim())) return "Could not reach the local Reika server at `/agent`.";
+    return raw || fallback;
+  };
 
   const loadLiveState = async () => {
     try {
@@ -573,10 +739,10 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
       setProviders(state.providers);
       setSelectedProviderId((current) => current || state.activeProviderId || state.providers[0]?.id || "");
       setStatus(`${state.providers.length} providers detected`);
-      setError(null);
+      setStateError(null);
     } catch (loadError) {
-      setStatus("Preview chat only");
-      setError(loadError instanceof Error ? loadError.message : String(loadError));
+      setStatus("Reika server offline");
+      setStateError(normalizeChatError(loadError, "Could not reach the local Reika server at `/agent`."));
     }
   };
 
@@ -589,24 +755,14 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
         const result = await listSessions({ limit: 30, providerId, agent: agentId });
         setSessions(result.sessions);
       }
-      setError(null);
+      setSessionListError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : String(loadError));
-    }
-  };
-
-  const loadFilesList = async () => {
-    try {
-      const result = await listFiles();
-      setFiles(result.items);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : String(loadError));
+      setSessionListError(normalizeChatError(loadError, "Could not load sessions."));
     }
   };
 
   useEffect(() => {
     void loadLiveState();
-    void loadFilesList();
   }, []);
 
   useEffect(() => {
@@ -638,10 +794,10 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
     getSessionMessages(selectedSessionId)
       .then((result) => {
         setMessages(result.messages.map(mapReikaMessage));
-        setError(null);
+        setSendError(null);
       })
       .catch((loadError) => {
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
+        setSendError(normalizeChatError(loadError, "Could not load that conversation."));
       });
   }, [selectedSessionId]);
 
@@ -653,9 +809,10 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
       setProviders(state.providers);
       setSelectedProviderId(state.activeProviderId || state.providers[0]?.id || "");
       setStatus("Provider scan complete");
-      setError(null);
+      setStateError(null);
+      setSendError(null);
     } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+      setSendError(normalizeChatError(refreshError, "Provider refresh failed."));
     } finally {
       setBusy(false);
     }
@@ -673,9 +830,9 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
       setSelectedSessionId(created.session.id);
       setMessages([]);
       await loadSessionRows();
-      setError(null);
+      setSendError(null);
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : String(createError));
+      setSendError(normalizeChatError(createError, "Could not create a new session."));
     } finally {
       setBusy(false);
     }
@@ -710,9 +867,11 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
       setMessages(refreshed.messages.map(mapReikaMessage));
       await loadSessionRows("", selectedProvider?.id, selectedLiveAgent?.id);
       setStatus(`Routed through ${result.result.runtime}`);
-      setError(null);
+      setFiles((current) => current.filter((file) => !selectedFileIds.includes(file.id)));
+      setSelectedFileIds([]);
+      setSendError(null);
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : String(sendError));
+      setSendError(normalizeChatError(sendError, "Message failed."));
     } finally {
       setBusy(false);
     }
@@ -727,9 +886,9 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
       setSelectedFileIds((current) => [...new Set([result.item.id, ...current])]);
       setLinkUrl("");
       setLinkName("");
-      setError(null);
+      setSendError(null);
     } catch (linkError) {
-      setError(linkError instanceof Error ? linkError.message : String(linkError));
+      setSendError(normalizeChatError(linkError, "Could not attach that link."));
     } finally {
       setBusy(false);
     }
@@ -744,32 +903,21 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
       const result = await uploadFiles(uploadList);
       setFiles((current) => [...result.items, ...current.filter((item) => !result.items.some((next) => next.id === item.id))]);
       setSelectedFileIds((current) => [...new Set([...result.items.map((item) => item.id), ...current])]);
-      setError(null);
+      setSendError(null);
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : String(uploadError));
+      setSendError(normalizeChatError(uploadError, "Could not upload that file."));
     } finally {
       setBusy(false);
     }
   };
 
-  const handleHistoryImport = async (kind: "commandcenter" | "hermes") => {
-    const provider = providers.find((item) => item.kind === kind);
-    if (!provider || busy) return;
-    setBusy(true);
-    try {
-      const result = await importProviderHistory(provider.id, { limit: 25, includeMessages: true });
-      await loadSessionRows("", selectedProvider?.id, selectedLiveAgent?.id);
-      setStatus(`${result.imported.length} ${provider.name} sessions imported`);
-      setError(null);
-    } catch (importError) {
-      setError(importError instanceof Error ? importError.message : String(importError));
-    } finally {
-      setBusy(false);
-    }
+  const removeAttachment = (fileId: string) => {
+    setSelectedFileIds((current) => current.filter((id) => id !== fileId));
+    setFiles((current) => current.filter((file) => file.id !== fileId));
   };
 
-  const visibleMessages = messages.length > 0 ? messages : error ? [] : chatMessages;
-  const canSend = Boolean(draft.trim()) && !busy && Boolean(selectedProvider);
+  const visibleMessages = messages.length > 0 ? messages : sendError || stateError ? [] : chatMessages;
+  const canSend = Boolean(draft.trim()) && !busy && Boolean(selectedProvider) && !stateError;
 
   return (
     <main className="chat-screen">
@@ -841,6 +989,7 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
               <input value={sessionSearch} onChange={(event) => setSessionSearch(event.target.value)} placeholder="Search sessions..." />
             </label>
             <div className="chat-session-list">
+              {sessionListError ? <small className="chat-inline-error">{sessionListError}</small> : null}
               {sessions.length > 0 ? (
                 sessions.map((session) => (
                   <button
@@ -856,48 +1005,6 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
                 <small>No sessions yet</small>
               )}
             </div>
-          </div>
-
-          <div className="chat-attachment-card">
-            <header>
-              <strong>Files</strong>
-              <label>
-                <Plus size={15} />
-                <input type="file" multiple onChange={handleUpload} />
-              </label>
-            </header>
-            <div className="attachment-link-row">
-              <input value={linkName} onChange={(event) => setLinkName(event.target.value)} placeholder="Name" />
-              <input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://..." />
-              <button onClick={handleAddLink} disabled={!linkUrl.trim() || busy}>
-                <Link2 size={15} />
-              </button>
-            </div>
-            <div className="attachment-list">
-              {files.slice(0, 5).map((file) => (
-                <label className={selectedFileIds.includes(file.id) ? "selected" : ""} key={file.id}>
-                  <input
-                    type="checkbox"
-                    checked={selectedFileIds.includes(file.id)}
-                    onChange={(event) => {
-                      setSelectedFileIds((current) =>
-                        event.target.checked ? [...current, file.id] : current.filter((id) => id !== file.id)
-                      );
-                    }}
-                  />
-                  <span>{file.name}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="history-import-card">
-            <button onClick={() => void handleHistoryImport("commandcenter")} disabled={!providers.some((item) => item.kind === "commandcenter") || busy}>
-              Import CommandCenter
-            </button>
-            <button onClick={() => void handleHistoryImport("hermes")} disabled={!providers.some((item) => item.kind === "hermes") || busy}>
-              Import Hermes
-            </button>
           </div>
         </div>
       </aside>
@@ -916,10 +1023,6 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
               {statusLabels[selectedProviderStatus]}
             </p>
           </div>
-          <button className="secondary-action" onClick={() => void handleHistoryImport("commandcenter")} disabled={busy}>
-            <Database size={20} />
-            Import
-          </button>
           <button className="icon-button" onClick={() => void handleRefreshProviders()} disabled={busy} aria-label="Refresh providers">
             <Activity size={22} />
           </button>
@@ -931,7 +1034,8 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
             {status}
             <span />
           </div>
-          {error ? <div className="chat-error-banner">{error}</div> : null}
+          {stateError ? <div className="chat-error-banner">Reika server offline. {stateError}</div> : null}
+          {sendError ? <div className="chat-error-banner">{sendError}</div> : null}
           <div className="message-list">
             {visibleMessages.map((message) => (
               <MessageBubble message={message} key={message.id} />
@@ -949,17 +1053,47 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
 
           <form className="chat-composer" onSubmit={handleSubmit}>
             <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${headerAgentName}...`} />
+            {selectedAttachments.length > 0 ? (
+              <div className="selected-attachment-chips">
+                {selectedAttachments.map((file) => (
+                  <button type="button" className="attachment-chip" key={file.id} onClick={() => removeAttachment(file.id)}>
+                    {file.kind === "link" ? <Link2 size={14} /> : <Plus size={14} />}
+                    <span>{file.name}</span>
+                    <Trash2 size={13} />
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <div className="composer-tools">
-              <button className="icon-button" type="button" aria-label="New session" onClick={handleNewSession} disabled={busy}>
-                <Plus size={22} />
-              </button>
-              <button className="icon-button" type="button" aria-label="Import history" onClick={() => void handleHistoryImport("hermes")} disabled={busy}>
-                <Database size={20} />
-              </button>
+              <div className="composer-attachment-wrap">
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label="Attach file or link"
+                  onClick={() => setAttachmentMenuOpen((current) => !current)}
+                  disabled={busy || Boolean(stateError)}
+                >
+                  <Link2 size={21} />
+                </button>
+                {attachmentMenuOpen ? (
+                  <div className="attachment-popover">
+                    <label className="attachment-upload-button">
+                      <Plus size={15} />
+                      Upload File
+                      <input type="file" multiple onChange={handleUpload} />
+                    </label>
+                    <div className="attachment-link-fields">
+                      <input value={linkName} onChange={(event) => setLinkName(event.target.value)} placeholder="Name" />
+                      <input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://..." />
+                      <button type="button" onClick={handleAddLink} disabled={!linkUrl.trim() || busy}>
+                        <Link2 size={15} />
+                        Add Link
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
-            <button className="icon-button mic-button" type="button" aria-label="Selected files">
-              {selectedFileIds.length || <Link2 size={22} />}
-            </button>
             <button className="send-button" type="submit" aria-label="Send" disabled={!canSend}>
               <Send size={24} />
             </button>
@@ -1297,7 +1431,7 @@ const notificationItems: NotificationItem[] = [
   }
 ];
 
-function DevicesView({ localDevices, onScanProviders }: { localDevices: Device[]; onScanProviders: () => void }) {
+function DevicesView({ localDevices, pairingOpenRequest, onScanProviders }: { localDevices: Device[]; pairingOpenRequest: number; onScanProviders: () => void }) {
   const [selectedId, setSelectedId] = useState("epic-pc");
   const [filterOpen, setFilterOpen] = useState(false);
   const [relayStatus, setRelayStatus] = useState<"connecting" | "online" | "offline">("connecting");
@@ -1354,6 +1488,10 @@ function DevicesView({ localDevices, onScanProviders }: { localDevices: Device[]
         setRelayError(error instanceof Error ? error.message : String(error));
       });
   };
+
+  useEffect(() => {
+    if (pairingOpenRequest > 0) handleCreatePairing();
+  }, [pairingOpenRequest]);
 
   const handleApprovePairing = () => {
     if (!relayPairing) return;
@@ -1841,11 +1979,58 @@ function DetailRow({
   );
 }
 
-function NotificationsView({ onOpenChat }: { onOpenChat: () => void }) {
-  const [selectedId, setSelectedId] = useState("reika-online");
+function NotificationsView({
+  notifications,
+  onRefresh,
+  onUpdateNotifications,
+  onOpenChat
+}: {
+  notifications: ReikaNotification[];
+  onRefresh: () => void;
+  onUpdateNotifications: (notifications: ReikaNotification[]) => void;
+  onOpenChat: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState<string>("");
   const [filter, setFilter] = useState<"all" | "unread">("all");
-  const visibleItems = filter === "all" ? notificationItems : notificationItems.filter((item) => item.unread);
-  const selected = notificationItems.find((item) => item.id === selectedId) ?? notificationItems[0];
+  const visibleItems = useMemo(() => {
+    const source = notifications.length > 0 ? notifications : [];
+    return filter === "all" ? source : source.filter((item) => item.unread);
+  }, [filter, notifications]);
+  const selected = notifications.find((item) => item.id === selectedId) ?? visibleItems[0] ?? null;
+
+  useEffect(() => {
+    onRefresh();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId && visibleItems[0]) setSelectedId(visibleItems[0].id);
+  }, [selectedId, visibleItems]);
+
+  const selectNotification = (item: ReikaNotification) => {
+    setSelectedId(item.id);
+    if (!item.unread) return;
+    markNotificationRead(item.id)
+      .then(({ notification }) => {
+        onUpdateNotifications(notifications.map((current) => (current.id === notification.id ? notification : current)));
+      })
+      .catch(() => undefined);
+  };
+
+  const markAllRead = () => {
+    markAllNotificationsRead()
+      .then(({ notifications }) => onUpdateNotifications(notifications))
+      .catch(() => undefined);
+  };
+
+  const removeSelected = () => {
+    if (!selected) return;
+    deleteNotification(selected.id)
+      .then(({ notifications }) => {
+        onUpdateNotifications(notifications);
+        setSelectedId(notifications[0]?.id ?? "");
+      })
+      .catch(() => undefined);
+  };
 
   return (
     <main className="page notifications-page">
@@ -1857,7 +2042,7 @@ function NotificationsView({ onOpenChat }: { onOpenChat: () => void }) {
           </span>
         </div>
         <div className="workbench-actions">
-          <button className="secondary-action small">
+          <button className="secondary-action small" onClick={markAllRead}>
             <Check size={18} />
             Mark all as read
           </button>
@@ -1874,49 +2059,58 @@ function NotificationsView({ onOpenChat }: { onOpenChat: () => void }) {
 
       <div className="notifications-layout">
         <section className="notification-list-panel" aria-label="Notifications">
-          {visibleItems.map((item) => (
+          {visibleItems.length > 0 ? visibleItems.map((item) => (
             <button
               className={item.id === selectedId ? "notification-row selected" : "notification-row"}
               key={item.id}
-              onClick={() => setSelectedId(item.id)}
+              onClick={() => selectNotification(item)}
             >
               {item.unread ? <span className="unread-dot" /> : null}
               <NotificationIcon item={item} />
               <span className="notification-copy">
                 <strong>{item.title}</strong>
                 <small>{item.body}</small>
-                <b className={`mini-tag ${item.tagTone}`}>{item.tag}</b>
+                <b className={`mini-tag ${notificationTagTone(item)}`}>{notificationTag(item)}</b>
               </span>
-              <time>{item.time}</time>
+              <time>{relativeTime(item.createdAt)}</time>
               {item.unread ? <span className="notification-blue-dot" /> : null}
             </button>
-          ))}
+          )) : <div className="empty-agent-row">No notifications yet</div>}
           <footer className="notification-list-footer">
             <strong>You've reached the end</strong>
-            <small>Showing all notifications</small>
+            <small>{filter === "all" ? "Showing all notifications" : "Showing unread notifications"}</small>
           </footer>
         </section>
 
-        <NotificationDetailPanel item={selected} onOpenChat={onOpenChat} />
+        <NotificationDetailPanel item={selected} onOpenChat={onOpenChat} onDelete={removeSelected} />
       </div>
     </main>
   );
 }
 
-function NotificationIcon({ item }: { item: NotificationItem }) {
+function NotificationIcon({ item }: { item: ReikaNotification }) {
   return (
-    <span className={`notification-icon accent-${item.accent}`}>
-      {item.avatar ? <img src={item.avatar} alt="" /> : item.icon ? <img src={item.icon} alt="" /> : item.providerIcon ? <img src={item.providerIcon} alt="" /> : null}
-      {item.badge ? (
-        <em className={`notification-badge ${item.badge}`}>
-          {item.badge === "check" ? <CheckCircle2 size={13} /> : item.badge === "warning" ? <TriangleAlert size={13} /> : item.badge === "heart" ? <Heart size={12} fill="currentColor" /> : <Activity size={12} />}
+    <span className={`notification-icon accent-${item.tone}`}>
+      <img src={notificationIcon(item)} alt="" />
+      <em className={`notification-badge ${notificationBadge(item)}`}>
+          {notificationBadge(item) === "check" ? <CheckCircle2 size={13} /> : notificationBadge(item) === "warning" ? <TriangleAlert size={13} /> : notificationBadge(item) === "heart" ? <Heart size={12} fill="currentColor" /> : <Activity size={12} />}
         </em>
-      ) : null}
     </span>
   );
 }
 
-function NotificationDetailPanel({ item, onOpenChat }: { item: NotificationItem; onOpenChat: () => void }) {
+function NotificationDetailPanel({ item, onOpenChat, onDelete }: { item: ReikaNotification | null; onOpenChat: () => void; onDelete: () => void }) {
+  if (!item) {
+    return (
+      <aside className="notification-detail-panel">
+        <section className="notification-detail-content">
+          <h2>No notification selected</h2>
+          <p>The inbox is quiet.</p>
+        </section>
+      </aside>
+    );
+  }
+
   return (
     <aside className="notification-detail-panel">
       <div className="notification-detail-hero">
@@ -1929,15 +2123,15 @@ function NotificationDetailPanel({ item, onOpenChat }: { item: NotificationItem;
 
       <section className="notification-detail-content">
         <h2>{item.title}</h2>
-        <time>{item.detailTime}</time>
+        <time>{absoluteTime(item.createdAt)}</time>
         <p>
-          {item.body} You can start a chat or ask her to check on your systems.
+          {item.body}
         </p>
 
         <div className="notification-info-card">
-          <DetailRow label="Agent" value="Reika" icon={Bot} />
-          <DetailRow label="Time" value={item.detailTime} icon={Activity} />
-          <DetailRow label="Source" value="AgentHub System" icon={Box} />
+          <DetailRow label="Type" value={notificationTag(item)} icon={Bot} />
+          <DetailRow label="Time" value={absoluteTime(item.createdAt)} icon={Activity} />
+          <DetailRow label="Source" value={item.source} icon={Box} />
           <button>View Profile</button>
         </div>
 
@@ -1953,7 +2147,7 @@ function NotificationDetailPanel({ item, onOpenChat }: { item: NotificationItem;
           </button>
         </section>
 
-        <button className="danger-action">
+        <button className="danger-action" onClick={onDelete}>
           <Trash2 size={18} />
           Delete Notification
         </button>
@@ -1962,15 +2156,140 @@ function NotificationDetailPanel({ item, onOpenChat }: { item: NotificationItem;
   );
 }
 
-function SettingsView({ backendMode, backendError }: { backendMode: BackendMode; backendError: string | null }) {
+function notificationTag(item: ReikaNotification) {
+  if (item.kind === "provider") return "Provider";
+  if (item.kind === "device") return "Device";
+  if (item.kind === "chat") return "Chat";
+  if (item.kind === "file") return "Files";
+  if (item.kind === "warning") return "Warning";
+  if (item.kind === "agent") return "Reika";
+  return "System";
+}
+
+function notificationTagTone(item: ReikaNotification): NotificationItem["tagTone"] {
+  if (item.tone === "red") return "orange";
+  if (item.tone === "pink") return "blue";
+  return item.tone;
+}
+
+function notificationBadge(item: ReikaNotification): "check" | "warning" | "heart" | "spark" {
+  if (item.kind === "warning" || item.tone === "orange" || item.tone === "red") return "warning";
+  if (item.kind === "chat" || item.kind === "agent") return "heart";
+  if (item.kind === "provider" || item.kind === "device") return "check";
+  return "spark";
+}
+
+function notificationIcon(item: ReikaNotification) {
+  if (item.kind === "provider") {
+    const source = item.source.toLowerCase();
+    if (source.includes("openclaw")) return assets.icons.providers.OpenClaw;
+    if (source.includes("command")) return assets.icons.providers.CommandCenter;
+    if (source.includes("mock")) return assets.icons.providers.Mock;
+    return assets.icons.providers.Hermes;
+  }
+  if (item.kind === "device") return assets.icons.devices.pc;
+  if (item.kind === "file") return assets.brand.logoSmall;
+  if (item.kind === "warning") return assets.icons.devices.server;
+  return assets.reika.avatar;
+}
+
+function relativeTime(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "now";
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return "now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+function absoluteTime(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(timestamp);
+}
+
+function SettingsView({
+  settings,
+  backendMode,
+  backendError,
+  onSettingsChange
+}: {
+  settings: ReikaSettings;
+  backendMode: BackendMode;
+  backendError: string | null;
+  onSettingsChange: (settings: ReikaSettings, state?: ReikaStateResponse) => void;
+}) {
+  const [activeTab, setActiveTab] = useState("General");
+  const [busySetting, setBusySetting] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [startupStatus, setStartupStatus] = useState<LocalAgentStartupStatus | null>(null);
+  const [startupBusy, setStartupBusy] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<ReikaUpdateStatus | null>(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
   const settingsTabs = [
-    { title: "General", detail: "Basic preferences", icon: Brush, active: true },
+    { title: "General", detail: "Basic preferences", icon: Brush },
     { title: "Devices", detail: "Manage your devices", icon: Monitor },
     { title: "Providers", detail: "Manage providers", icon: Box },
     { title: "Appearance", detail: "Theme, colors, layout", icon: Palette },
-    { title: "Audio", detail: "Voice & sound settings", icon: Mic },
     { title: "Developer", detail: "Logs, diagnostics, tools", icon: Code2 }
   ];
+
+  useEffect(() => {
+    let active = true;
+    getLocalAgentStartup()
+      .then((status) => {
+        if (active) setStartupStatus(status);
+      })
+      .catch(() => undefined);
+    getUpdateStatus()
+      .then((status) => {
+        if (active) setUpdateStatus(status);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const updateSetting = (key: keyof Omit<ReikaSettings, "version" | "updatedAt">, value: string | boolean) => {
+    setBusySetting(key);
+    setSettingsError(null);
+    patchSettings({ [key]: value } as Partial<Omit<ReikaSettings, "version" | "updatedAt">>)
+      .then(({ settings, state }) => onSettingsChange(settings, state))
+      .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setBusySetting(null));
+  };
+
+  const toggleStartup = () => {
+    setStartupBusy(true);
+    setSettingsError(null);
+    setLocalAgentStartup(!startupStatus?.enabled)
+      .then((status) => setStartupStatus(status))
+      .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setStartupBusy(false));
+  };
+
+  const runUpdateCheck = () => {
+    setUpdateBusy(true);
+    setSettingsError(null);
+    checkForUpdates()
+      .then((status) => setUpdateStatus(status))
+      .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setUpdateBusy(false));
+  };
+
+  const runUpdateApply = () => {
+    setUpdateBusy(true);
+    setSettingsError(null);
+    applyUpdates()
+      .then((status) => setUpdateStatus(status))
+      .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setUpdateBusy(false));
+  };
 
   return (
     <main className="settings-screen">
@@ -2000,7 +2319,7 @@ function SettingsView({ backendMode, backendError }: { backendMode: BackendMode;
             {settingsTabs.map((item) => {
               const Icon = item.icon;
               return (
-                <button className={item.active ? "settings-tab active" : "settings-tab"} key={item.title}>
+                <button className={activeTab === item.title ? "settings-tab active" : "settings-tab"} key={item.title} onClick={() => setActiveTab(item.title)}>
                   <Icon size={26} />
                   <span>
                     <strong>{item.title}</strong>
@@ -2013,41 +2332,93 @@ function SettingsView({ backendMode, backendError }: { backendMode: BackendMode;
           </nav>
 
           <section className="settings-panel">
-            <h2>General</h2>
-            <SettingRow title="Language" detail="Choose your preferred language.">
-              <button className="select-button">
-                <Globe2 size={18} />
-                English
-                <ChevronDown size={18} />
-              </button>
-            </SettingRow>
-            <SettingRow title="Startup Behavior" detail="Choose what happens when AgentHub launches.">
-              <button className="select-button">
-                Open Home
-                <ChevronDown size={18} />
-              </button>
-            </SettingRow>
-            <SettingRow title="Minimize to Tray" detail="Keep AgentHub running in the background.">
-              <Toggle checked />
-            </SettingRow>
-            <SettingRow title="Data & Cache" detail={backendError ?? `Backend mode: ${backendMode}.`}>
-              <button className="secondary-action small">Manage</button>
-            </SettingRow>
-            <button className="security-row">
-              <Shield size={28} />
-              <span>
-                <strong>Security</strong>
-                <small>Manage your account security and sessions.</small>
-              </span>
-              <ChevronRight size={20} />
-            </button>
+            <h2>{activeTab}</h2>
+            {settingsError ? <p className="boot-note">{settingsError}</p> : null}
+            {activeTab === "General" ? (
+              <>
+                <SettingRow title="Language" detail="Choose your preferred language.">
+                  <button className="select-button" onClick={() => updateSetting("language", settings.language === "English" ? "Japanese" : "English")} disabled={busySetting === "language"}>
+                    <Globe2 size={18} />
+                    {settings.language}
+                    <ChevronDown size={18} />
+                  </button>
+                </SettingRow>
+                <SettingRow title="Startup Behavior" detail="Choose what happens when AgentHub launches.">
+                  <button className="select-button" onClick={() => updateSetting("startupView", nextStartupView(settings.startupView))} disabled={busySetting === "startupView"}>
+                    Open {labelView(settings.startupView)}
+                    <ChevronDown size={18} />
+                  </button>
+                </SettingRow>
+                <SettingRow title="Minimize to Tray" detail="Keep AgentHub running in the background.">
+                  <Toggle checked={settings.minimizeToTray} disabled={busySetting === "minimizeToTray"} onClick={() => updateSetting("minimizeToTray", !settings.minimizeToTray)} />
+                </SettingRow>
+                <SettingRow title="Start On Sign In" detail={startupStatus?.message ?? (startupStatus?.enabled ? "Local agent starts with Windows/Linux sign-in." : "Local agent startup is disabled.")}>
+                  <Toggle checked={Boolean(startupStatus?.enabled)} disabled={startupBusy || !startupStatus?.supported} onClick={toggleStartup} />
+                </SettingRow>
+              </>
+            ) : null}
+            {activeTab === "Providers" ? (
+              <>
+                <SettingRow title="Mock Provider" detail={settings.mockEnabled ? "Mock fallback is allowed across the app." : "Mock fallback is disabled across the app."}>
+                  <Toggle checked={settings.mockEnabled} disabled={busySetting === "mockEnabled"} onClick={() => updateSetting("mockEnabled", !settings.mockEnabled)} />
+                </SettingRow>
+                <SettingRow title="Provider Refresh" detail={backendError ?? `Backend mode: ${backendMode}.`}>
+                  <button className="secondary-action small" onClick={() => updateSetting("mockEnabled", settings.mockEnabled)} disabled={Boolean(busySetting)}>Recheck</button>
+                </SettingRow>
+              </>
+            ) : null}
+            {activeTab === "Devices" ? (
+              <>
+                <SettingRow title="Relay Pairing" detail="Use Devices to pair Windows or Linux agents safely through the relay.">
+                  <button className="secondary-action small">Configured</button>
+                </SettingRow>
+                <SettingRow title="Startup Agent" detail={startupStatus?.command ?? "No startup command registered."}>
+                  <StatusPill status={startupStatus?.enabled ? "online" : "offline"} />
+                </SettingRow>
+              </>
+            ) : null}
+            {activeTab === "Appearance" ? (
+              <>
+                <SettingRow title="Theme" detail="Dark AgentHub theme is active for Phase 1.">
+                  <button className="select-button">
+                    <Palette size={18} />
+                    Dark
+                  </button>
+                </SettingRow>
+              </>
+            ) : null}
+            {activeTab === "Developer" ? (
+              <>
+                <SettingRow title="Diagnostics" detail="Show extra backend details while building Project Reika.">
+                  <Toggle checked={settings.developerDiagnostics} disabled={busySetting === "developerDiagnostics"} onClick={() => updateSetting("developerDiagnostics", !settings.developerDiagnostics)} />
+                </SettingRow>
+                <SettingRow title="Server Auto Update" detail={settings.autoUpdateServer ? "Server updates can apply from the GitHub repo on startup." : "Server update checks are manual until enabled."}>
+                  <Toggle checked={settings.autoUpdateServer} disabled={busySetting === "autoUpdateServer"} onClick={() => updateSetting("autoUpdateServer", !settings.autoUpdateServer)} />
+                </SettingRow>
+                <SettingRow title="Client Auto Update" detail={settings.autoUpdateClient ? "Client files can update from the GitHub repo on startup." : "Client update checks are manual until enabled."}>
+                  <Toggle checked={settings.autoUpdateClient} disabled={busySetting === "autoUpdateClient"} onClick={() => updateSetting("autoUpdateClient", !settings.autoUpdateClient)} />
+                </SettingRow>
+                <UpdateStatusCard status={updateStatus} busy={updateBusy} onCheck={runUpdateCheck} onApply={runUpdateApply} />
+                <SettingRow title="Data & Cache" detail={backendError ?? `Backend mode: ${backendMode}.`}>
+                  <button className="secondary-action small">Manage</button>
+                </SettingRow>
+                <button className="security-row">
+                  <Shield size={28} />
+                  <span>
+                    <strong>Security</strong>
+                    <small>Pairing-code approval only in Phase 1.</small>
+                  </span>
+                  <ChevronRight size={20} />
+                </button>
+              </>
+            ) : null}
           </section>
         </div>
 
         <footer className="settings-footer">
           AgentHub v0.1.0
-          <StatusDot status="online" />
-          You're on the latest version
+          <StatusDot status={updateStatus?.available ? "busy" : "online"} />
+          {updateStatus?.available ? `${updateStatus.behindBy} GitHub update${updateStatus.behindBy === 1 ? "" : "s"} available` : "No GitHub update pending"}
         </footer>
       </section>
     </main>
@@ -2064,6 +2435,61 @@ function SettingRow({ title, detail, children }: { title: string; detail: string
       {children}
     </div>
   );
+}
+
+function UpdateStatusCard({ status, busy, onCheck, onApply }: { status: ReikaUpdateStatus | null; busy: boolean; onCheck: () => void; onApply: () => void }) {
+  const description = status?.descriptions[0];
+  const files = status?.files ?? [];
+  return (
+    <div className="update-status-card">
+      <header>
+        <span>
+          <strong>GitHub Updates</strong>
+          <small>{status?.message ?? "Check the Project Reika GitHub repo for updates."}</small>
+        </span>
+        <StatusPill status={status?.available ? "busy" : status?.supported === false ? "offline" : "online"} />
+      </header>
+      {description ? (
+        <div className="update-description">
+          <strong>{description.title}</strong>
+          {description.body ? <small>{description.body}</small> : null}
+        </div>
+      ) : null}
+      {files.length > 0 ? (
+        <div className="update-file-list">
+          {files.slice(0, 8).map((file) => (
+            <span key={`${file.status}-${file.path}`}>
+              <code>{file.status}</code>
+              {file.path}
+            </span>
+          ))}
+          {files.length > 8 ? <small>And {files.length - 8} more files.</small> : null}
+        </div>
+      ) : null}
+      <div className="update-actions">
+        <button className="secondary-action small" type="button" onClick={onCheck} disabled={busy}>
+          Check
+        </button>
+        <button className="primary-action small" type="button" onClick={onApply} disabled={busy || !status?.available || status.supported === false}>
+          Apply Update
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function nextStartupView(view: ReikaSettings["startupView"]): ReikaSettings["startupView"] {
+  const order: ReikaSettings["startupView"][] = ["home", "chat", "devices", "notifications", "settings"];
+  const index = order.indexOf(view);
+  return order[(index + 1) % order.length];
+}
+
+function labelView(view: ReikaSettings["startupView"]) {
+  if (view === "home") return "Home";
+  if (view === "chat") return "Chat";
+  if (view === "devices") return "Devices";
+  if (view === "notifications") return "Notifications";
+  return "Settings";
 }
 
 function Toggle({ checked = false, disabled = false, onClick }: { checked?: boolean; disabled?: boolean; onClick?: () => void }) {

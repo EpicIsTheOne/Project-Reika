@@ -61,6 +61,7 @@ export interface ProviderChatResult {
 const commandCenterBaseUrl = process.env.COMMANDCENTER_LOCAL_API_BASE || 'http://127.0.0.1:3002/commandcenter/api/v1';
 const openClawBin = process.env.OPENCLAW_BIN || 'openclaw';
 const hermesBin = process.env.HERMES_BIN || 'hermes';
+const hermesSessionSource = process.env.HERMES_SESSION_SOURCE || 'cli';
 
 function envWithLocalBin() {
   return { ...process.env, PATH: `${process.env.HOME || ''}/.local/bin:${process.env.PATH || ''}` };
@@ -107,7 +108,7 @@ function parseHermesOutput(stdout = '', stderr = '') {
   let hermesSessionId = '';
   const kept: string[] = [];
   for (const line of lines) {
-    const match = line.match(/^session_id:\s*(.+?)\s*$/i);
+    const match = line.match(/^session(?:_id|\s+id)?:\s*(.+?)\s*$/i);
     if (match) {
       hermesSessionId = String(match[1] || '').trim();
       continue;
@@ -116,6 +117,15 @@ function parseHermesOutput(stdout = '', stderr = '') {
     kept.push(line);
   }
   return { text: kept.join('\n').trim(), hermesSessionId, raw };
+}
+
+async function renameHermesSession(sessionId: string, title: string) {
+  if (!sessionId) return;
+  try {
+    await runCommand(hermesBin, ['sessions', 'rename', sessionId, title], 30000);
+  } catch {
+    // Cosmetic only. Chat success should not depend on Hermes accepting a title.
+  }
 }
 
 export function findProvider(providers: ProviderRecord[], providerId?: string) {
@@ -174,22 +184,33 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
   }
 
   if (provider.kind === 'hermes') {
-    const prompt = buildDirectPrompt(request);
     const profile = String((agent as { hermesProfile?: string; profile?: string }).hermesProfile || (agent as { profile?: string }).profile || (agentId.startsWith('hermes:') ? agentId.slice('hermes:'.length) : agentId === 'hermes' ? 'default' : agentId)).trim();
     const model = String(request.model || agent.model || process.env.HERMES_AGENT_MODEL || '').trim();
     const args = [
       ...(profile ? ['--profile', profile] : []),
-      'chat', '-q', prompt,
+      'chat', '-q', request.message,
       '-Q',
-      '--source', 'project-reika',
+      '--source', hermesSessionSource,
       ...(request.providerSessionId ? ['--resume', request.providerSessionId] : []),
       ...(model ? ['--model', model] : [])
     ];
     const { stdout, stderr } = await runCommand(hermesBin, args);
     const parsed = parseHermesOutput(stdout, stderr);
+    const hermesSessionId = parsed.hermesSessionId || request.providerSessionId || sessionId;
+    if (!request.providerSessionId && parsed.hermesSessionId) {
+      await renameHermesSession(parsed.hermesSessionId, `AgentHub - ${String(agent.name || agentId || 'Reika').trim()}`);
+    }
     onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text: parsed.text } });
-    onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: parsed.hermesSessionId || sessionId } });
-    return { providerId: provider.id, agentId, sessionId: parsed.hermesSessionId || sessionId, runtime: 'hermes', text: parsed.text, raw: parsed.raw, metadata: { hermesProfile: profile } };
+    onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: hermesSessionId } });
+    return {
+      providerId: provider.id,
+      agentId,
+      sessionId: hermesSessionId,
+      runtime: 'hermes',
+      text: parsed.text,
+      raw: parsed.raw,
+      metadata: { hermesProfile: profile, hermesSource: hermesSessionSource, hermesSessionId }
+    };
   }
 
   const text = `Mock ${agent.name || agentId}: ${request.message}`;
