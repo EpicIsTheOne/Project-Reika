@@ -97,7 +97,10 @@ async function runCommand(command: string, args: string[], timeout = 120000) {
     });
   } catch (error) {
     const maybe = error as { stdout?: string; stderr?: string; message?: string };
-    const text = String(maybe.stderr || maybe.stdout || maybe.message || error || '').trim();
+    const stdout = String(maybe.stdout || '');
+    const stderr = String(maybe.stderr || '');
+    if (stdout.trim()) return { stdout, stderr };
+    const text = String(stderr || maybe.message || error || '').trim();
     throw new Error(text || `${command} failed`);
   }
 }
@@ -108,12 +111,18 @@ function parseHermesOutput(stdout = '', stderr = '') {
   let hermesSessionId = '';
   const kept: string[] = [];
   for (const line of lines) {
-    const match = line.match(/^session(?:_id|\s+id)?:\s*(.+?)\s*$/i);
-    if (match) {
-      hermesSessionId = String(match[1] || '').trim();
+    const trimmed = line.trim();
+    const sessionMatch = trimmed.match(/^session(?:_id|\s+id)?:\s*(.+?)\s*$/i);
+    if (sessionMatch) {
+      hermesSessionId = String(sessionMatch[1] || '').trim();
       continue;
     }
-    if (/^↻\s+Resumed session\b/i.test(line.trim())) continue;
+    const resumedMatch = trimmed.match(/^.*?\bResumed session\s+([A-Za-z0-9_-]+)/i);
+    if (resumedMatch) {
+      hermesSessionId ||= String(resumedMatch[1] || '').trim();
+      continue;
+    }
+    if (/\bWorking directory:/i.test(trimmed)) continue;
     kept.push(line);
   }
   return { text: kept.join('\n').trim(), hermesSessionId, raw };
@@ -188,7 +197,7 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
     const model = String(request.model || agent.model || process.env.HERMES_AGENT_MODEL || '').trim();
     const args = [
       ...(profile ? ['--profile', profile] : []),
-      'chat', '-q', request.message,
+      'chat', '--cli', '-q', request.message,
       '-Q',
       '--source', hermesSessionSource,
       ...(request.providerSessionId ? ['--resume', request.providerSessionId] : []),
@@ -196,6 +205,7 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
     ];
     const { stdout, stderr } = await runCommand(hermesBin, args);
     const parsed = parseHermesOutput(stdout, stderr);
+    if (!parsed.text) throw new Error('Hermes returned no chat response.');
     const hermesSessionId = parsed.hermesSessionId || request.providerSessionId || sessionId;
     if (!request.providerSessionId && parsed.hermesSessionId) {
       await renameHermesSession(parsed.hermesSessionId, `AgentHub - ${String(agent.name || agentId || 'Reika').trim()}`);
@@ -223,7 +233,7 @@ function parseHermesSessionsList(output: string, providerId: string): ProviderHi
   const lines = output.split(/\r?\n/).map((line) => line.trimEnd()).filter(Boolean);
   const sessions: ProviderHistorySession[] = [];
   for (const line of lines) {
-    if (/^Preview\s+Last Active\s+Src\s+ID\b/i.test(line) || /^─+$/.test(line.trim()) || /^No sessions found\.?$/i.test(line.trim())) continue;
+    if (/^Preview\s+Last Active\s+Src\s+ID\b/i.test(line) || /^(?:[-=]|\u2500)+$/.test(line.trim()) || /^No sessions found\.?$/i.test(line.trim())) continue;
     const match = line.match(/^(.*?)\s{2,}(.+?)\s{2,}(\S+)\s{2,}(\d{8}_\d{6}_[A-Za-z0-9]+)\s*$/);
     if (!match) continue;
     const preview = String(match[1] || '').trim();
