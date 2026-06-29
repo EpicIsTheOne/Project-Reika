@@ -119,6 +119,7 @@ import {
   type ArtAgentLike,
   type ArtRuntime
 } from "./lib/artRuntime";
+import { cx, motionDelay, pageMotionClass } from "./lib/motion";
 import type { Agent, ChatMessage, Device, Provider, Status, View } from "./types";
 
 const statusLabels: Record<Status, string> = {
@@ -517,7 +518,7 @@ function AppShell({
   children: ReactNode;
 }) {
   return (
-    <div className="shell">
+    <div className={cx("shell", `shell-${activeView}`)}>
       <aside className="sidebar">
         <button className="brand-lockup" onClick={() => onNavigate("home")} aria-label="Go home">
           <img src={assets.brand.logoSmall} alt="" />
@@ -528,11 +529,11 @@ function AppShell({
         </button>
 
         <nav className="nav-list" aria-label="Primary">
-          {navItems.map((item) => {
+          {navItems.map((item, index) => {
             const Icon = item.icon;
             const active = activeView === item.route;
             return (
-              <button className={active ? "nav-item active" : "nav-item"} key={item.label} aria-label={item.label} onClick={() => onNavigate(item.route)}>
+              <button className={cx("nav-item", active && "active")} key={item.label} aria-label={item.label} onClick={() => onNavigate(item.route)} style={motionDelay(index, 38)}>
                 <Icon size={22} />
                 <span>{item.label}</span>
                 {item.route === "notifications" && notificationCount > 0 ? <strong>{notificationCount}</strong> : null}
@@ -566,7 +567,11 @@ function AppShell({
         </div>
       </aside>
 
-      <section className="page-shell">{children}</section>
+      <section className="page-shell">
+        <div className="view-motion-frame" key={activeView}>
+          {children}
+        </div>
+      </section>
     </div>
   );
 }
@@ -593,7 +598,7 @@ function HomePage({
     .filter((agent) => agent.status === "online" || agent.status === "busy" || agent.status === "thinking").length;
 
   return (
-    <main className="page home-page">
+    <main className={pageMotionClass("page home-page")}>
       <HeaderBar
         title={
           <>
@@ -610,7 +615,7 @@ function HomePage({
         action={<NotificationButton onClick={onOpenNotifications} />}
       />
 
-      <section className="feature-hero">
+      <section className="feature-hero motion-hero">
         <img src={artRuntime.agentArt("reika", "hero-banner", assets.room.hero, "home-hero")} alt="" />
         <div className="feature-copy">
           <p className="eyebrow">Featured Agent</p>
@@ -648,8 +653,8 @@ function HomePage({
       </section>
 
       <section className="device-grid">
-        {devices.map((device) => (
-          <DeviceCard device={device} key={device.id} artRuntime={artRuntime} onOpenChat={onOpenChat} />
+        {devices.map((device, index) => (
+          <DeviceCard device={device} key={device.id} artRuntime={artRuntime} onOpenChat={onOpenChat} motionIndex={index} />
         ))}
       </section>
 
@@ -690,12 +695,12 @@ function NotificationButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-function DeviceCard({ device, artRuntime, onOpenChat }: { device: Device; artRuntime: ArtRuntime; onOpenChat: (agentId: string) => void }) {
+function DeviceCard({ device, artRuntime, onOpenChat, motionIndex = 0 }: { device: Device; artRuntime: ArtRuntime; onOpenChat: (agentId: string) => void; motionIndex?: number }) {
   const Icon = device.type === "server" ? Box : device.type === "laptop" ? Monitor : Monitor;
   const agentCount = device.providers.reduce((total, provider) => total + provider.agents.length, 0);
 
   return (
-    <article className="device-card">
+    <article className="device-card motion-card" style={motionDelay(motionIndex)}>
       <header className="device-card-header">
         <Icon size={30} />
         <div>
@@ -729,8 +734,8 @@ function ProviderBlock({ provider, artRuntime, onOpenChat }: { provider: Provide
       </header>
       <div className="provider-agents">
         {provider.agents.length > 0 ? (
-          provider.agents.map((agent) => (
-            <button className="agent-row" key={agent.id} onClick={() => onOpenChat(agent.id)}>
+          provider.agents.map((agent, index) => (
+            <button className="agent-row motion-row" key={agent.id} onClick={() => onOpenChat(agent.id)} style={motionDelay(index, 34, 80)}>
               <img src={getAgentAvatar(agent, artRuntime)} alt="" />
               <span>
                 <strong>{agent.name}</strong>
@@ -984,7 +989,7 @@ function ChatView({ agent, initialState, artRuntime, onBack }: { agent: Agent; i
   const canSend = Boolean(draft.trim()) && !busy && Boolean(selectedProvider) && !stateError;
 
   return (
-    <main className="chat-screen">
+    <main className={pageMotionClass("chat-screen")}>
       <aside className="chat-profile">
         <button className="back-button" onClick={onBack}>
           <ArrowLeft size={20} />
@@ -1101,8 +1106,8 @@ function ChatView({ agent, initialState, artRuntime, onBack }: { agent: Agent; i
           {stateError ? <div className="chat-error-banner">Reika server offline. {stateError}</div> : null}
           {sendError ? <div className="chat-error-banner">{sendError}</div> : null}
           <div className="message-list">
-            {visibleMessages.map((message) => (
-              <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={headerAgentName} />
+            {visibleMessages.map((message, index) => (
+              <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={headerAgentName} motionIndex={index} />
             ))}
             {!busy && visibleMessages.length === 0 && !sendError && !stateError ? (
               <div className="chat-empty-state">
@@ -1271,13 +1276,13 @@ function LegacyChatView({ agent, onBack, artRuntime = createArtRuntime(null, "le
   );
 }
 
-function MessageBubble({ message, agentAvatar, agentName = "Reika" }: { message: ChatMessage; agentAvatar?: string; agentName?: string }) {
+function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex = 0 }: { message: ChatMessage; agentAvatar?: string; agentName?: string; motionIndex?: number }) {
   if (message.sender === "system") return null;
   const isUser = message.sender === "user";
   const avatar = agentAvatar ?? assets.reika.avatar;
 
   return (
-    <article className={isUser ? "chat-message user" : "chat-message agent"}>
+    <article className={cx("chat-message motion-message", isUser ? "user" : "agent")} style={motionDelay(Math.min(motionIndex, 8), 28)}>
       {!isUser ? <img src={avatar} alt="" /> : null}
       <div className="message-content">
         {!isUser ? (
@@ -1504,7 +1509,7 @@ function DevicesView({ localDevices, pairingOpenRequest, artRuntime, onScanProvi
   };
 
   return (
-    <main className="page devices-page">
+    <main className={pageMotionClass("page devices-page")}>
       <header className="workbench-header">
         <div className="workbench-title">
           <Monitor size={30} />
@@ -1552,10 +1557,10 @@ function DevicesView({ localDevices, pairingOpenRequest, artRuntime, onScanProvi
       <div className="devices-layout">
         <section className="devices-left">
           <div className="device-stats-panel">
-            {stats.map((stat) => {
+            {stats.map((stat, index) => {
               const Icon = stat.icon;
               return (
-                <article className="device-stat" key={stat.label}>
+                <article className="device-stat motion-card" key={stat.label} style={motionDelay(index, 34)}>
                   {Icon ? <Icon size={28} /> : <StatusDot status={stat.tone === "green" ? "online" : stat.tone === "red" ? "error" : stat.tone === "yellow" ? "busy" : "offline"} />}
                   <span>
                     <strong>{stat.value}</strong>
@@ -1567,11 +1572,12 @@ function DevicesView({ localDevices, pairingOpenRequest, artRuntime, onScanProvi
           </div>
 
           <section className="device-list-panel" aria-label="Devices">
-            {displayRows.map((device) => (
+            {displayRows.map((device, index) => (
               <button
-                className={device.id === selectedId ? "device-list-row selected" : `device-list-row status-row-${device.status}`}
+                className={cx("device-list-row motion-row", device.id === selectedId ? "selected" : `status-row-${device.status}`)}
                 key={device.id}
                 onClick={() => setSelectedId(device.id)}
+                style={motionDelay(index, 38, 90)}
               >
                 <span className="device-list-icon">
                   <img src={device.icon} alt="" />
@@ -2008,7 +2014,7 @@ function NotificationsView({
   };
 
   return (
-    <main className="page notifications-page">
+    <main className={pageMotionClass("page notifications-page")}>
       <header className="workbench-header">
         <div className="workbench-title">
           <span>
@@ -2034,11 +2040,12 @@ function NotificationsView({
 
       <div className="notifications-layout">
         <section className="notification-list-panel" aria-label="Notifications">
-          {visibleItems.length > 0 ? visibleItems.map((item) => (
+          {visibleItems.length > 0 ? visibleItems.map((item, index) => (
             <button
-              className={item.id === selectedId ? "notification-row selected" : "notification-row"}
+              className={cx("notification-row motion-row", item.id === selectedId && "selected")}
               key={item.id}
               onClick={() => selectNotification(item)}
+              style={motionDelay(index, 36)}
             >
               {item.unread ? <span className="unread-dot" /> : null}
               <NotificationIcon item={item} artRuntime={artRuntime} />
@@ -2077,7 +2084,7 @@ function NotificationIcon({ item, artRuntime }: { item: ReikaNotification; artRu
 function NotificationDetailPanel({ item, artRuntime, onOpenChat, onDelete }: { item: ReikaNotification | null; artRuntime: ArtRuntime; onOpenChat: () => void; onDelete: () => void }) {
   if (!item) {
     return (
-      <aside className="notification-detail-panel">
+      <aside className="notification-detail-panel motion-surface">
         <section className="notification-detail-content">
           <img className="empty-state-art" src={artRuntime.agentArt("reika", "chibi-small", artRuntime.globalArt("global-empty-states", assets.empty.noChat, "notifications-empty-global"), "notifications-empty")} alt="" />
           <h2>No notification selected</h2>
@@ -2088,7 +2095,7 @@ function NotificationDetailPanel({ item, artRuntime, onOpenChat, onDelete }: { i
   }
 
   return (
-    <aside className="notification-detail-panel">
+    <aside className="notification-detail-panel motion-surface" key={item.id}>
       <div className="notification-detail-hero">
         <img src={artRuntime.agentArt("reika", item.kind === "warning" ? "offline-error" : "hero-banner", assets.room.hero, `notification-${item.id}`)} alt="" />
         <span>
@@ -2394,7 +2401,7 @@ function AgentArtStudio({
   };
 
   return (
-    <main className="page agent-art-page">
+    <main className={pageMotionClass("page agent-art-page")}>
       <header className="art-header">
         <div>
           <span className="art-title-line">
@@ -2463,8 +2470,8 @@ function AgentArtStudio({
             </div>
 
             <div className="art-agent-strip">
-              {profiles.map((profile) => (
-                <button className={profile.id === selectedProfile?.id ? "art-agent-card active" : "art-agent-card"} key={profile.id} type="button" onClick={() => {
+              {profiles.map((profile, index) => (
+                <button className={cx("art-agent-card motion-card", profile.id === selectedProfile?.id && "active")} key={profile.id} type="button" style={motionDelay(index, 36)} onClick={() => {
                   setSelectedProfileId(profile.id);
                   setSelectedCategoryId(profile.categories[0]?.id ?? "");
                 }}>
@@ -2528,15 +2535,16 @@ function AgentArtStudio({
               </aside>
 
               <div className={viewMode === "grid" ? "art-category-grid" : "art-category-grid list"}>
-                {visibleCategories.map((category) => (
+                {visibleCategories.map((category, index) => (
                   <ArtCategoryCard
                     category={category}
                     key={category.id}
                     active={category.id === selectedCategory?.id}
                     onClick={() => setSelectedCategoryId(category.id)}
+                    motionIndex={index}
                   />
                 ))}
-                <button className="art-category-card add" type="button" onClick={addCategory}>
+                <button className="art-category-card add motion-card" type="button" onClick={addCategory} style={motionDelay(visibleCategories.length, 36)}>
                   <Plus size={28} />
                   <strong>Add Category</strong>
                   <small>Create a new art category</small>
@@ -2665,10 +2673,10 @@ function AgentArtStudio({
   );
 }
 
-function ArtCategoryCard({ category, active, onClick }: { category: ReikaArtCategory; active: boolean; onClick: () => void }) {
+function ArtCategoryCard({ category, active, onClick, motionIndex = 0 }: { category: ReikaArtCategory; active: boolean; onClick: () => void; motionIndex?: number }) {
   const preview = category.assets.slice(0, category.id.includes("expressions") || category.id.includes("chibi") ? 3 : 1);
   return (
-    <button className={active ? "art-category-card active" : "art-category-card"} type="button" onClick={onClick}>
+    <button className={cx("art-category-card motion-card", active && "active")} type="button" onClick={onClick} style={motionDelay(motionIndex, 36)}>
       <strong>{category.name}</strong>
       <div className={preview.length > 1 ? "art-card-preview multi" : "art-card-preview"}>
         {preview.length > 0 ? preview.map((item) => <img src={resolveArtAssetUrl(item)} alt="" key={item.id} />) : <span>No art yet</span>}
@@ -2784,7 +2792,7 @@ function SettingsView({
   };
 
   return (
-    <main className="settings-screen">
+    <main className={pageMotionClass("settings-screen")}>
       <aside className="settings-scene">
         <img src={artRuntime.agentArt("reika", "splash-full-body", artRuntime.agentArt("reika", "room-background", assets.reika.splash, "settings-room-fallback"), "settings-scene")} alt="" />
         <div className="settings-scene-card">
@@ -2808,10 +2816,10 @@ function SettingsView({
 
         <div className="settings-body">
           <nav className="settings-tabs" aria-label="Settings sections">
-            {settingsTabs.map((item) => {
+            {settingsTabs.map((item, index) => {
               const Icon = item.icon;
               return (
-                <button className={activeTab === item.title ? "settings-tab active" : "settings-tab"} key={item.title} onClick={() => setActiveTab(item.title)}>
+                <button className={cx("settings-tab motion-row", activeTab === item.title && "active")} key={item.title} onClick={() => setActiveTab(item.title)} style={motionDelay(index, 38)}>
                   <Icon size={26} />
                   <span>
                     <strong>{item.title}</strong>

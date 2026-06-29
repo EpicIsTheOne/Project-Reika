@@ -21,6 +21,12 @@
   --radius-lg: 18px;
   --shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
   --glow: 0 0 28px rgba(20, 119, 255, 0.34);
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  --motion-slow: 560ms;
+  --motion-ease: cubic-bezier(0.2, 0.86, 0.28, 1);
+  --motion-spring: cubic-bezier(0.18, 0.92, 0.24, 1.16);
+  --motion-delay: 0ms;
 }
 
 * {
@@ -87,6 +93,129 @@ img {
   display: block;
 }
 
+@keyframes motion-page-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.992);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes motion-list-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes motion-message-in {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--message-x, 0), 10px, 0) scale(0.982);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes motion-glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 13px currentColor;
+    opacity: 0.88;
+  }
+  50% {
+    box-shadow: 0 0 22px currentColor;
+    opacity: 1;
+  }
+}
+
+@keyframes motion-blue-scan {
+  from {
+    transform: translateX(-115%);
+  }
+  to {
+    transform: translateX(115%);
+  }
+}
+
+@keyframes motion-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -8px, 0);
+  }
+}
+
+@keyframes motion-spin-soft {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes motion-typing {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.38;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes motion-background-drift {
+  from {
+    transform: scale(1.02) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.06) translate3d(-10px, -8px, 0);
+  }
+}
+
+.motion-page,
+.view-motion-frame {
+  min-height: 100%;
+  animation: motion-page-in var(--motion-slow) var(--motion-ease) both;
+}
+
+.motion-card,
+.motion-row,
+.motion-surface {
+  animation: motion-list-in 420ms var(--motion-ease) both;
+  animation-delay: var(--motion-delay);
+}
+
+.motion-message {
+  animation: motion-message-in 300ms var(--motion-spring) both;
+  animation-delay: var(--motion-delay);
+}
+
+.motion-message.user {
+  --message-x: 12px;
+}
+
+.motion-message.agent {
+  --message-x: -12px;
+}
+
 .app-root {
   min-height: 100vh;
 }
@@ -134,6 +263,90 @@ img {
   border-radius: 9px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.primary-action,
+.secondary-action,
+.icon-button,
+.notification-button,
+.nav-item,
+.brand-lockup,
+.plan-button,
+.select-button,
+.toggle,
+.security-row,
+.back-button,
+.boot-enter,
+.send-button,
+.agent-row,
+.device-card,
+.device-list-row,
+.notification-row,
+.settings-tab,
+.art-agent-card,
+.art-add-card,
+.art-category-card,
+.art-segmented button,
+.art-view-toggle button,
+.attachment-chip,
+.danger-action {
+  transition:
+    transform var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-base) ease,
+    background var(--motion-base) ease,
+    box-shadow var(--motion-base) ease,
+    color var(--motion-base) ease,
+    opacity var(--motion-base) ease,
+    filter var(--motion-base) ease;
+}
+
+.primary-action:hover:not(:disabled),
+.secondary-action:hover:not(:disabled),
+.icon-button:hover:not(:disabled),
+.notification-button:hover:not(:disabled),
+.nav-item:hover,
+.brand-lockup:hover,
+.plan-button:hover,
+.select-button:hover:not(:disabled),
+.security-row:hover,
+.back-button:hover,
+.boot-enter:hover,
+.send-button:hover:not(:disabled),
+.agent-row:hover,
+.device-card:hover,
+.device-list-row:hover,
+.notification-row:hover,
+.settings-tab:hover,
+.art-agent-card:hover,
+.art-add-card:hover,
+.art-category-card:hover,
+.art-segmented button:hover,
+.art-view-toggle button:hover,
+.attachment-chip:hover,
+.danger-action:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(70, 170, 255, 0.54);
+  filter: brightness(1.08);
+}
+
+.primary-action:active:not(:disabled),
+.secondary-action:active:not(:disabled),
+.icon-button:active:not(:disabled),
+.notification-button:active:not(:disabled),
+.nav-item:active,
+.brand-lockup:active,
+.select-button:active:not(:disabled),
+.security-row:active,
+.back-button:active,
+.boot-enter:active,
+.send-button:active:not(:disabled),
+.agent-row:active,
+.device-list-row:active,
+.notification-row:active,
+.settings-tab:active,
+.art-agent-card:active,
+.art-category-card:active {
+  transform: translateY(0) scale(0.985);
 }
 
 .primary-action {
@@ -198,6 +411,7 @@ img {
   object-position: center;
   filter: saturate(1.18) contrast(1.08) brightness(1.12);
   z-index: 0;
+  animation: motion-background-drift 24s ease-in-out infinite alternate;
 }
 
 .loading-shade {
@@ -220,6 +434,7 @@ img {
     linear-gradient(90deg, rgba(54, 162, 255, 0.03) 1px, transparent 1px);
   background-size: 80px 80px;
   mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.9), transparent 72%);
+  animation: motion-background-drift 34s ease-in-out infinite alternate-reverse;
 }
 
 .loading-screen::before,
@@ -335,6 +550,7 @@ img {
   color: var(--blue-2);
   background: rgba(17, 107, 255, 0.18);
   box-shadow: 0 0 0 5px rgba(23, 133, 255, 0.08), 0 0 28px rgba(54, 162, 255, 0.7);
+  animation: motion-glow-pulse 1.7s ease-in-out infinite;
 }
 
 .boot-step span:last-child {
@@ -393,6 +609,7 @@ img {
   height: 340px;
   place-items: center;
   margin-bottom: 16px;
+  animation: motion-float 7s ease-in-out infinite;
 }
 
 .loading-emblem-shell span {
@@ -405,6 +622,7 @@ img {
   inset: 8px;
   border: 1px solid rgba(42, 148, 255, 0.34);
   box-shadow: inset 0 0 42px rgba(24, 111, 255, 0.15), 0 0 42px rgba(24, 111, 255, 0.12);
+  animation: motion-spin-soft 18s linear infinite;
 }
 
 .loading-emblem-shell span:last-of-type {
@@ -414,6 +632,7 @@ img {
   border-right-color: rgba(21, 123, 255, 0.28);
   border-bottom-color: rgba(21, 123, 255, 0.5);
   opacity: 0.72;
+  animation: motion-spin-soft 12s linear infinite reverse;
 }
 
 .loading-emblem-shell img {
@@ -481,12 +700,23 @@ img {
 }
 
 .boot-progress-track span {
+  position: relative;
+  overflow: hidden;
   display: block;
   width: 72%;
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #37d8ff, #218eff);
   box-shadow: 0 0 18px rgba(40, 198, 255, 0.88);
+  transition: width 520ms var(--motion-ease);
+}
+
+.boot-progress-track span::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.58), transparent);
+  animation: motion-blue-scan 1.65s ease-in-out infinite;
 }
 
 .boot-quote {
@@ -673,6 +903,11 @@ img {
   box-shadow: inset 0 0 30px rgba(20, 119, 255, 0.16), var(--glow);
 }
 
+.nav-item.active svg,
+.nav-item:hover svg {
+  filter: drop-shadow(0 0 9px rgba(76, 177, 255, 0.8));
+}
+
 .account-card {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -833,6 +1068,7 @@ img {
   height: 9px;
   border-radius: 50%;
   background: var(--blue);
+  animation: motion-glow-pulse 1.8s ease-in-out infinite;
 }
 
 .feature-hero {
@@ -845,6 +1081,23 @@ img {
   box-shadow: var(--shadow);
 }
 
+.feature-hero::before {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  content: "";
+  background: linear-gradient(110deg, transparent 0%, rgba(82, 191, 255, 0.14) 44%, transparent 58%);
+  opacity: 0;
+  transform: translateX(-55%);
+  transition: opacity var(--motion-base) ease;
+}
+
+.feature-hero:hover::before {
+  opacity: 1;
+  animation: motion-blue-scan 1.5s ease-out;
+}
+
 .feature-hero > img {
   position: absolute;
   inset: 0;
@@ -853,11 +1106,18 @@ img {
   object-fit: cover;
   object-position: center;
   filter: saturate(1.16) contrast(1.04);
+  transition: transform 900ms var(--motion-ease), filter 900ms ease;
+}
+
+.feature-hero:hover > img {
+  transform: scale(1.025);
+  filter: saturate(1.24) contrast(1.06) brightness(1.05);
 }
 
 .feature-hero::after {
   position: absolute;
   inset: 0;
+  z-index: 1;
   content: "";
   background:
     linear-gradient(90deg, rgba(5, 12, 30, 0.92) 0%, rgba(5, 12, 30, 0.66) 32%, rgba(5, 12, 30, 0.13) 62%, rgba(5, 12, 30, 0.5) 100%),
@@ -866,7 +1126,7 @@ img {
 
 .feature-copy {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: grid;
   align-content: center;
   gap: 0.8rem;
@@ -922,6 +1182,7 @@ img {
 .hero-dots span:first-child {
   width: 16px;
   background: var(--blue);
+  box-shadow: 0 0 16px rgba(20, 119, 255, 0.86);
 }
 
 .section-title-row {
@@ -951,6 +1212,12 @@ img {
     radial-gradient(circle at 15% 10%, rgba(20, 119, 255, 0.14), transparent 15rem),
     linear-gradient(145deg, rgba(14, 31, 65, 0.72), rgba(5, 14, 33, 0.82));
   box-shadow: 0 20px 58px rgba(0, 0, 0, 0.28);
+}
+
+.device-card:hover,
+.art-category-card:hover,
+.art-agent-card:hover {
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34), 0 0 28px rgba(20, 119, 255, 0.18);
 }
 
 .device-card-header {
@@ -1094,6 +1361,13 @@ img {
   border-radius: 50%;
   background: currentColor;
   box-shadow: 0 0 13px currentColor;
+}
+
+.status-dot.status-online,
+.status-dot.status-connecting,
+.status-dot.status-thinking,
+.status-dot.status-busy {
+  animation: motion-glow-pulse 2.2s ease-in-out infinite;
 }
 
 .status-online {
@@ -1574,6 +1848,15 @@ img {
   height: 6px;
   border-radius: 50%;
   background: var(--blue);
+  animation: motion-typing 1.05s ease-in-out infinite;
+}
+
+.typing-row i:nth-of-type(2) {
+  animation-delay: 120ms;
+}
+
+.typing-row i:nth-of-type(3) {
+  animation-delay: 240ms;
 }
 
 .devices-page,
@@ -4097,5 +4380,31 @@ img {
   .art-pool-grid,
   .art-reference-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+
+  .motion-page,
+  .view-motion-frame,
+  .motion-card,
+  .motion-row,
+  .motion-surface,
+  .motion-message,
+  .loading-bg,
+  .loading-grid,
+  .loading-emblem-shell,
+  .loading-emblem-shell span {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
   }
 }
