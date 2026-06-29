@@ -27,7 +27,8 @@ Included now:
 - disabled-by-default outbound relay client
 - safe command dispatcher for state, roster, provider refresh, and agent chat requests
 - direct provider chat for CommandCenter, OpenClaw, Hermes, and mock
-- Project Reika session/message history for local dev calls
+- durable Project Reika session/message history for local dev calls
+- provider-native session id mapping persistence for provider continuity
 - SSE turn lifecycle events for local chat calls
 - tested against the dev relay in `../Relay`
 - no external uplink enabled by default
@@ -76,6 +77,8 @@ Default local server:
 http://127.0.0.1:47840
 ```
 
+Session data is persisted by default to `~/.local/share/project-reika/sessions.json`. Override with `REIKA_SESSION_STORE_PATH` for tests or alternate packaging.
+
 Development endpoints:
 
 - `GET /`
@@ -115,6 +118,7 @@ REIKA_PAIRING_TOKEN=
 REIKA_HEARTBEAT_MS=25000
 REIKA_RECONNECT_MIN_MS=1000
 REIKA_RECONNECT_MAX_MS=30000
+REIKA_SESSION_STORE_PATH=~/.local/share/project-reika/sessions.json
 REIKA_PAIRING_UI=true
 REIKA_PAIRING_UI_OPEN=true
 ```
@@ -213,7 +217,7 @@ Unsupported messages return `command.rejected` with `UNSUPPORTED_COMMAND`. Inval
 
 Supported requests return snapshot/response envelopes directly. The current dispatcher does not emit a separate `command.completed` envelope after every successful request.
 
-Chat requests are intentionally limited to provider/agent/message/session fields and route through the same local provider service used by `POST /chat`.
+Chat requests are intentionally limited to provider/agent/message/session fields and route through the same local provider service used by `POST /chat`. Sessions/messages and provider-native session IDs are persisted locally so restarts can keep Project Reika history and resume-capable providers aligned.
 
 Intentionally unsupported in this phase:
 

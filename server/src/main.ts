@@ -5,6 +5,7 @@ import { EventBus } from './core/eventBus.js';
 import { StateStore } from './core/stateStore.js';
 import { CommandDispatcher } from './modules/commands/dispatcher.js';
 import { runProviderChat, type ProviderChatEvent, type ProviderChatMessage } from './modules/provider/providerRuntime.js';
+import { SessionStore, type ChatMessageRecord, type ChatSessionRecord } from './modules/session/sessionStore.js';
 import { RelayClient } from './modules/uplink/relayClient.js';
 import { openLocalUrl } from './platform/openBrowser.js';
 import { shouldOpenPairingUi } from './platform/runtime.js';
@@ -12,24 +13,8 @@ import { disableStartup, enableStartup, formatStartupStatus, getStartupStatus } 
 import { pairingPage } from './ui/pairingPage.js';
 import { createEnvelope, type AgentHubMessageType } from './shared/protocol/envelope.js';
 
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  text: string;
-  timestamp: string;
-  meta?: Record<string, unknown>;
-}
-
-interface ChatSession {
-  id: string;
-  providerId: string;
-  agent: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  messages: ChatMessage[];
-  metadata: Record<string, unknown>;
-}
+type ChatMessage = ChatMessageRecord;
+type ChatSession = ChatSessionRecord;
 
 let cli: CliOptions;
 try {
@@ -70,7 +55,7 @@ if (cli.mode === 'startup') {
 if (cli.mode !== 'startup') {
 const events = new EventBus();
 const state = new StateStore();
-const sessions = new Map<string, ChatSession>();
+const sessions = new SessionStore();
 const deviceEndpoint = { kind: 'device' as const, id: serverConfig.uplink.deviceId };
 const appEndpoint = { kind: 'app' as const, id: 'local-simulator' };
 const dispatcher = new CommandDispatcher(state, deviceEndpoint, async (payload) => {
@@ -109,6 +94,8 @@ const relayClient = new RelayClient(state, events, async (payload) => {
 events.emit('server.boot', { serviceName: serverConfig.serviceName });
 
 async function boot() {
+  await sessions.load();
+  events.emit('session.store.loaded', sessions.snapshot());
   await state.refreshProviders();
   events.emit('provider.state', state.snapshot().providers);
   relayClient.start();
@@ -125,6 +112,7 @@ async function boot() {
 function fullSnapshot() {
   return {
     ...state.snapshot(),
+    sessionStore: sessions.snapshot(),
     uplink: relayClient.snapshot()
   };
 }
@@ -175,7 +163,7 @@ function createSession(input: { providerId?: string; agent?: string; title?: str
     messages: [],
     metadata: input.metadata || {}
   };
-  sessions.set(session.id, session);
+  sessions.set(session);
   events.emit('chat.session.created', publicSession(session));
   return session;
 }
@@ -196,6 +184,7 @@ function appendMessage(session: ChatSession, role: ChatMessage['role'], text: st
   };
   session.messages.push(message);
   session.updatedAt = message.timestamp;
+  sessions.touch(session);
   return message;
 }
 
@@ -223,11 +212,20 @@ async function runChatTurn(input: { sessionId?: string; providerId?: string; age
       message: input.message,
       history: sessionHistory(session).slice(0, -1),
       model: input.model,
-      providerSessionId: typeof session.metadata.hermesSessionId === 'string' ? session.metadata.hermesSessionId : undefined
+      providerSessionId: typeof session.metadata.hermesSessionId === 'string'
+        ? session.metadata.hermesSessionId
+        : typeof session.metadata.providerSessionIds === 'object' && session.metadata.providerSessionIds
+          ? (session.metadata.providerSessionIds as Record<string, string>)[input.providerId || session.providerId]
+          : undefined
     }, providers, handler);
     session.providerId = result.providerId;
     session.agent = result.agentId;
     if (result.metadata?.hermesProfile) session.metadata.hermesProfile = result.metadata.hermesProfile;
+    const providerSessionIds = typeof session.metadata.providerSessionIds === 'object' && session.metadata.providerSessionIds
+      ? session.metadata.providerSessionIds as Record<string, string>
+      : {};
+    providerSessionIds[result.providerId] = result.sessionId;
+    session.metadata.providerSessionIds = providerSessionIds;
     if (result.runtime === 'hermes') session.metadata.hermesSessionId = result.sessionId;
     const assistantMessage = appendMessage(session, 'assistant', result.text, { providerId: result.providerId, agent: result.agentId, runtime: result.runtime });
     return { session, userMessage, assistantMessage, result };
@@ -289,7 +287,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/sessions') {
-      sendJson(res, 200, { ok: true, sessions: Array.from(sessions.values()).map(publicSession).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) });
+      sendJson(res, 200, { ok: true, storage: sessions.snapshot(), sessions: sessions.list().map(publicSession).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) });
       return;
     }
 
