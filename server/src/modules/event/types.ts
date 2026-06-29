@@ -10,6 +10,7 @@ export type ServerEventType =
   | 'chat.response'
   | 'chat.error'
   | 'chat.done'
+  | 'chat.history.imported'
   | 'session.store.loaded'
   | 'uplink.planned'
   | 'uplink.disabled'

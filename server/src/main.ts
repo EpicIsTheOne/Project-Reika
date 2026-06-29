@@ -4,7 +4,7 @@ import { serverConfig } from './config/defaults.js';
 import { EventBus } from './core/eventBus.js';
 import { StateStore } from './core/stateStore.js';
 import { CommandDispatcher } from './modules/commands/dispatcher.js';
-import { runProviderChat, type ProviderChatEvent, type ProviderChatMessage } from './modules/provider/providerRuntime.js';
+import { getProviderHistoryMessages, listProviderHistorySessions, runProviderChat, type ProviderChatEvent, type ProviderChatMessage, type ProviderHistoryMessage, type ProviderHistorySession } from './modules/provider/providerRuntime.js';
 import { SessionStore, type ChatMessageRecord, type ChatSessionRecord } from './modules/session/sessionStore.js';
 import { RelayClient } from './modules/uplink/relayClient.js';
 import { openLocalUrl } from './platform/openBrowser.js';
@@ -172,6 +172,59 @@ function getOrCreateSession(input: { sessionId?: string; providerId?: string; ag
   const existing = input.sessionId ? sessions.get(input.sessionId) : undefined;
   if (existing) return existing;
   return createSession(input);
+}
+
+function localImportedSessionId(providerId: string, providerSessionId: string) {
+  const safe = `${providerId}_${providerSessionId}`.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 80);
+  return `prs_import_${safe}`;
+}
+
+function importProviderSession(record: ProviderHistorySession, messages: ProviderHistoryMessage[] = []) {
+  const id = localImportedSessionId(record.providerId, record.providerSessionId);
+  const existing = sessions.get(id);
+  const createdAt = record.createdAt || messages[0]?.timestamp || new Date().toISOString();
+  const updatedAt = record.updatedAt || messages.at(-1)?.timestamp || createdAt;
+  const metadata: Record<string, unknown> = {
+    ...(existing?.metadata || {}),
+    ...(record.metadata || {}),
+    importedFromProvider: record.providerId,
+    providerSessionId: record.providerSessionId,
+    providerSessionIds: {
+      ...(typeof existing?.metadata.providerSessionIds === 'object' && existing.metadata.providerSessionIds ? existing.metadata.providerSessionIds as Record<string, string> : {}),
+      [record.providerId]: record.providerSessionId
+    }
+  };
+  if (record.providerId === 'hermes-direct') {
+    metadata.hermesSessionId = record.providerSessionId;
+    metadata.hermesProfile = typeof metadata.hermesProfile === 'string' ? metadata.hermesProfile : 'default';
+  }
+  const session: ChatSession = {
+    id,
+    providerId: record.providerId,
+    agent: record.agentId,
+    title: record.title || record.lastMessagePreview || `${record.agentId} imported session`,
+    createdAt,
+    updatedAt,
+    messages: messages.map((message, index) => ({
+      id: message.id || `msg_import_${crypto.randomUUID().replace(/-/g, '').slice(0, 18)}`,
+      role: message.role,
+      text: message.text,
+      timestamp: message.timestamp || new Date(Date.parse(createdAt) + index).toISOString(),
+      meta: { ...(message.meta || {}), importedFromProvider: record.providerId, providerSessionId: record.providerSessionId }
+    })),
+    metadata
+  };
+  if (!session.messages.length && record.lastMessagePreview) {
+    session.messages.push({
+      id: `msg_import_preview_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`,
+      role: 'system',
+      text: `Imported provider session preview: ${record.lastMessagePreview}`,
+      timestamp: updatedAt,
+      meta: { importedPreviewOnly: true, importedFromProvider: record.providerId, providerSessionId: record.providerSessionId }
+    });
+  }
+  sessions.set(session);
+  return { session, created: !existing, messageCount: session.messages.length };
 }
 
 function appendMessage(session: ChatSession, role: ChatMessage['role'], text: string, meta: Record<string, unknown> = {}) {
@@ -402,6 +455,33 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    const providerHistoryImportMatch = url.pathname.match(/^\/providers\/([^/]+)\/history\/import$/);
+    if (req.method === 'POST' && providerHistoryImportMatch) {
+      const providerId = decodeURIComponent(providerHistoryImportMatch[1] || '');
+      const body = await readJson(req);
+      const limit = Math.max(1, Math.min(100, Number(body.limit || 25) || 25));
+      const includeMessages = body.includeMessages !== false;
+      const providerSessions = await listProviderHistorySessions(providerId, state.snapshot().providers, limit);
+      const imported = [];
+      for (const record of providerSessions) {
+        const messages = includeMessages ? await getProviderHistoryMessages(record.providerId, record.providerSessionId, state.snapshot().providers) : [];
+        const result = importProviderSession(record, messages);
+        imported.push({ providerSessionId: record.providerSessionId, session: publicSession(result.session), created: result.created, messageCount: result.messageCount });
+      }
+      events.emit('chat.history.imported', { providerId, count: imported.length });
+      sendJson(res, 200, { ok: true, providerId, imported });
+      return;
+    }
+
+    const providerHistoryMatch = url.pathname.match(/^\/providers\/([^/]+)\/history$/);
+    if (req.method === 'GET' && providerHistoryMatch) {
+      const providerId = decodeURIComponent(providerHistoryMatch[1] || '');
+      const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit') || 25) || 25));
+      const providerSessions = await listProviderHistorySessions(providerId, state.snapshot().providers, limit);
+      sendJson(res, 200, { ok: true, providerId, sessions: providerSessions });
+      return;
+    }
+
     const providerAgentsMatch = url.pathname.match(/^\/providers\/([^/]+)\/agents$/);
     if (req.method === 'GET' && providerAgentsMatch) {
       const providerId = decodeURIComponent(providerAgentsMatch[1] || '');
@@ -473,6 +553,8 @@ const server = http.createServer(async (req, res) => {
         'GET /state',
         'GET /providers',
         'GET /providers/:id/agents',
+        'GET /providers/:id/history',
+        'POST /providers/:id/history/import',
         'GET /sessions',
         'POST /sessions',
         'GET /sessions/:id/messages',

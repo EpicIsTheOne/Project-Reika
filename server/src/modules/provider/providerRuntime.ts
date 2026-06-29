@@ -5,6 +5,28 @@ import type { ProviderRecord } from './types.js';
 
 const execFileAsync = promisify(execFile);
 
+
+export interface ProviderHistoryMessage {
+  id?: string;
+  role: 'user' | 'assistant' | 'system';
+  text: string;
+  timestamp?: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface ProviderHistorySession {
+  providerId: string;
+  providerSessionId: string;
+  agentId: string;
+  title: string;
+  createdAt?: string;
+  updatedAt?: string;
+  messageCount?: number;
+  lastMessagePreview?: string;
+  metadata?: Record<string, unknown>;
+  messages?: ProviderHistoryMessage[];
+}
+
 export interface ProviderChatMessage {
   role: 'user' | 'assistant' | 'system';
   text: string;
@@ -174,6 +196,79 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
   onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text } });
   onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId } });
   return { providerId: provider.id, agentId, sessionId, runtime: 'mock', text };
+}
+
+function parseHermesSessionsList(output: string, providerId: string): ProviderHistorySession[] {
+  const lines = output.split(/\r?\n/).map((line) => line.trimEnd()).filter(Boolean);
+  const sessions: ProviderHistorySession[] = [];
+  for (const line of lines) {
+    if (/^Preview\s+Last Active\s+Src\s+ID\b/i.test(line) || /^─+$/.test(line.trim()) || /^No sessions found\.?$/i.test(line.trim())) continue;
+    const match = line.match(/^(.*?)\s{2,}(.+?)\s{2,}(\S+)\s{2,}(\d{8}_\d{6}_[A-Za-z0-9]+)\s*$/);
+    if (!match) continue;
+    const preview = String(match[1] || '').trim();
+    const lastActive = String(match[2] || '').trim();
+    const source = String(match[3] || '').trim();
+    const id = String(match[4] || '').trim();
+    sessions.push({
+      providerId,
+      providerSessionId: id,
+      agentId: 'hermes',
+      title: preview || `Hermes ${id}`,
+      updatedAt: /^\d{4}-\d{2}-\d{2}/.test(lastActive) ? new Date(`${lastActive}T00:00:00.000Z`).toISOString() : undefined,
+      messageCount: undefined,
+      lastMessagePreview: preview,
+      metadata: { source, lastActiveLabel: lastActive, hermesSessionId: id, hermesProfile: 'default' }
+    });
+  }
+  return sessions;
+}
+
+export async function listProviderHistorySessions(providerId: string, providers: ProviderRecord[], limit = 25): Promise<ProviderHistorySession[]> {
+  const provider = findProvider(providers, providerId);
+  if (!provider) throw new Error(`Provider not found: ${providerId}`);
+
+  if (provider.kind === 'commandcenter') {
+    const response = await fetch(`${commandCenterBaseUrl}/sessions`);
+    const body = await response.json().catch(() => ({})) as { ok?: boolean; sessions?: Array<Record<string, unknown>>; error?: unknown };
+    if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
+    return (body.sessions || []).slice(0, limit).map((session) => ({
+      providerId: provider.id,
+      providerSessionId: String(session.id || ''),
+      agentId: String(session.agent || 'unknown'),
+      title: String(session.title || session.lastMessagePreview || session.id || 'CommandCenter session'),
+      createdAt: typeof session.createdAt === 'string' ? session.createdAt : undefined,
+      updatedAt: typeof session.updatedAt === 'string' ? session.updatedAt : undefined,
+      messageCount: typeof session.messageCount === 'number' ? session.messageCount : undefined,
+      lastMessagePreview: typeof session.lastMessagePreview === 'string' ? session.lastMessagePreview : undefined,
+      metadata: { ...(typeof session.metadata === 'object' && session.metadata ? session.metadata as Record<string, unknown> : {}), commandCenterSessionId: String(session.id || '') }
+    })).filter((session) => session.providerSessionId);
+  }
+
+  if (provider.kind === 'hermes') {
+    const { stdout } = await runCommand(hermesBin, ['sessions', 'list', '--limit', String(limit)], 30000);
+    return parseHermesSessionsList(stdout, provider.id).slice(0, limit);
+  }
+
+  return [];
+}
+
+export async function getProviderHistoryMessages(providerId: string, providerSessionId: string, providers: ProviderRecord[]): Promise<ProviderHistoryMessage[]> {
+  const provider = findProvider(providers, providerId);
+  if (!provider) throw new Error(`Provider not found: ${providerId}`);
+  if (provider.kind !== 'commandcenter') return [];
+  const response = await fetch(`${commandCenterBaseUrl}/sessions/${encodeURIComponent(providerSessionId)}/messages`);
+  const body = await response.json().catch(() => ({})) as { ok?: boolean; messages?: Array<Record<string, unknown>>; error?: unknown };
+  if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
+  return (body.messages || []).map((message) => {
+    const role: ProviderHistoryMessage['role'] = message.role === 'assistant' || message.role === 'system' ? message.role : 'user';
+    return {
+      id: typeof message.id === 'string' ? message.id : undefined,
+      role,
+      text: String(message.text || ''),
+      timestamp: typeof message.timestamp === 'string' ? message.timestamp : undefined,
+      meta: typeof message.meta === 'object' && message.meta ? message.meta as Record<string, unknown> : undefined
+    };
+  }).filter((message) => message.text);
 }
 
 export async function readOpenClawConfigAgents() {

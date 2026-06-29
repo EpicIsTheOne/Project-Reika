@@ -29,6 +29,7 @@ Included now:
 - direct provider chat for CommandCenter, OpenClaw, Hermes, and mock
 - durable Project Reika session/message history for local dev calls
 - provider-native session id mapping persistence for provider continuity
+- provider-native history preview/import for CommandCenter and Hermes
 - SSE turn lifecycle events for local chat calls
 - tested against the dev relay in `../Relay`
 - no external uplink enabled by default
@@ -87,6 +88,8 @@ Development endpoints:
 - `GET /events`
 - `GET /providers`
 - `GET /providers/:id/agents`
+- `GET /providers/:id/history`
+- `POST /providers/:id/history/import`
 - `GET /sessions`
 - `POST /sessions`
 - `GET /sessions/:id/messages`
@@ -227,6 +230,31 @@ Intentionally unsupported in this phase:
 - provider mutation
 - agent install/update
 No remote-admin nonsense. We are behaving, unfortunately.
+
+## Provider History Import
+
+Project Reika can preview/import provider-native history into its durable local session store:
+
+```bash
+# Preview sessions exposed by a provider
+curl http://127.0.0.1:47840/providers/commandcenter-local/history?limit=10
+curl http://127.0.0.1:47840/providers/hermes-direct/history?limit=10
+
+# Import sessions into Project Reika's local durable store
+curl -X POST http://127.0.0.1:47840/providers/commandcenter-local/history/import \
+  -H 'Content-Type: application/json' \
+  -d '{"limit":10,"includeMessages":true}'
+
+curl -X POST http://127.0.0.1:47840/providers/hermes-direct/history/import \
+  -H 'Content-Type: application/json' \
+  -d '{"limit":10}'
+```
+
+Current behavior:
+
+- CommandCenter imports session metadata and full message transcripts through its local API.
+- Hermes imports native session IDs/previews from `hermes sessions list`; imported Hermes sessions can resume via the stored `hermesSessionId`.
+- OpenClaw direct history import is not implemented yet; Project Reika-created OpenClaw sessions are still stored locally.
 
 ## Provider Priority
 
