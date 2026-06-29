@@ -31,6 +31,7 @@ Included now:
 - provider-native session id mapping persistence for provider continuity
 - provider-native history preview/import for CommandCenter and Hermes
 - CommandCenter-style session search/detail and file/link attachment endpoints
+- Agent Art Studio persistence for art profiles, categories, prompts, references, uploaded art, linked art, and selection modes
 - GitHub update check/apply endpoints with changed-file and description reporting
 - SSE turn lifecycle events for local chat calls
 - tested against the dev relay in `../Relay`
@@ -95,6 +96,21 @@ Development endpoints:
 - `GET /updates/status`
 - `POST /updates/check`
 - `POST /updates/apply`
+- `GET /art`
+- `GET /art/oauth/status`
+- `POST /art/oauth/connect`
+- `POST /art/oauth/disconnect`
+- `POST /art/profiles`
+- `POST /art/profiles/:id/duplicate`
+- `DELETE /art/profiles/:id`
+- `POST /art/profiles/:id/categories`
+- `PATCH /art/profiles/:id/categories/:categoryId`
+- `DELETE /art/profiles/:id/categories/:categoryId`
+- `POST /art/profiles/:id/categories/:categoryId/assets/upload`
+- `POST /art/profiles/:id/categories/:categoryId/assets/link`
+- `DELETE /art/profiles/:id/categories/:categoryId/assets/:assetId`
+- `POST /art/profiles/:id/categories/:categoryId/generate`
+- `GET /art/assets/:id/content`
 - `GET /sessions`
 - `GET /sessions/search`
 - `GET /sessions/:id`
@@ -312,6 +328,17 @@ REIKA_FILE_MANIFEST_PATH=/some/path/files/manifest.json
 ```
 
 Attachments are currently passed to providers as structured context metadata (file/link names, IDs, MIME types, sizes, URLs, notes). Binary/image-native provider upload can be added later per adapter.
+
+## Agent Art Studio Storage
+
+The local server persists Agent Art Studio state separately from chat/session data:
+
+```env
+REIKA_ART_STORE_PATH=~/.local/share/project-reika/art-library.json
+REIKA_ART_ASSET_DIR=~/.local/share/project-reika/art-assets
+```
+
+The seeded library uses the project-local AgentHub/Reika assets as production defaults. User uploads are stored under `REIKA_ART_ASSET_DIR` and served through `GET /art/assets/:id/content`. GPT-image 2 generation is not faked; `POST /art/profiles/:id/categories/:categoryId/generate` reports the current Codex/ChatGPT OAuth readiness state until that auth path is connected.
 
 ## Provider History Import
 

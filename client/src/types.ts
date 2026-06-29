@@ -63,4 +63,4 @@ export interface ChatMessage {
   time: string;
 }
 
-export type View = "loading" | "home" | "chat" | "devices" | "notifications" | "settings";
+export type View = "loading" | "home" | "chat" | "devices" | "notifications" | "agentArt" | "settings";

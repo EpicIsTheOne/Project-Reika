@@ -5,6 +5,7 @@ import { serverConfig } from './config/defaults.js';
 import { EventBus } from './core/eventBus.js';
 import { StateStore } from './core/stateStore.js';
 import { CommandDispatcher } from './modules/commands/dispatcher.js';
+import { ArtStore } from './modules/art/artStore.js';
 import { FileStore, publicFile } from './modules/file/fileStore.js';
 import { NotificationStore } from './modules/notification/notificationStore.js';
 import { getProviderHistoryMessages, listProviderHistorySessions, runProviderChat, type ProviderChatEvent, type ProviderChatMessage, type ProviderHistoryMessage, type ProviderHistorySession } from './modules/provider/providerRuntime.js';
@@ -126,6 +127,7 @@ const events = new EventBus();
 const state = new StateStore();
 const sessions = new SessionStore();
 const files = new FileStore();
+const art = new ArtStore();
 const settings = new SettingsStore();
 const notifications = new NotificationStore();
 const deviceEndpoint = { kind: 'device' as const, id: serverConfig.uplink.deviceId };
@@ -172,10 +174,12 @@ async function boot() {
   await notifications.load();
   await sessions.load();
   await files.load();
+  await art.load();
   events.emit('settings.loaded', settings.snapshot());
   events.emit('notifications.loaded', notifications.snapshot());
   events.emit('session.store.loaded', sessions.snapshot());
   events.emit('file.store.loaded', files.snapshot());
+  events.emit('art.store.loaded', art.snapshot());
   await state.refreshProviders({ mockEnabled: settings.get().mockEnabled });
   events.emit('provider.state', state.snapshot().providers);
   relayClient.start();
@@ -198,6 +202,7 @@ function fullSnapshot() {
     notifications: notifications.snapshot(),
     sessionStore: sessions.snapshot(),
     fileStore: files.snapshot(),
+    artStore: art.snapshot(),
     uplink: relayClient.snapshot()
   };
 }
@@ -498,12 +503,16 @@ function providerTone(kind: string) {
   return 'blue';
 }
 
+function artPayload(extra: Record<string, unknown> = {}) {
+  return { ok: true, storage: art.snapshot(), oauth: art.oauthStatus(), profiles: art.list(), ...extra };
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host || `${serverConfig.host}:${serverConfig.port}`}`);
 
     if (req.method === 'GET' && url.pathname === '/health') {
-      sendJson(res, 200, { ok: true, service: serverConfig.serviceName, status: 'ready', settings: settings.snapshot(), notifications: notifications.snapshot(), uplink: relayClient.snapshot() });
+      sendJson(res, 200, { ok: true, service: serverConfig.serviceName, status: 'ready', settings: settings.snapshot(), notifications: notifications.snapshot(), art: art.snapshot(), uplink: relayClient.snapshot() });
       return;
     }
 
@@ -511,6 +520,181 @@ const server = http.createServer(async (req, res) => {
       const html = pairingPage(state.device, relayClient.snapshot(), await getStartupStatus());
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(html);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/art') {
+      sendJson(res, 200, artPayload());
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/art/oauth/status') {
+      sendJson(res, 200, { ok: true, oauth: art.oauthStatus() });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/art/oauth/connect') {
+      const oauth = art.oauthStatus();
+      sendJson(res, 200, { ok: true, oauth, message: oauth.message });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/art/oauth/disconnect') {
+      const oauth = art.oauthStatus();
+      sendJson(res, 200, { ok: true, oauth, message: 'Codex/ChatGPT OAuth is disconnected.' });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/art/profiles') {
+      const body = await readJson(req);
+      const profile = art.createProfile({ name: body.name, subtitle: body.subtitle, scope: body.scope });
+      notifications.add({
+        kind: 'system',
+        title: 'Art profile created',
+        body: `${profile.name} now has an AgentHub art profile.`,
+        source: 'art-studio',
+        tone: 'blue',
+        data: { profileId: profile.id }
+      });
+      sendJson(res, 200, artPayload({ profile }));
+      return;
+    }
+
+    const artDuplicateMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/duplicate$/);
+    if (req.method === 'POST' && artDuplicateMatch) {
+      const profile = art.duplicateProfile(decodeURIComponent(artDuplicateMatch[1] || ''));
+      notifications.add({
+        kind: 'system',
+        title: 'Art profile duplicated',
+        body: `${profile.name} was created from an existing art profile.`,
+        source: 'art-studio',
+        tone: 'purple',
+        data: { profileId: profile.id }
+      });
+      sendJson(res, 200, artPayload({ profile }));
+      return;
+    }
+
+    const artProfileDeleteMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)$/);
+    if (req.method === 'DELETE' && artProfileDeleteMatch) {
+      const profile = art.deleteProfile(decodeURIComponent(artProfileDeleteMatch[1] || ''));
+      notifications.add({
+        kind: 'warning',
+        title: 'Art profile deleted',
+        body: `${profile.name} was removed from Agent Art Studio.`,
+        source: 'art-studio',
+        tone: 'orange',
+        data: { profileId: profile.id }
+      });
+      sendJson(res, 200, artPayload({ profile }));
+      return;
+    }
+
+    const artCategoryCreateMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/categories$/);
+    if (req.method === 'POST' && artCategoryCreateMatch) {
+      const body = await readJson(req);
+      const profileId = decodeURIComponent(artCategoryCreateMatch[1] || '');
+      const category = art.addCategory(profileId, { name: body.name });
+      sendJson(res, 200, artPayload({ category }));
+      return;
+    }
+
+    const artCategoryMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/categories\/([^/]+)$/);
+    if (req.method === 'PATCH' && artCategoryMatch) {
+      const body = await readJson(req);
+      const category = art.updateCategory(decodeURIComponent(artCategoryMatch[1] || ''), decodeURIComponent(artCategoryMatch[2] || ''), {
+        selectionMode: body.selectionMode === 'single' || body.selectionMode === 'random' ? body.selectionMode : undefined,
+        selectedAssetId: typeof body.selectedAssetId === 'string' ? body.selectedAssetId : undefined,
+        prompt: typeof body.prompt === 'string' ? body.prompt : undefined,
+        systemPrompt: typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined,
+        referenceAssetIds: Array.isArray(body.referenceAssetIds) ? body.referenceAssetIds.filter((item): item is string => typeof item === 'string') : undefined
+      });
+      sendJson(res, 200, artPayload({ category }));
+      return;
+    }
+
+    if (req.method === 'DELETE' && artCategoryMatch) {
+      const category = art.deleteCategory(decodeURIComponent(artCategoryMatch[1] || ''), decodeURIComponent(artCategoryMatch[2] || ''));
+      notifications.add({
+        kind: 'warning',
+        title: 'Art category deleted',
+        body: `${category.name} was removed from Agent Art Studio.`,
+        source: 'art-studio',
+        tone: 'orange',
+        data: { categoryId: category.id }
+      });
+      sendJson(res, 200, artPayload({ category }));
+      return;
+    }
+
+    const artAssetUploadMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/categories\/([^/]+)\/assets\/upload$/);
+    if (req.method === 'POST' && artAssetUploadMatch) {
+      const body = await readJson(req);
+      const assetRecord = await art.addUploadedAsset(decodeURIComponent(artAssetUploadMatch[1] || ''), decodeURIComponent(artAssetUploadMatch[2] || ''), {
+        name: body.name,
+        mimeType: body.mimeType,
+        base64: body.base64,
+        prompt: body.prompt
+      });
+      notifications.add({
+        kind: 'file',
+        title: 'Art uploaded',
+        body: `${assetRecord.name} was added to Agent Art Studio.`,
+        source: 'art-studio',
+        tone: 'purple',
+        data: { assetId: assetRecord.id }
+      });
+      sendJson(res, 200, artPayload({ asset: assetRecord }));
+      return;
+    }
+
+    const artAssetLinkMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/categories\/([^/]+)\/assets\/link$/);
+    if (req.method === 'POST' && artAssetLinkMatch) {
+      const body = await readJson(req);
+      const assetRecord = art.addLinkedAsset(decodeURIComponent(artAssetLinkMatch[1] || ''), decodeURIComponent(artAssetLinkMatch[2] || ''), {
+        name: body.name,
+        url: body.url,
+        prompt: body.prompt
+      });
+      sendJson(res, 200, artPayload({ asset: assetRecord }));
+      return;
+    }
+
+    const artGenerateMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/categories\/([^/]+)\/generate$/);
+    if (req.method === 'POST' && artGenerateMatch) {
+      const generation = art.requestGeneration(decodeURIComponent(artGenerateMatch[1] || ''), decodeURIComponent(artGenerateMatch[2] || ''));
+      notifications.add({
+        kind: 'warning',
+        title: 'Image generation waiting on OAuth',
+        body: generation.message,
+        source: 'art-studio',
+        tone: 'orange',
+        data: { generation }
+      });
+      sendJson(res, 200, artPayload({ generation }));
+      return;
+    }
+
+    const artAssetDeleteMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/categories\/([^/]+)\/assets\/([^/]+)$/);
+    if (req.method === 'DELETE' && artAssetDeleteMatch) {
+      const assetRecord = art.deleteAsset(decodeURIComponent(artAssetDeleteMatch[1] || ''), decodeURIComponent(artAssetDeleteMatch[2] || ''), decodeURIComponent(artAssetDeleteMatch[3] || ''));
+      sendJson(res, 200, artPayload({ asset: assetRecord }));
+      return;
+    }
+
+    const artContentMatch = url.pathname.match(/^\/art\/assets\/([^/]+)\/content$/);
+    if (req.method === 'GET' && artContentMatch) {
+      const content = art.resolveAssetContent(decodeURIComponent(artContentMatch[1] || ''));
+      if (!content) {
+        sendJson(res, 404, { ok: false, error: 'Art asset content not found', code: 'ART_ASSET_NOT_FOUND' });
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': content.mimeType,
+        'Content-Disposition': `inline; filename="${content.name.replace(/"/g, '')}"`,
+        'Cache-Control': 'no-store'
+      });
+      content.stream.pipe(res);
       return;
     }
 
@@ -968,6 +1152,21 @@ const server = http.createServer(async (req, res) => {
         'GET /updates/status',
         'POST /updates/check',
         'POST /updates/apply',
+        'GET /art',
+        'GET /art/oauth/status',
+        'POST /art/oauth/connect',
+        'POST /art/oauth/disconnect',
+        'POST /art/profiles',
+        'POST /art/profiles/:id/duplicate',
+        'DELETE /art/profiles/:id',
+        'POST /art/profiles/:id/categories',
+        'PATCH /art/profiles/:id/categories/:categoryId',
+        'DELETE /art/profiles/:id/categories/:categoryId',
+        'POST /art/profiles/:id/categories/:categoryId/assets/upload',
+        'POST /art/profiles/:id/categories/:categoryId/assets/link',
+        'DELETE /art/profiles/:id/categories/:categoryId/assets/:assetId',
+        'POST /art/profiles/:id/categories/:categoryId/generate',
+        'GET /art/assets/:id/content',
         'GET /notifications',
         'POST /notifications/:id/read',
         'POST /notifications/read-all',

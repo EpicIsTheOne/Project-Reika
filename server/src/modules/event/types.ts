@@ -16,6 +16,7 @@ export type ServerEventType =
   | 'chat.history.imported'
   | 'session.store.loaded'
   | 'file.store.loaded'
+  | 'art.store.loaded'
   | 'file.linked'
   | 'file.uploaded'
   | 'updates.checked'

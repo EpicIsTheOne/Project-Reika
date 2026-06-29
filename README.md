@@ -39,6 +39,7 @@ Implemented:
 - safe command dispatcher
 - disabled-by-default outbound relay/uplink client
 - local development endpoints for health/state/providers/uplink/events
+- local Agent Art Studio endpoints for art profiles, categories, prompts, uploads, references, and generation readiness
 - tested outbound connection against the dev relay
 
 See:
@@ -56,6 +57,7 @@ Implemented:
 - Windows desktop client shell using Electron
 - generated/local Reika and AgentHub visual assets
 - local/dev app backend for provider scanning
+- Agent Art Studio page for agent/global art profiles, categories, selection modes, prompts, references, and manual uploads
 - Devices page relay integration
 - pairing UI skeleton
 - local agent startup toggle in Settings

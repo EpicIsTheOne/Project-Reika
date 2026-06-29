@@ -79,6 +79,24 @@ Auto-update applies only when the project is running from a git clone and the se
 
 If auto-update is off, the server still creates a local notification when GitHub has a newer update. The notification includes the same changed-file list and update description shown in Settings.
 
+## Agent Art Studio
+
+The sidebar includes `Agent Art`, a production-asset manager for AgentHub visuals.
+
+Current Phase 1 behavior:
+
+- Agent Art vs Global Art scopes
+- agent/global profile selection
+- profile create, duplicate, and delete for non-default profiles
+- art categories with `single` or `random` selection modes
+- selected art pool management
+- prompt and system-prompt editing
+- reference image toggles
+- manual image upload and linked-image add
+- generation readiness surfaced through the server
+
+The page uses the existing AgentHub/Reika asset library as seeded production art. GPT-image 2 generation is represented honestly: the button checks the local server generation path and reports that Codex/ChatGPT OAuth is not connected yet instead of fabricating a generated image.
+
 ## Main Folders
 
 ```text

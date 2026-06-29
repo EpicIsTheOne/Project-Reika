@@ -163,6 +163,89 @@ export interface ReikaUpdateStatus {
   applyOutput?: string;
 }
 
+export type ReikaArtScope = "agent" | "global";
+export type ReikaArtSelectionMode = "single" | "random";
+export type ReikaArtAssetKind = "seed" | "upload" | "generated" | "reference" | "link";
+
+export interface ReikaArtAsset {
+  id: string;
+  name: string;
+  kind: ReikaArtAssetKind;
+  createdAt: string;
+  assetKey?: string;
+  sourceUrl?: string;
+  filePath?: string;
+  mimeType?: string;
+  size?: number;
+  prompt?: string;
+  model?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ReikaArtCategory {
+  id: string;
+  name: string;
+  description: string;
+  usage: string;
+  icon: string;
+  selectionMode: ReikaArtSelectionMode;
+  selectedAssetId?: string;
+  prompt: string;
+  systemPrompt: string;
+  referenceAssetIds: string[];
+  assets: ReikaArtAsset[];
+  locked?: boolean;
+}
+
+export interface ReikaArtProfile {
+  id: string;
+  scope: ReikaArtScope;
+  name: string;
+  subtitle: string;
+  status: "online" | "offline" | "draft";
+  providerLabel: string;
+  avatarAssetKey: string;
+  defaultProfile?: boolean;
+  createdAt: string;
+  updatedAt: string;
+  categories: ReikaArtCategory[];
+}
+
+export interface ReikaArtOAuthStatus {
+  connected: boolean;
+  provider: "codex-oauth";
+  imageGenerationAvailable: boolean;
+  quotaLabel?: string;
+  message: string;
+}
+
+export interface ReikaArtStorage {
+  path: string;
+  assetDir: string;
+  loaded: boolean;
+  profileCount: number;
+  assetCount: number;
+  lastSavedAt?: string;
+  lastError?: string;
+}
+
+export interface ReikaArtGenerationStatus {
+  status: "blocked" | "queued" | "running" | "completed" | "failed";
+  provider: string;
+  profileId: string;
+  categoryId: string;
+  message: string;
+  prompt?: string;
+  systemPrompt?: string;
+}
+
+export interface ReikaArtLibraryResponse {
+  ok: true;
+  storage: ReikaArtStorage;
+  oauth: ReikaArtOAuthStatus;
+  profiles: ReikaArtProfile[];
+}
+
 export type ReikaNotificationKind = "agent" | "device" | "provider" | "chat" | "file" | "system" | "warning";
 export type ReikaNotificationTone = "blue" | "green" | "purple" | "orange" | "red" | "gray" | "pink";
 
@@ -273,6 +356,90 @@ export async function checkForUpdates() {
 
 export async function applyUpdates() {
   return request<ReikaUpdateStatus>("/updates/apply", { method: "POST" });
+}
+
+export async function getArtLibrary() {
+  return request<ReikaArtLibraryResponse>("/art");
+}
+
+export async function createArtProfile(input: { name?: string; subtitle?: string; scope?: ReikaArtScope }) {
+  return request<ReikaArtLibraryResponse & { profile: ReikaArtProfile }>("/art/profiles", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function duplicateArtProfile(profileId: string) {
+  return request<ReikaArtLibraryResponse & { profile: ReikaArtProfile }>(`/art/profiles/${encodeURIComponent(profileId)}/duplicate`, {
+    method: "POST"
+  });
+}
+
+export async function deleteArtProfile(profileId: string) {
+  return request<ReikaArtLibraryResponse & { profile: ReikaArtProfile }>(`/art/profiles/${encodeURIComponent(profileId)}`, {
+    method: "DELETE"
+  });
+}
+
+export async function createArtCategory(profileId: string, input: { name?: string }) {
+  return request<ReikaArtLibraryResponse & { category: ReikaArtCategory }>(`/art/profiles/${encodeURIComponent(profileId)}/categories`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function updateArtCategory(
+  profileId: string,
+  categoryId: string,
+  input: Partial<Pick<ReikaArtCategory, "selectionMode" | "selectedAssetId" | "prompt" | "systemPrompt" | "referenceAssetIds">>
+) {
+  return request<ReikaArtLibraryResponse & { category: ReikaArtCategory }>(`/art/profiles/${encodeURIComponent(profileId)}/categories/${encodeURIComponent(categoryId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function deleteArtCategory(profileId: string, categoryId: string) {
+  return request<ReikaArtLibraryResponse & { category: ReikaArtCategory }>(`/art/profiles/${encodeURIComponent(profileId)}/categories/${encodeURIComponent(categoryId)}`, {
+    method: "DELETE"
+  });
+}
+
+export async function uploadArtAsset(profileId: string, categoryId: string, file: File, prompt?: string) {
+  const base64 = await readFileBase64(file);
+  return request<ReikaArtLibraryResponse & { asset: ReikaArtAsset }>(`/art/profiles/${encodeURIComponent(profileId)}/categories/${encodeURIComponent(categoryId)}/assets/upload`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: file.name,
+      mimeType: file.type || "image/png",
+      base64,
+      prompt
+    })
+  });
+}
+
+export async function linkArtAsset(profileId: string, categoryId: string, input: { url: string; name?: string; prompt?: string }) {
+  return request<ReikaArtLibraryResponse & { asset: ReikaArtAsset }>(`/art/profiles/${encodeURIComponent(profileId)}/categories/${encodeURIComponent(categoryId)}/assets/link`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function deleteArtAsset(profileId: string, categoryId: string, assetId: string) {
+  return request<ReikaArtLibraryResponse & { asset: ReikaArtAsset }>(
+    `/art/profiles/${encodeURIComponent(profileId)}/categories/${encodeURIComponent(categoryId)}/assets/${encodeURIComponent(assetId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function requestArtGeneration(profileId: string, categoryId: string) {
+  return request<ReikaArtLibraryResponse & { generation: ReikaArtGenerationStatus }>(`/art/profiles/${encodeURIComponent(profileId)}/categories/${encodeURIComponent(categoryId)}/generate`, {
+    method: "POST"
+  });
+}
+
+export function artAssetContentUrl(assetId: string) {
+  return `${API_BASE}/art/assets/${encodeURIComponent(assetId)}/content`;
 }
 
 export async function listNotifications(input: { unreadOnly?: boolean; limit?: number } = {}) {
