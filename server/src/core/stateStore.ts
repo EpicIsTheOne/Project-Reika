@@ -30,8 +30,8 @@ export class StateStore {
       connectionPolicy: {
         externalUplinkEnabled: false,
         providerConnectionsEnabled: true,
-        chatTransportEnabled: false,
-        note: 'Local provider detection is enabled. External uplink and chat transport are intentionally not implemented yet.'
+        chatTransportEnabled: true,
+        note: 'Local provider detection and direct provider chat are enabled. External uplink remains opt-in.'
       }
     };
   }

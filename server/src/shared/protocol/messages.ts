@@ -39,6 +39,22 @@ export interface AgentRosterSnapshotPayload {
   agents: ProviderRecord['agents'];
 }
 
+export interface AgentChatRequestPayload {
+  providerId?: string;
+  agent?: string;
+  sessionId?: string;
+  message: string;
+  model?: string;
+}
+
+export interface AgentChatResponsePayload {
+  providerId: string;
+  agent: string;
+  sessionId: string;
+  text: string;
+  runtime: string;
+}
+
 export interface CommandAcceptedPayload {
   commandType: string;
 }

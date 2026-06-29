@@ -11,6 +11,8 @@ export const agentHubEnvelopeTypes = [
   "provider.refresh.request",
   "agent.roster.request",
   "agent.roster.snapshot",
+  "agent.chat.request",
+  "agent.chat.response",
   "command.accepted",
   "command.rejected",
   "command.completed",
@@ -71,6 +73,8 @@ export type DeviceProviderSnapshotEnvelope = AgentHubEnvelope<ProviderSnapshot> 
 export type ProviderRefreshRequestEnvelope = AgentHubEnvelope<Record<string, never>> & { type: "provider.refresh.request" };
 export type AgentRosterRequestEnvelope = AgentHubEnvelope<Record<string, never>> & { type: "agent.roster.request" };
 export type AgentRosterSnapshotEnvelope = AgentHubEnvelope<AgentRosterSnapshotPayload> & { type: "agent.roster.snapshot" };
+export type AgentChatRequestEnvelope = AgentHubEnvelope<{ providerId?: string; agent?: string; sessionId?: string; message: string; model?: string }> & { type: "agent.chat.request" };
+export type AgentChatResponseEnvelope = AgentHubEnvelope<{ providerId: string; agent: string; sessionId: string; text: string; runtime: string }> & { type: "agent.chat.response" };
 export type CommandAcceptedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.accepted" };
 export type CommandRejectedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.rejected" };
 export type CommandCompletedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.completed" };
@@ -85,6 +89,8 @@ export type KnownAgentHubEnvelope =
   | ProviderRefreshRequestEnvelope
   | AgentRosterRequestEnvelope
   | AgentRosterSnapshotEnvelope
+  | AgentChatRequestEnvelope
+  | AgentChatResponseEnvelope
   | CommandAcceptedEnvelope
   | CommandRejectedEnvelope
   | CommandCompletedEnvelope
@@ -119,7 +125,7 @@ export function isAgentHubEnvelope(value: unknown): value is KnownAgentHubEnvelo
 }
 
 export function isRelayRequestType(type: AgentHubEnvelopeType) {
-  return type === "device.state.request" || type === "provider.refresh.request" || type === "agent.roster.request";
+  return type === "device.state.request" || type === "provider.refresh.request" || type === "agent.roster.request" || type === "agent.chat.request";
 }
 
 export function createEnvelopeId(prefix = "env") {

@@ -1,11 +1,14 @@
 import type { StateStore } from '../../core/stateStore.js';
 import { createEnvelope, type AgentHubEndpoint, type AgentHubEnvelope } from '../../shared/protocol/envelope.js';
-import type { AgentRosterSnapshotPayload, CommandRejectedPayload, DeviceStateSnapshotPayload, ProviderSnapshotPayload } from '../../shared/protocol/messages.js';
+import type { AgentChatRequestPayload, AgentChatResponsePayload, AgentRosterSnapshotPayload, CommandRejectedPayload, DeviceStateSnapshotPayload, ProviderSnapshotPayload } from '../../shared/protocol/messages.js';
+
+export type AgentChatHandler = (payload: AgentChatRequestPayload) => Promise<AgentChatResponsePayload>;
 
 export class CommandDispatcher {
   constructor(
     private readonly state: StateStore,
-    private readonly deviceEndpoint: AgentHubEndpoint
+    private readonly deviceEndpoint: AgentHubEndpoint,
+    private readonly chatHandler?: AgentChatHandler
   ) {}
 
   async dispatch(envelope: AgentHubEnvelope): Promise<AgentHubEnvelope[]> {
@@ -17,6 +20,8 @@ export class CommandDispatcher {
         return [this.providerSnapshot(envelope)];
       case 'agent.roster.request':
         return [this.agentRoster(envelope)];
+      case 'agent.chat.request':
+        return this.agentChat(envelope);
       default:
         return [this.reject(envelope, 'UNSUPPORTED_COMMAND', 'This command is not supported by this device agent.')];
     }
@@ -62,6 +67,33 @@ export class CommandDispatcher {
         agents: active?.agents || []
       }
     });
+  }
+
+  async agentChat(request: AgentHubEnvelope) {
+    if (!this.chatHandler) return [this.reject(request, 'UNSUPPORTED_COMMAND', 'Chat transport is not configured on this device agent.')];
+    const payload = request.payload as Partial<AgentChatRequestPayload>;
+    if (!payload || typeof payload.message !== 'string' || !payload.message.trim()) {
+      return [this.reject(request, 'INVALID_PAYLOAD', 'agent.chat.request requires payload.message.')];
+    }
+    try {
+      const result = await this.chatHandler({
+        providerId: typeof payload.providerId === 'string' ? payload.providerId : undefined,
+        agent: typeof payload.agent === 'string' ? payload.agent : undefined,
+        sessionId: typeof payload.sessionId === 'string' ? payload.sessionId : undefined,
+        message: payload.message,
+        model: typeof payload.model === 'string' ? payload.model : undefined
+      });
+      return [createEnvelope<AgentChatResponsePayload>({
+        type: 'agent.chat.response',
+        source: this.deviceEndpoint,
+        target: request.source,
+        replyTo: request.id,
+        correlationId: request.correlationId || request.id,
+        payload: result
+      })];
+    } catch (error) {
+      return [this.reject(request, 'INTERNAL_ERROR', error instanceof Error ? error.message : String(error))];
+    }
   }
 
   reject(request: AgentHubEnvelope, reason: CommandRejectedPayload['reason'], message: string) {

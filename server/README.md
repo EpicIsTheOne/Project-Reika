@@ -25,20 +25,18 @@ Included now:
 - mock/offline fallback provider state
 - versioned shared `AgentHubEnvelope` protocol
 - disabled-by-default outbound relay client
-- safe command dispatcher for read-only/provider-refresh commands
+- safe command dispatcher for state, roster, provider refresh, and agent chat requests
+- direct provider chat for CommandCenter, OpenClaw, Hermes, and mock
+- Project Reika session/message history for local dev calls
+- SSE turn lifecycle events for local chat calls
 - tested against the dev relay in `../Relay`
-- no chat transport implementation yet
 - no external uplink enabled by default
 
 ## Not Included Yet
 
-- CommandCenter chat/session adapter
-- OpenClaw direct chat/session adapter
-- Hermes direct chat adapter
 - production relay/pairing credentials
 - per-device keypair challenge auth
 - remote sync persistence
-- real chat/session transport
 - voice
 - production UI wiring beyond the Phase 1 relay/device surface
 - Live2D / VRM
@@ -85,6 +83,14 @@ Development endpoints:
 - `GET /state`
 - `GET /events`
 - `GET /providers`
+- `GET /providers/:id/agents`
+- `GET /sessions`
+- `POST /sessions`
+- `GET /sessions/:id/messages`
+- `POST /sessions/:id/messages`
+- `POST /sessions/:id/messages/stream`
+- `POST /chat`
+- `POST /chat/stream`
 - `GET /uplink`
 - `GET /startup`
 - `POST /uplink/connect`
@@ -191,18 +197,23 @@ When enabled, the server connects outward to the relay over WS/WSS and sends:
 - `device.state.snapshot`
 - `device.provider.snapshot`
 - `agent.roster.snapshot`
+- `agent.chat.request`
+- `agent.chat.response`
 
 ## Supported Command Envelopes
 
-The current command dispatcher only supports:
+The current command dispatcher supports:
 
 - `device.state.request`
 - `provider.refresh.request`
 - `agent.roster.request`
+- `agent.chat.request`
 
-Unsupported messages return `command.rejected` with `UNSUPPORTED_COMMAND`.
+Unsupported messages return `command.rejected` with `UNSUPPORTED_COMMAND`. Invalid chat payloads return `INVALID_PAYLOAD`.
 
-Supported requests return snapshot envelopes directly. The current dispatcher does not emit a separate `command.completed` envelope after every successful request.
+Supported requests return snapshot/response envelopes directly. The current dispatcher does not emit a separate `command.completed` envelope after every successful request.
+
+Chat requests are intentionally limited to provider/agent/message/session fields and route through the same local provider service used by `POST /chat`.
 
 Intentionally unsupported in this phase:
 
@@ -211,8 +222,6 @@ Intentionally unsupported in this phase:
 - process/service control
 - provider mutation
 - agent install/update
-- chat transport
-
 No remote-admin nonsense. We are behaving, unfortunately.
 
 ## Provider Priority

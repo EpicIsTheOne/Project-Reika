@@ -1,7 +1,7 @@
 import { serverConfig } from '../../config/defaults.js';
 import type { EventBus } from '../../core/eventBus.js';
 import type { StateStore } from '../../core/stateStore.js';
-import { CommandDispatcher } from '../commands/dispatcher.js';
+import { CommandDispatcher, type AgentChatHandler } from '../commands/dispatcher.js';
 import { deviceAgentCapabilities } from '../../shared/protocol/capabilities.js';
 import { createEnvelope, isAgentHubEnvelope, type AgentHubEndpoint, type AgentHubEnvelope } from '../../shared/protocol/envelope.js';
 import type { DeviceHeartbeatPayload, DeviceHelloPayload } from '../../shared/protocol/messages.js';
@@ -41,10 +41,11 @@ export class RelayClient {
 
   constructor(
     private readonly state: StateStore,
-    private readonly events: EventBus
+    private readonly events: EventBus,
+    chatHandler?: AgentChatHandler
   ) {
     this.deviceEndpoint = { kind: 'device', id: this.deviceId };
-    this.dispatcher = new CommandDispatcher(state, this.deviceEndpoint);
+    this.dispatcher = new CommandDispatcher(state, this.deviceEndpoint, chatHandler);
   }
 
   start() {
