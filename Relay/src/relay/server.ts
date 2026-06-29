@@ -75,6 +75,21 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/v1/devices") {
+      sendJson(response, 200, {
+        ok: true,
+        devices: Array.from(devices.values()).map((record) => ({
+          device: record.device,
+          activeProviderId: record.activeProviderId,
+          providerCount: record.latestProviders.length,
+          agentCount: record.latestRoster.length,
+          socketConnected: record.socket?.readyState === WebSocket.OPEN,
+          lastHeartbeatAt: record.lastHeartbeatAt
+        }))
+      });
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/v1/pairing/create") {
       const body = await readJsonBody<{ accountId?: string; ttlMs?: number }>(request);
       const session = createPairingSession(body.accountId, body.ttlMs);
@@ -101,8 +116,9 @@ const server = createServer(async (request, response) => {
         sendJson(response, 404, { ok: false, error: "Pairing code has no claimed device to approve." });
         return;
       }
-      upsertDevice(session.device);
-      sendJson(response, 200, { ok: true, pairing: publicPairing(session), device: session.device });
+      const record = upsertDevice({ ...session.device, trusted: true });
+      session.device = record.device;
+      sendJson(response, 200, { ok: true, pairing: publicPairing(session), device: record.device });
       broadcastRelayState();
       return;
     }
@@ -324,7 +340,7 @@ function resolveHelloDevice(envelope: AgentHubEnvelope, pairingToken?: string | 
       session.deviceId = device.id;
       session.device = device;
       broadcastRelayState();
-      return null;
+      return device;
     }
     if (session?.status === "approved" && session.device) {
       if (candidateDeviceId && session.device.id !== candidateDeviceId) {
@@ -357,7 +373,13 @@ function upsertDevice(device: AgentHubDevice) {
     latestProviders: [],
     latestRoster: []
   };
-  record.device = { ...device, providers: existing?.device.providers ?? device.providers };
+  const socketOnline = existing?.socket?.readyState === WebSocket.OPEN;
+  record.device = {
+    ...device,
+    status: socketOnline ? "online" : device.status,
+    lastSeenAt: socketOnline ? new Date().toISOString() : device.lastSeenAt,
+    providers: existing?.device.providers ?? device.providers
+  };
   devices.set(device.id, record);
   return record;
 }
@@ -474,7 +496,12 @@ function broadcastToApps(envelope: AgentHubEnvelope) {
 }
 
 function createCommandStatus(type: "command.accepted" | "command.rejected" | "command.completed" | "command.failed", message: string, replyTo?: string, deviceId?: string) {
-  return createEnvelope(type, { ok: type === "command.accepted" || type === "command.completed", message }, { replyTo, deviceId });
+  return createEnvelope(type, { ok: type === "command.accepted" || type === "command.completed", message }, {
+    source: { kind: "relay", id: "agenthub-relay" },
+    replyTo,
+    deviceId,
+    target: deviceId ? { kind: "device", id: deviceId } : undefined
+  });
 }
 
 function sendEnvelope(socket: WebSocket, envelope: AgentHubEnvelope) {

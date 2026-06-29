@@ -145,6 +145,11 @@ export class RelayClient {
       return;
     }
 
+    if (parsed.type.startsWith('command.')) {
+      this.events.emit('uplink.command_status', { type: parsed.type, replyTo: parsed.replyTo, payload: parsed.payload });
+      return;
+    }
+
     const responses = await this.dispatcher.dispatch(parsed);
     for (const response of responses) this.send(response);
   }

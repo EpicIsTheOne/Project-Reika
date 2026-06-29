@@ -10,6 +10,7 @@ export type ServerEventType =
   | 'uplink.connected'
   | 'uplink.disconnected'
   | 'uplink.invalid_message'
+  | 'uplink.command_status'
   | 'uplink.reconnect_scheduled'
   | 'uplink.error';
 

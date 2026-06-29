@@ -10,6 +10,7 @@ The repo is split into clear lanes so Astra and Codex can work in parallel witho
 server/  Device-side agent server
 client/  Main AgentHub app/client
 Relay/   Tiny dev relay service
+shared/  Canonical Phase 1 protocol/model reference
 ```
 
 ## Current Status
@@ -71,9 +72,14 @@ Implemented:
 - `POST /v1/pairing/approve`
 - `WS /v1/device`
 - `WS /v1/app`
+- `GET /v1/devices` for dev-time relay state inspection
 - device presence tracking
 - safe envelope routing between app and device
 - compatibility shim for the client envelope shape and Astra's server envelope shape
+
+### `shared/`
+
+Added as the canonical Phase 1 protocol/model reference. Until this repo becomes a real workspace/package setup, update `shared/` first and mirror protocol changes into `server/`, `client/`, and `Relay/`.
 
 ## Local Development
 

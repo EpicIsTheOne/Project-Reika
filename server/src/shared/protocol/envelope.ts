@@ -5,29 +5,35 @@ export interface AgentHubEndpoint {
   id: string;
 }
 
-export type AgentHubMessageType =
-  | 'device.hello'
-  | 'device.heartbeat'
-  | 'device.state.request'
-  | 'device.state.snapshot'
-  | 'device.provider.snapshot'
-  | 'provider.refresh.request'
-  | 'agent.roster.request'
-  | 'agent.roster.snapshot'
-  | 'command.accepted'
-  | 'command.rejected'
-  | 'command.completed'
-  | 'command.failed';
+export const agentHubEnvelopeTypes = [
+  'device.hello',
+  'device.heartbeat',
+  'device.state.request',
+  'device.state.snapshot',
+  'device.provider.snapshot',
+  'provider.refresh.request',
+  'agent.roster.request',
+  'agent.roster.snapshot',
+  'command.accepted',
+  'command.rejected',
+  'command.completed',
+  'command.failed'
+] as const;
+
+export type AgentHubMessageType = (typeof agentHubEnvelopeTypes)[number];
 
 export interface AgentHubEnvelope<TPayload = unknown> {
   v: 1;
   id: string;
   type: AgentHubMessageType;
   timestamp: string;
-  source: AgentHubEndpoint;
+  source?: AgentHubEndpoint;
   target?: AgentHubEndpoint;
+  accountId?: string;
+  deviceId?: string;
   replyTo?: string;
   correlationId?: string;
+  commandId?: string;
   payload: TPayload;
 }
 
@@ -35,8 +41,11 @@ export function createEnvelope<TPayload>(input: {
   type: AgentHubMessageType;
   source: AgentHubEndpoint;
   target?: AgentHubEndpoint;
+  accountId?: string;
+  deviceId?: string;
   replyTo?: string;
   correlationId?: string;
+  commandId?: string;
   payload: TPayload;
 }): AgentHubEnvelope<TPayload> {
   return {
@@ -53,8 +62,7 @@ export function isAgentHubEnvelope(value: unknown): value is AgentHubEnvelope {
   return maybe.v === 1
     && typeof maybe.id === 'string'
     && typeof maybe.type === 'string'
+    && agentHubEnvelopeTypes.includes(maybe.type as AgentHubMessageType)
     && typeof maybe.timestamp === 'string'
-    && !!maybe.source
-    && typeof maybe.source === 'object'
-    && typeof maybe.source.id === 'string';
+    && 'payload' in maybe;
 }
