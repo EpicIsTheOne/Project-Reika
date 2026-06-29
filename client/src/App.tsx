@@ -68,7 +68,6 @@ import {
   chat,
   applyUpdates,
   checkForUpdates,
-  artAssetContentUrl,
   createSession,
   createArtCategory,
   createArtProfile,
@@ -113,6 +112,13 @@ import {
   type ReikaStateResponse,
   type ReikaUpdateStatus
 } from "./lib/reikaApi";
+import {
+  createArtRuntime,
+  makeArtRuntimeSeed,
+  resolveArtAssetUrl,
+  type ArtAgentLike,
+  type ArtRuntime
+} from "./lib/artRuntime";
 import type { Agent, ChatMessage, Device, Provider, Status, View } from "./types";
 
 const statusLabels: Record<Status, string> = {
@@ -129,7 +135,7 @@ type BackendMode = "loading" | "live" | "fallback";
 type BootStepState = "idle" | "active" | "done" | "error";
 
 interface BootStep {
-  id: "health" | "settings" | "state" | "notifications" | "uplink" | "startup" | "relay";
+  id: "health" | "settings" | "art" | "state" | "notifications" | "uplink" | "startup" | "relay";
   label: string;
   icon: ElementType;
   state: BootStepState;
@@ -173,11 +179,14 @@ export function App() {
   const [reikaState, setReikaState] = useState<ReikaStateResponse | null>(null);
   const [settings, setSettings] = useState<ReikaSettings>(defaultSettings);
   const [notifications, setNotifications] = useState<ReikaNotification[]>([]);
+  const [artLibrary, setArtLibrary] = useState<ReikaArtLibraryResponse | null>(null);
   const [bootSteps, setBootSteps] = useState<BootStep[]>(() => createBootSteps());
   const [bootReady, setBootReady] = useState(false);
   const [backendMode, setBackendMode] = useState<BackendMode>("loading");
   const [backendError, setBackendError] = useState<string | null>(null);
   const [pairingOpenRequest, setPairingOpenRequest] = useState(0);
+  const artSeed = useMemo(() => makeArtRuntimeSeed(), []);
+  const artRuntime = useMemo(() => createArtRuntime(artLibrary, artSeed), [artLibrary, artSeed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,6 +214,15 @@ export function App() {
       if (cancelled) return;
       setSettings(settingsResponse.settings);
       markBootStep("settings", "done", settingsResponse.settings.mockEnabled ? "Mock available" : "Mock disabled");
+
+      markBootStep("art", "active");
+      try {
+        const artResponse = await getArtLibrary();
+        if (!cancelled) setArtLibrary(artResponse);
+        markBootStep("art", "done", `${artResponse.storage.assetCount} art assets`);
+      } catch {
+        markBootStep("art", "error", "Bundled art fallback");
+      }
 
       markBootStep("state", "active");
       const state = await getState();
@@ -305,18 +323,19 @@ export function App() {
   if (view === "loading") {
     return (
       <div className="app-root">
-        <LoadingScreen steps={bootSteps} ready={bootReady} mode={backendMode} error={backendError} onEnter={() => setView(settings.startupView)} />
+        <LoadingScreen steps={bootSteps} ready={bootReady} mode={backendMode} error={backendError} artRuntime={artRuntime} onEnter={() => setView(settings.startupView)} />
       </div>
     );
   }
 
   return (
     <div className="app-root">
-      <AppShell activeView={view} backendMode={backendMode} notificationCount={unreadCount} onNavigate={setView}>
+      <AppShell activeView={view} backendMode={backendMode} notificationCount={unreadCount} artRuntime={artRuntime} onNavigate={setView}>
         {view === "home" && (
           <HomePage
             devices={presentationDevices}
             backendMode={backendMode}
+            artRuntime={artRuntime}
             onScanProviders={handleScanProviders}
             onOpenNotifications={() => setView("notifications")}
             onAddDevice={() => {
@@ -329,11 +348,12 @@ export function App() {
             }}
           />
         )}
-        {view === "chat" && <ChatView agent={selectedAgent} initialState={reikaState} onBack={() => setView("home")} />}
-        {view === "devices" && <DevicesView localDevices={appDevices} pairingOpenRequest={pairingOpenRequest} onScanProviders={handleScanProviders} />}
+        {view === "chat" && <ChatView agent={selectedAgent} initialState={reikaState} artRuntime={artRuntime} onBack={() => setView("home")} />}
+        {view === "devices" && <DevicesView localDevices={appDevices} pairingOpenRequest={pairingOpenRequest} artRuntime={artRuntime} onScanProviders={handleScanProviders} />}
         {view === "notifications" && (
           <NotificationsView
             notifications={notifications}
+            artRuntime={artRuntime}
             onRefresh={refreshNotifications}
             onUpdateNotifications={setNotifications}
             onOpenChat={() => {
@@ -342,12 +362,13 @@ export function App() {
             }}
           />
         )}
-        {view === "agentArt" && <AgentArtStudio />}
+        {view === "agentArt" && <AgentArtStudio initialLibrary={artLibrary} artRuntime={artRuntime} onLibraryChange={setArtLibrary} />}
         {view === "settings" && (
           <SettingsView
             settings={settings}
             backendMode={backendMode}
             backendError={backendError}
+            artRuntime={artRuntime}
             onSettingsChange={(nextSettings, nextState) => {
               setSettings(nextSettings);
               if (nextState) {
@@ -368,12 +389,14 @@ function LoadingScreen({
   ready,
   mode,
   error,
+  artRuntime,
   onEnter
 }: {
   steps: BootStep[];
   ready: boolean;
   mode: BackendMode;
   error: string | null;
+  artRuntime: ArtRuntime;
   onEnter: () => void;
 }) {
   const doneCount = steps.filter((step) => step.state === "done").length;
@@ -385,7 +408,7 @@ function LoadingScreen({
 
   return (
     <main className="loading-screen">
-      <img className="loading-bg" src={assets.loading.bootBackdrop} alt="" />
+      <img className="loading-bg" src={artRuntime.globalArt("global-loading", assets.loading.bootBackdrop, "loading-backdrop")} alt="" />
       <div className="loading-shade" />
       <div className="loading-grid" aria-hidden="true" />
 
@@ -469,6 +492,7 @@ function createBootSteps(): BootStep[] {
   return [
     { id: "health", label: "Initializing", icon: Activity, state: "idle" },
     { id: "settings", label: "Loading Settings", icon: Brush, state: "idle" },
+    { id: "art", label: "Loading Art Studio", icon: Images, state: "idle" },
     { id: "state", label: "Loading Agents", icon: Users, state: "idle" },
     { id: "notifications", label: "Syncing Notifications", icon: Bell, state: "idle" },
     { id: "uplink", label: "Checking Relay Uplink", icon: Link2, state: "idle" },
@@ -481,12 +505,14 @@ function AppShell({
   activeView,
   backendMode,
   notificationCount,
+  artRuntime,
   onNavigate,
   children
 }: {
   activeView: View;
   backendMode: BackendMode;
   notificationCount: number;
+  artRuntime: ArtRuntime;
   onNavigate: (view: View) => void;
   children: ReactNode;
 }) {
@@ -516,7 +542,7 @@ function AppShell({
         </nav>
 
         <div className="account-card">
-          <img src={assets.reika.avatar} alt="" />
+          <img src={artRuntime.agentAvatar("reika", "account-card")} alt="" />
           <span>
             <strong>Epic</strong>
             <small>epic@agenthub.dev</small>
@@ -548,6 +574,7 @@ function AppShell({
 function HomePage({
   devices,
   backendMode,
+  artRuntime,
   onScanProviders,
   onOpenNotifications,
   onAddDevice,
@@ -555,6 +582,7 @@ function HomePage({
 }: {
   devices: Device[];
   backendMode: BackendMode;
+  artRuntime: ArtRuntime;
   onScanProviders: () => void;
   onOpenNotifications: () => void;
   onAddDevice: () => void;
@@ -583,7 +611,7 @@ function HomePage({
       />
 
       <section className="feature-hero">
-        <img src={assets.room.hero} alt="" />
+        <img src={artRuntime.agentArt("reika", "hero-banner", assets.room.hero, "home-hero")} alt="" />
         <div className="feature-copy">
           <p className="eyebrow">Featured Agent</p>
           <h2>
@@ -621,7 +649,7 @@ function HomePage({
 
       <section className="device-grid">
         {devices.map((device) => (
-          <DeviceCard device={device} key={device.id} onOpenChat={onOpenChat} />
+          <DeviceCard device={device} key={device.id} artRuntime={artRuntime} onOpenChat={onOpenChat} />
         ))}
       </section>
 
@@ -662,7 +690,7 @@ function NotificationButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-function DeviceCard({ device, onOpenChat }: { device: Device; onOpenChat: (agentId: string) => void }) {
+function DeviceCard({ device, artRuntime, onOpenChat }: { device: Device; artRuntime: ArtRuntime; onOpenChat: (agentId: string) => void }) {
   const Icon = device.type === "server" ? Box : device.type === "laptop" ? Monitor : Monitor;
   const agentCount = device.providers.reduce((total, provider) => total + provider.agents.length, 0);
 
@@ -679,7 +707,7 @@ function DeviceCard({ device, onOpenChat }: { device: Device; onOpenChat: (agent
 
       <div className="provider-stack">
         {device.providers.map((provider) => (
-          <ProviderBlock provider={provider} key={provider.id} onOpenChat={onOpenChat} />
+          <ProviderBlock provider={provider} key={provider.id} artRuntime={artRuntime} onOpenChat={onOpenChat} />
         ))}
       </div>
 
@@ -691,7 +719,7 @@ function DeviceCard({ device, onOpenChat }: { device: Device; onOpenChat: (agent
   );
 }
 
-function ProviderBlock({ provider, onOpenChat }: { provider: Provider; onOpenChat: (agentId: string) => void }) {
+function ProviderBlock({ provider, artRuntime, onOpenChat }: { provider: Provider; artRuntime: ArtRuntime; onOpenChat: (agentId: string) => void }) {
   return (
     <section className="provider-block">
       <header>
@@ -703,7 +731,7 @@ function ProviderBlock({ provider, onOpenChat }: { provider: Provider; onOpenCha
         {provider.agents.length > 0 ? (
           provider.agents.map((agent) => (
             <button className="agent-row" key={agent.id} onClick={() => onOpenChat(agent.id)}>
-              <img src={getAgentAvatar(agent)} alt="" />
+              <img src={getAgentAvatar(agent, artRuntime)} alt="" />
               <span>
                 <strong>{agent.name}</strong>
                 <small>
@@ -722,7 +750,7 @@ function ProviderBlock({ provider, onOpenChat }: { provider: Provider; onOpenCha
   );
 }
 
-function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState: ReikaStateResponse | null; onBack: () => void }) {
+function ChatView({ agent, initialState, artRuntime, onBack }: { agent: Agent; initialState: ReikaStateResponse | null; artRuntime: ArtRuntime; onBack: () => void }) {
   const [serverState, setServerState] = useState<ReikaStateResponse | null>(initialState);
   const [providers, setProviders] = useState<ReikaProviderRecord[]>(initialState?.providers ?? []);
   const [selectedProviderId, setSelectedProviderId] = useState(initialState?.activeProviderId ?? "");
@@ -754,6 +782,13 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
   const providerLabel = selectedProvider?.name ?? "Reika Server";
   const deviceName = getReikaDeviceName(serverState) || "Epic PC";
   const selectedAttachments = files.filter((file) => selectedFileIds.includes(file.id));
+  const artAgent: ArtAgentLike = {
+    id: selectedLiveAgent?.id ?? selectedAgentKey ?? agent.id,
+    name: headerAgentName,
+    characterId: selectedLiveAgent?.characterId ?? agent.characterId
+  };
+  const chatAvatar = artRuntime.agentAvatar(artAgent, "chat-avatar");
+  const chatSplash = artRuntime.agentArt(artAgent, "splash-full-body", assets.reika.splash, "chat-profile-splash");
 
   const normalizeChatError = (value: unknown, fallback = "Something went wrong.") => {
     const raw = value instanceof Error ? value.message : String(value || fallback);
@@ -955,7 +990,7 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
           <ArrowLeft size={20} />
           Back
         </button>
-        <img className="chat-profile-art" src={assets.reika.splash} alt="" />
+        <img className="chat-profile-art" src={chatSplash} alt="" />
         <div className="chat-profile-card live-chat-profile-card">
           <h2>
             {headerAgentName}
@@ -1040,7 +1075,7 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
 
       <section className="chat-main">
         <header className="chat-header">
-          <img src={assets.reika.avatar} alt="" />
+          <img src={chatAvatar} alt="" />
           <div>
             <h1>
               {headerAgentName}
@@ -1067,11 +1102,11 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
           {sendError ? <div className="chat-error-banner">{sendError}</div> : null}
           <div className="message-list">
             {visibleMessages.map((message) => (
-              <MessageBubble message={message} key={message.id} />
+              <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={headerAgentName} />
             ))}
             {busy ? (
               <div className="typing-row">
-                <img src={assets.reika.avatar} alt="" />
+                <img src={chatAvatar} alt="" />
                 <span>{headerAgentName} is thinking</span>
                 <i />
                 <i />
@@ -1133,7 +1168,9 @@ function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState:
   );
 }
 
-function LegacyChatView({ agent, onBack }: { agent: Agent; onBack: () => void }) {
+function LegacyChatView({ agent, onBack, artRuntime = createArtRuntime(null, "legacy-chat") }: { agent: Agent; onBack: () => void; artRuntime?: ArtRuntime }) {
+  const legacyAvatar = artRuntime.agentAvatar("reika", "legacy-chat-avatar");
+  const legacySplash = artRuntime.agentArt("reika", "splash-full-body", assets.reika.splash, "legacy-chat-splash");
   return (
     <main className="chat-screen">
       <aside className="chat-profile">
@@ -1141,7 +1178,7 @@ function LegacyChatView({ agent, onBack }: { agent: Agent; onBack: () => void })
           <ArrowLeft size={20} />
           Back
         </button>
-        <img className="chat-profile-art" src={assets.reika.splash} alt="" />
+        <img className="chat-profile-art" src={legacySplash} alt="" />
         <div className="chat-profile-card">
           <h2>
             Reika
@@ -1165,7 +1202,7 @@ function LegacyChatView({ agent, onBack }: { agent: Agent; onBack: () => void })
 
       <section className="chat-main">
         <header className="chat-header">
-          <img src={assets.reika.avatar} alt="" />
+          <img src={legacyAvatar} alt="" />
           <div>
             <h1>
               {agent.name}
@@ -1197,7 +1234,7 @@ function LegacyChatView({ agent, onBack }: { agent: Agent; onBack: () => void })
               <MessageBubble message={message} key={message.id} />
             ))}
             <div className="typing-row">
-              <img src={assets.reika.avatar} alt="" />
+              <img src={legacyAvatar} alt="" />
               <span>Reika is typing</span>
               <i />
               <i />
@@ -1228,17 +1265,18 @@ function LegacyChatView({ agent, onBack }: { agent: Agent; onBack: () => void })
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, agentAvatar, agentName = "Reika" }: { message: ChatMessage; agentAvatar?: string; agentName?: string }) {
   if (message.sender === "system") return null;
   const isUser = message.sender === "user";
+  const avatar = agentAvatar ?? assets.reika.avatar;
 
   return (
     <article className={isUser ? "chat-message user" : "chat-message agent"}>
-      {!isUser ? <img src={assets.reika.avatar} alt="" /> : null}
+      {!isUser ? <img src={avatar} alt="" /> : null}
       <div className="message-content">
         {!isUser ? (
           <header>
-            <strong>Reika</strong>
+            <strong>{agentName}</strong>
             <time>{message.time}</time>
           </header>
         ) : null}
@@ -1356,111 +1394,9 @@ const deviceRows: DevicePageRow[] = [
   }
 ];
 
-type NotificationItem = {
-  id: string;
-  title: string;
-  body: string;
-  time: string;
-  detailTime: string;
-  tag: string;
-  tagTone: "blue" | "green" | "purple" | "orange" | "gray";
-  avatar?: string;
-  icon?: string;
-  providerIcon?: string;
-  accent: "blue" | "green" | "purple" | "orange" | "red" | "pink";
-  badge?: "check" | "warning" | "heart" | "spark";
-  unread?: boolean;
-};
+type NotificationTagTone = "blue" | "green" | "purple" | "orange" | "gray";
 
-const notificationItems: NotificationItem[] = [
-  {
-    id: "reika-online",
-    title: "Reika is now online",
-    body: "Reika has come online and is ready to assist you.",
-    time: "2m ago",
-    detailTime: "Today at 10:24 AM",
-    tag: "Reika",
-    tagTone: "blue",
-    avatar: assets.reika.avatar,
-    accent: "blue",
-    unread: true
-  },
-  {
-    id: "epic-pc-online",
-    title: "Epic PC is back online",
-    body: "Your device reconnected successfully.",
-    time: "8m ago",
-    detailTime: "Today at 10:18 AM",
-    tag: "Device",
-    tagTone: "green",
-    icon: assets.icons.devices.pc,
-    accent: "green",
-    badge: "check",
-    unread: true
-  },
-  {
-    id: "openclaw-sync",
-    title: "OpenClaw sync completed",
-    body: "2 agents synced and configuration updated.",
-    time: "15m ago",
-    detailTime: "Today at 10:11 AM",
-    tag: "OpenClaw",
-    tagTone: "purple",
-    providerIcon: assets.icons.providers.OpenClaw,
-    accent: "purple",
-    unread: true
-  },
-  {
-    id: "memory-added",
-    title: "New memory added",
-    body: "\"UNBEATABLE stream plans\" was saved to memory.",
-    time: "1h ago",
-    detailTime: "Today at 9:24 AM",
-    tag: "Reika",
-    tagTone: "blue",
-    avatar: assets.reika.expressions.happy,
-    accent: "blue",
-    badge: "spark"
-  },
-  {
-    id: "cpu-warning",
-    title: "Hostinger VPS high CPU usage",
-    body: "CPU usage is above 85% for the last 10 minutes.",
-    time: "2h ago",
-    detailTime: "Today at 8:24 AM",
-    tag: "Device",
-    tagTone: "orange",
-    icon: assets.icons.devices.server,
-    accent: "orange",
-    badge: "warning"
-  },
-  {
-    id: "hermes-stable",
-    title: "Hermes connection stable",
-    body: "Hermes provider health check passed.",
-    time: "3h ago",
-    detailTime: "Today at 7:24 AM",
-    tag: "Hermes",
-    tagTone: "gray",
-    providerIcon: assets.icons.providers.Hermes,
-    accent: "green",
-    badge: "check"
-  },
-  {
-    id: "reika-message",
-    title: "Reika sent you a message",
-    body: "\"Hey Epic, ready to get to work?\"",
-    time: "5h ago",
-    detailTime: "Today at 5:24 AM",
-    tag: "Reika",
-    tagTone: "blue",
-    avatar: assets.reika.avatar,
-    accent: "pink",
-    badge: "heart"
-  }
-];
-
-function DevicesView({ localDevices, pairingOpenRequest, onScanProviders }: { localDevices: Device[]; pairingOpenRequest: number; onScanProviders: () => void }) {
+function DevicesView({ localDevices, pairingOpenRequest, artRuntime, onScanProviders }: { localDevices: Device[]; pairingOpenRequest: number; artRuntime: ArtRuntime; onScanProviders: () => void }) {
   const [selectedId, setSelectedId] = useState("epic-pc");
   const [filterOpen, setFilterOpen] = useState(false);
   const [relayStatus, setRelayStatus] = useState<"connecting" | "online" | "offline">("connecting");
@@ -1657,7 +1593,7 @@ function DevicesView({ localDevices, pairingOpenRequest, onScanProviders }: { lo
           </section>
         </section>
 
-        <DeviceDetailPanel device={selectedDevice} relayConnected={relayStatus === "online"} onRelayRequest={handleRelayRequest} />
+        <DeviceDetailPanel device={selectedDevice} relayConnected={relayStatus === "online"} artRuntime={artRuntime} onRelayRequest={handleRelayRequest} />
       </div>
     </main>
   );
@@ -1793,10 +1729,12 @@ function DeviceMetricStack({ metrics }: { metrics?: DevicePageRow["metrics"] }) 
 function DeviceDetailPanel({
   device,
   relayConnected,
+  artRuntime,
   onRelayRequest
 }: {
   device: DevicePageRow;
   relayConnected: boolean;
+  artRuntime: ArtRuntime;
   onRelayRequest: (type: "device.state.request" | "provider.refresh.request" | "agent.roster.request") => void;
 }) {
   const [startupStatus, setStartupStatus] = useState<LocalAgentStartupStatus | null>(null);
@@ -1869,7 +1807,7 @@ function DeviceDetailPanel({
   return (
     <aside className="device-detail-panel">
       <div className="device-detail-hero">
-        <img src={assets.room.full} alt="" />
+        <img src={artRuntime.globalArt("global-backgrounds", assets.room.full, "device-detail")} alt="" />
         <span>
           <img src={device.icon} alt="" />
         </span>
@@ -1969,7 +1907,7 @@ function DeviceDetailPanel({
             {(device.agents ?? []).length > 0 ? (
               device.agents?.map((agent) => (
                 <div className="relay-agent-row" key={agent.id}>
-                  <img src={getAgentAvatar(agent)} alt="" />
+                  <img src={getAgentAvatar(agent, artRuntime)} alt="" />
                   <span>
                     <strong>{agent.name}</strong>
                     <small>{agent.role}</small>
@@ -2010,11 +1948,13 @@ function DetailRow({
 
 function NotificationsView({
   notifications,
+  artRuntime,
   onRefresh,
   onUpdateNotifications,
   onOpenChat
 }: {
   notifications: ReikaNotification[];
+  artRuntime: ArtRuntime;
   onRefresh: () => void;
   onUpdateNotifications: (notifications: ReikaNotification[]) => void;
   onOpenChat: () => void;
@@ -2095,7 +2035,7 @@ function NotificationsView({
               onClick={() => selectNotification(item)}
             >
               {item.unread ? <span className="unread-dot" /> : null}
-              <NotificationIcon item={item} />
+              <NotificationIcon item={item} artRuntime={artRuntime} />
               <span className="notification-copy">
                 <strong>{item.title}</strong>
                 <small>{item.body}</small>
@@ -2111,16 +2051,16 @@ function NotificationsView({
           </footer>
         </section>
 
-        <NotificationDetailPanel item={selected} onOpenChat={onOpenChat} onDelete={removeSelected} />
+        <NotificationDetailPanel item={selected} artRuntime={artRuntime} onOpenChat={onOpenChat} onDelete={removeSelected} />
       </div>
     </main>
   );
 }
 
-function NotificationIcon({ item }: { item: ReikaNotification }) {
+function NotificationIcon({ item, artRuntime }: { item: ReikaNotification; artRuntime: ArtRuntime }) {
   return (
     <span className={`notification-icon accent-${item.tone}`}>
-      <img src={notificationIcon(item)} alt="" />
+      <img src={notificationIcon(item, artRuntime)} alt="" />
       <em className={`notification-badge ${notificationBadge(item)}`}>
           {notificationBadge(item) === "check" ? <CheckCircle2 size={13} /> : notificationBadge(item) === "warning" ? <TriangleAlert size={13} /> : notificationBadge(item) === "heart" ? <Heart size={12} fill="currentColor" /> : <Activity size={12} />}
         </em>
@@ -2128,11 +2068,12 @@ function NotificationIcon({ item }: { item: ReikaNotification }) {
   );
 }
 
-function NotificationDetailPanel({ item, onOpenChat, onDelete }: { item: ReikaNotification | null; onOpenChat: () => void; onDelete: () => void }) {
+function NotificationDetailPanel({ item, artRuntime, onOpenChat, onDelete }: { item: ReikaNotification | null; artRuntime: ArtRuntime; onOpenChat: () => void; onDelete: () => void }) {
   if (!item) {
     return (
       <aside className="notification-detail-panel">
         <section className="notification-detail-content">
+          <img className="empty-state-art" src={artRuntime.globalArt("global-empty-states", assets.empty.noChat, "notifications-empty")} alt="" />
           <h2>No notification selected</h2>
           <p>The inbox is quiet.</p>
         </section>
@@ -2143,7 +2084,7 @@ function NotificationDetailPanel({ item, onOpenChat, onDelete }: { item: ReikaNo
   return (
     <aside className="notification-detail-panel">
       <div className="notification-detail-hero">
-        <img src={assets.room.hero} alt="" />
+        <img src={artRuntime.agentArt("reika", item.kind === "warning" ? "offline-error" : "hero-banner", assets.room.hero, `notification-${item.id}`)} alt="" />
         <span>
           <StatusDot status="online" />
           Online
@@ -2195,7 +2136,7 @@ function notificationTag(item: ReikaNotification) {
   return "System";
 }
 
-function notificationTagTone(item: ReikaNotification): NotificationItem["tagTone"] {
+function notificationTagTone(item: ReikaNotification): NotificationTagTone {
   if (item.tone === "red") return "orange";
   if (item.tone === "pink") return "blue";
   return item.tone;
@@ -2208,7 +2149,7 @@ function notificationBadge(item: ReikaNotification): "check" | "warning" | "hear
   return "spark";
 }
 
-function notificationIcon(item: ReikaNotification) {
+function notificationIcon(item: ReikaNotification, artRuntime: ArtRuntime) {
   if (item.kind === "provider") {
     const source = item.source.toLowerCase();
     if (source.includes("openclaw")) return assets.icons.providers.OpenClaw;
@@ -2218,8 +2159,8 @@ function notificationIcon(item: ReikaNotification) {
   }
   if (item.kind === "device") return assets.icons.devices.pc;
   if (item.kind === "file") return assets.brand.logoSmall;
-  if (item.kind === "warning") return assets.icons.devices.server;
-  return assets.reika.avatar;
+  if (item.kind === "warning") return artRuntime.agentArt("reika", "offline-error", assets.icons.devices.server, `warning-${item.id}`);
+  return artRuntime.agentArt("reika", "notifications", assets.reika.avatar, `notification-icon-${item.id}`);
 }
 
 function relativeTime(value: string) {
@@ -2241,7 +2182,15 @@ function absoluteTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(timestamp);
 }
 
-function AgentArtStudio() {
+function AgentArtStudio({
+  initialLibrary,
+  artRuntime,
+  onLibraryChange
+}: {
+  initialLibrary: ReikaArtLibraryResponse | null;
+  artRuntime: ArtRuntime;
+  onLibraryChange: (library: ReikaArtLibraryResponse) => void;
+}) {
   type ArtActionResponse = ReikaArtLibraryResponse & {
     profile?: ReikaArtProfile;
     category?: ReikaArtCategory;
@@ -2249,7 +2198,7 @@ function AgentArtStudio() {
     generation?: ReikaArtGenerationStatus;
   };
 
-  const [library, setLibrary] = useState<ReikaArtLibraryResponse | null>(null);
+  const [library, setLibrary] = useState<ReikaArtLibraryResponse | null>(initialLibrary);
   const [activeScope, setActiveScope] = useState<ReikaArtScope>("agent");
   const [selectedProfileId, setSelectedProfileId] = useState("reika");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
@@ -2262,18 +2211,27 @@ function AgentArtStudio() {
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const applyLibrary = (response: ReikaArtLibraryResponse) => {
+    setLibrary(response);
+    onLibraryChange(response);
+  };
+
   const loadLibrary = () => {
     setBusy("load");
     setNotice(null);
     getArtLibrary()
-      .then((response) => setLibrary(response))
+      .then((response) => applyLibrary(response))
       .catch((error) => setNotice(readableError(error, "Could not load Agent Art Studio.")))
       .finally(() => setBusy(null));
   };
 
   useEffect(() => {
+    if (initialLibrary) {
+      setLibrary(initialLibrary);
+      return;
+    }
     loadLibrary();
-  }, []);
+  }, [initialLibrary]);
 
   const profiles = useMemo(() => library?.profiles.filter((profile) => profile.scope === activeScope) ?? [], [activeScope, library]);
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0] ?? null;
@@ -2314,7 +2272,7 @@ function AgentArtStudio() {
     setNotice(null);
     action()
       .then((response) => {
-        setLibrary(response);
+        applyLibrary(response);
         const message = success?.(response);
         if (message) setNotice(message);
       })
@@ -2504,7 +2462,7 @@ function AgentArtStudio() {
                   setSelectedProfileId(profile.id);
                   setSelectedCategoryId(profile.categories[0]?.id ?? "");
                 }}>
-                  <img src={resolveArtAssetKey(profile.avatarAssetKey)} alt="" />
+                  <img src={artRuntime.profileAvatar(profile, "studio-profile")} alt="" />
                   <span>
                     <strong>{profile.name}</strong>
                     <small>{profile.subtitle}</small>
@@ -2732,37 +2690,6 @@ function artCategoryIcon(icon: string): ElementType {
   return Box;
 }
 
-function resolveArtAssetUrl(assetRecord: ReikaArtAsset | null | undefined) {
-  if (!assetRecord) return assets.reika.avatar;
-  if (assetRecord.sourceUrl) return assetRecord.sourceUrl;
-  if (assetRecord.filePath || assetRecord.kind === "upload") return artAssetContentUrl(assetRecord.id);
-  if (assetRecord.assetKey) return resolveArtAssetKey(assetRecord.assetKey);
-  return assets.reika.avatar;
-}
-
-function resolveArtAssetKey(assetKey: string) {
-  const map: Record<string, string> = {
-    "brand.logo": assets.brand.logoSmall,
-    "brand.wordmark": assets.brand.wordmark,
-    "reika.chibi": assets.reika.chibi,
-    "reika.avatar": assets.reika.avatar,
-    "reika.splash": assets.reika.splash,
-    "reika.halfBody": assets.reika.halfBody,
-    "reika.expressions.neutral": assets.reika.expressions.neutral,
-    "reika.expressions.happy": assets.reika.expressions.happy,
-    "reika.expressions.thinking": assets.reika.expressions.thinking,
-    "reika.expressions.playful": assets.reika.expressions.playful,
-    "room.full": assets.room.full,
-    "room.blurred": assets.room.blurred,
-    "room.hero": assets.room.hero,
-    "loading.background": assets.loading.background,
-    "loading.bootBackdrop": assets.loading.bootBackdrop,
-    "empty.noAgents": assets.empty.noAgents,
-    "empty.noChat": assets.empty.noChat
-  };
-  return map[assetKey] ?? assets.reika.avatar;
-}
-
 function readableError(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error.trim()) return error;
@@ -2773,11 +2700,13 @@ function SettingsView({
   settings,
   backendMode,
   backendError,
+  artRuntime,
   onSettingsChange
 }: {
   settings: ReikaSettings;
   backendMode: BackendMode;
   backendError: string | null;
+  artRuntime: ArtRuntime;
   onSettingsChange: (settings: ReikaSettings, state?: ReikaStateResponse) => void;
 }) {
   const [activeTab, setActiveTab] = useState("General");
@@ -2851,7 +2780,7 @@ function SettingsView({
   return (
     <main className="settings-screen">
       <aside className="settings-scene">
-        <img src={assets.reika.splash} alt="" />
+        <img src={artRuntime.agentArt("reika", "splash-full-body", assets.reika.splash, "settings-scene")} alt="" />
         <div className="settings-scene-card">
           <h2>Settings</h2>
           <p>Make AgentHub truly yours.</p>
@@ -3146,12 +3075,8 @@ function formatClock(value: string) {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function getAgentAvatar(agent: Agent) {
-  if (agent.characterId === "reika" || agent.id === "reika") return assets.reika.avatar;
-  if (agent.id.toLowerCase().includes("astra")) return assets.reika.expressions.happy;
-  if (agent.id.toLowerCase().includes("miyabi")) return assets.reika.expressions.playful;
-  if (agent.id.toLowerCase().includes("nyxie")) return assets.reika.expressions.thinking;
-  return assets.reika.chibi;
+function getAgentAvatar(agent: Agent, artRuntime: ArtRuntime) {
+  return artRuntime.agentAvatar(agent, `agent-avatar-${agent.id}`);
 }
 
 function mapLocalDeviceRecord(device: Device): DevicePageRow {

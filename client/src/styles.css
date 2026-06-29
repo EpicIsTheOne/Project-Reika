@@ -2424,6 +2424,14 @@ img {
   color: #c4cce7;
 }
 
+.empty-state-art {
+  width: min(160px, 56%);
+  aspect-ratio: 1;
+  object-fit: contain;
+  justify-self: center;
+  filter: drop-shadow(0 0 22px rgba(45, 142, 255, 0.35));
+}
+
 .notification-info-card {
   position: relative;
   display: grid;
