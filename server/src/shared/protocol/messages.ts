@@ -45,6 +45,7 @@ export interface AgentChatRequestPayload {
   sessionId?: string;
   message: string;
   model?: string;
+  fileIds?: string[];
 }
 
 export interface AgentChatResponsePayload {

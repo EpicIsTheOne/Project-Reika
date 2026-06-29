@@ -81,7 +81,8 @@ export class CommandDispatcher {
         agent: typeof payload.agent === 'string' ? payload.agent : undefined,
         sessionId: typeof payload.sessionId === 'string' ? payload.sessionId : undefined,
         message: payload.message,
-        model: typeof payload.model === 'string' ? payload.model : undefined
+        model: typeof payload.model === 'string' ? payload.model : undefined,
+        fileIds: Array.isArray(payload.fileIds) ? payload.fileIds.map(String) : undefined
       });
       return [createEnvelope<AgentChatResponsePayload>({
         type: 'agent.chat.response',

@@ -1,9 +1,11 @@
 import http from 'node:http';
+import { existsSync } from 'node:fs';
 import { parseCliArgs, helpText, type CliOptions } from './cli/args.js';
 import { serverConfig } from './config/defaults.js';
 import { EventBus } from './core/eventBus.js';
 import { StateStore } from './core/stateStore.js';
 import { CommandDispatcher } from './modules/commands/dispatcher.js';
+import { FileStore, publicFile } from './modules/file/fileStore.js';
 import { getProviderHistoryMessages, listProviderHistorySessions, runProviderChat, type ProviderChatEvent, type ProviderChatMessage, type ProviderHistoryMessage, type ProviderHistorySession } from './modules/provider/providerRuntime.js';
 import { SessionStore, type ChatMessageRecord, type ChatSessionRecord } from './modules/session/sessionStore.js';
 import { RelayClient } from './modules/uplink/relayClient.js';
@@ -56,6 +58,7 @@ if (cli.mode !== 'startup') {
 const events = new EventBus();
 const state = new StateStore();
 const sessions = new SessionStore();
+const files = new FileStore();
 const deviceEndpoint = { kind: 'device' as const, id: serverConfig.uplink.deviceId };
 const appEndpoint = { kind: 'app' as const, id: 'local-simulator' };
 const dispatcher = new CommandDispatcher(state, deviceEndpoint, async (payload) => {
@@ -64,7 +67,8 @@ const dispatcher = new CommandDispatcher(state, deviceEndpoint, async (payload) 
     providerId: payload.providerId,
     agent: payload.agent,
     message: payload.message,
-    model: payload.model
+    model: payload.model,
+    fileIds: payload.fileIds
   });
   return {
     providerId: result.result.providerId,
@@ -80,7 +84,8 @@ const relayClient = new RelayClient(state, events, async (payload) => {
     providerId: payload.providerId,
     agent: payload.agent,
     message: payload.message,
-    model: payload.model
+    model: payload.model,
+    fileIds: payload.fileIds
   });
   return {
     providerId: result.result.providerId,
@@ -95,7 +100,9 @@ events.emit('server.boot', { serviceName: serverConfig.serviceName });
 
 async function boot() {
   await sessions.load();
+  await files.load();
   events.emit('session.store.loaded', sessions.snapshot());
+  events.emit('file.store.loaded', files.snapshot());
   await state.refreshProviders();
   events.emit('provider.state', state.snapshot().providers);
   relayClient.start();
@@ -113,6 +120,7 @@ function fullSnapshot() {
   return {
     ...state.snapshot(),
     sessionStore: sessions.snapshot(),
+    fileStore: files.snapshot(),
     uplink: relayClient.snapshot()
   };
 }
@@ -145,6 +153,38 @@ function publicSession(session: ChatSession) {
     lastMessagePreview: session.messages.at(-1)?.text?.slice(0, 160) || '',
     metadata: session.metadata
   };
+}
+
+function searchSessions(input: { q?: string; agent?: string; providerId?: string; limit?: number }) {
+  const q = String(input.q || '').trim().toLowerCase();
+  const agent = String(input.agent || '').trim().toLowerCase();
+  const providerId = String(input.providerId || '').trim().toLowerCase();
+  const limit = Math.max(1, Math.min(100, Number(input.limit || 20) || 20));
+  return sessions.list()
+    .filter((session) => !agent || session.agent.toLowerCase() === agent)
+    .filter((session) => !providerId || session.providerId.toLowerCase() === providerId)
+    .map((session) => {
+      const haystack = [session.title, session.agent, session.providerId, ...session.messages.map((message) => message.text)].join('\n').toLowerCase();
+      const score = q ? (haystack.includes(q) ? 1 : 0) : 1;
+      return { session, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.session.updatedAt.localeCompare(a.session.updatedAt))
+    .slice(0, limit)
+    .map((item) => publicSession(item.session));
+}
+
+function filesPayload(fileIds: unknown) {
+  return files.resolve(fileIds).map(publicFile);
+}
+
+function attachmentContext(fileIds: unknown) {
+  const resolved = files.resolve(fileIds).map(publicFile);
+  if (!resolved.length) return '';
+  return resolved.map((file) => {
+    const label = file.kind === 'link' ? file.sourceUrl : `${file.name} (${file.mimeType}, ${file.size} bytes)`;
+    return `- ${file.id}: ${label}${file.notes ? ` — ${file.notes}` : ''}`;
+  }).join('\n');
 }
 
 function createSession(input: { providerId?: string; agent?: string; title?: string; metadata?: Record<string, unknown> }) {
@@ -249,9 +289,11 @@ function emitChatEvent(event: ProviderChatEvent, session?: ChatSession) {
   events.emit(`chat.${event.type}`, { sessionId: session?.id, ...event.data });
 }
 
-async function runChatTurn(input: { sessionId?: string; providerId?: string; agent?: string; message: string; model?: string; title?: string; metadata?: Record<string, unknown> }, onEvent?: (event: ProviderChatEvent) => void) {
+async function runChatTurn(input: { sessionId?: string; providerId?: string; agent?: string; message: string; model?: string; title?: string; metadata?: Record<string, unknown>; fileIds?: unknown }, onEvent?: (event: ProviderChatEvent) => void) {
   const session = getOrCreateSession(input);
-  const userMessage = appendMessage(session, 'user', input.message, { providerId: session.providerId, agent: session.agent });
+  const attachedFiles = filesPayload(input.fileIds);
+  const context = attachmentContext(input.fileIds);
+  const userMessage = appendMessage(session, 'user', input.message, { providerId: session.providerId, agent: session.agent, files: attachedFiles });
   const providers = state.snapshot().providers;
   const handler = (event: ProviderChatEvent) => {
     emitChatEvent(event, session);
@@ -262,7 +304,7 @@ async function runChatTurn(input: { sessionId?: string; providerId?: string; age
       providerId: input.providerId || session.providerId,
       agentId: input.agent || session.agent,
       sessionId: session.id,
-      message: input.message,
+      message: context ? `${input.message}\n\nAttached files/links:\n${context}` : input.message,
       history: sessionHistory(session).slice(0, -1),
       model: input.model,
       providerSessionId: typeof session.metadata.hermesSessionId === 'string'
@@ -280,7 +322,7 @@ async function runChatTurn(input: { sessionId?: string; providerId?: string; age
     providerSessionIds[result.providerId] = result.sessionId;
     session.metadata.providerSessionIds = providerSessionIds;
     if (result.runtime === 'hermes') session.metadata.hermesSessionId = result.sessionId;
-    const assistantMessage = appendMessage(session, 'assistant', result.text, { providerId: result.providerId, agent: result.agentId, runtime: result.runtime });
+    const assistantMessage = appendMessage(session, 'assistant', result.text, { providerId: result.providerId, agent: result.agentId, runtime: result.runtime, files: [] });
     return { session, userMessage, assistantMessage, result };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -340,7 +382,33 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/sessions') {
-      sendJson(res, 200, { ok: true, storage: sessions.snapshot(), sessions: sessions.list().map(publicSession).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) });
+      const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit') || 100) || 100));
+      const agent = url.searchParams.get('agent') || undefined;
+      const providerId = url.searchParams.get('providerId') || undefined;
+      const list = searchSessions({ agent, providerId, limit });
+      sendJson(res, 200, { ok: true, storage: sessions.snapshot(), sessions: list });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/sessions/search') {
+      const q = url.searchParams.get('q') || '';
+      if (!q.trim()) {
+        sendJson(res, 400, { ok: false, error: 'Missing query', code: 'BAD_REQUEST' });
+        return;
+      }
+      const results = searchSessions({ q, agent: url.searchParams.get('agent') || undefined, providerId: url.searchParams.get('providerId') || undefined, limit: Number(url.searchParams.get('limit') || 20) });
+      sendJson(res, 200, { ok: true, query: q, results });
+      return;
+    }
+
+    const sessionMetaMatch = url.pathname.match(/^\/sessions\/([^/]+)$/);
+    if (req.method === 'GET' && sessionMetaMatch) {
+      const session = sessions.get(decodeURIComponent(sessionMetaMatch[1] || ''));
+      if (!session) {
+        sendJson(res, 404, { ok: false, error: 'Session not found', code: 'SESSION_NOT_FOUND' });
+        return;
+      }
+      sendJson(res, 200, { ok: true, session: publicSession(session) });
       return;
     }
 
@@ -351,7 +419,9 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 404, { ok: false, error: 'Session not found' });
         return;
       }
-      sendJson(res, 200, { ok: true, sessionId: session.id, messages: session.messages });
+      const limit = Math.max(0, Number(url.searchParams.get('limit') || 0) || 0);
+      const messages = limit > 0 ? session.messages.slice(-limit) : session.messages;
+      sendJson(res, 200, { ok: true, sessionId: session.id, messages });
       return;
     }
 
@@ -363,7 +433,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { ok: false, error: 'message is required' });
         return;
       }
-      const result = await runChatTurn({ sessionId, message, model: typeof body.model === 'string' ? body.model : undefined });
+      const result = await runChatTurn({ sessionId, message, model: typeof body.model === 'string' ? body.model : undefined, fileIds: body.fileIds });
       sendJson(res, 200, { ok: true, session: publicSession(result.session), message: result.assistantMessage, result: result.result });
       return;
     }
@@ -383,7 +453,7 @@ const server = http.createServer(async (req, res) => {
         Connection: 'keep-alive'
       });
       try {
-        const result = await runChatTurn({ sessionId, message, model: typeof body.model === 'string' ? body.model : undefined }, (event) => writeSse(res, event.type, event.data));
+        const result = await runChatTurn({ sessionId, message, model: typeof body.model === 'string' ? body.model : undefined, fileIds: body.fileIds }, (event) => writeSse(res, event.type, event.data));
         writeSse(res, 'message', result.assistantMessage);
         writeSse(res, 'done', { ok: true, session: publicSession(result.session) });
       } catch (error) {
@@ -407,6 +477,7 @@ const server = http.createServer(async (req, res) => {
         title: typeof body.title === 'string' ? body.title : undefined,
         model: typeof body.model === 'string' ? body.model : undefined,
         metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata as Record<string, unknown> : undefined,
+        fileIds: body.fileIds,
         message
       });
       sendJson(res, 200, { ok: true, session: publicSession(result.session), message: result.assistantMessage, text: result.result.text, result: result.result });
@@ -441,6 +512,73 @@ const server = http.createServer(async (req, res) => {
         writeSse(res, 'error', { ok: false, error: error instanceof Error ? error.message : String(error) });
       }
       res.end();
+      return;
+    }
+
+
+    if (req.method === 'GET' && url.pathname === '/files') {
+      sendJson(res, 200, { ok: true, storage: files.snapshot(), items: files.list().map(publicFile) });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/files/link') {
+      const body = await readJson(req);
+      const sourceUrl = String(body.url || '').trim();
+      if (!sourceUrl) {
+        sendJson(res, 400, { ok: false, error: 'url is required', code: 'BAD_REQUEST' });
+        return;
+      }
+      const item = await files.link({ url: sourceUrl, name: typeof body.name === 'string' ? body.name : undefined, notes: typeof body.notes === 'string' ? body.notes : undefined });
+      events.emit('file.linked', publicFile(item));
+      sendJson(res, 200, { ok: true, item: publicFile(item) });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/files/upload') {
+      const body = await readJson(req);
+      const uploads = Array.isArray(body.files) ? body.files : [body];
+      const items = [];
+      for (const upload of uploads) {
+        if (!upload || typeof upload !== 'object') continue;
+        const entry = upload as Record<string, unknown>;
+        const name = String(entry.name || entry.filename || 'upload').trim();
+        const base64 = String(entry.base64 || entry.buffer || '').replace(/^data:[^;]+;base64,/, '');
+        if (!base64) continue;
+        const buffer = Buffer.from(base64, 'base64');
+        const item = await files.upload({ name, buffer, mimeType: typeof entry.mimeType === 'string' ? entry.mimeType : typeof entry.contentType === 'string' ? entry.contentType : undefined });
+        items.push(publicFile(item));
+      }
+      if (!items.length) {
+        sendJson(res, 400, { ok: false, error: 'No files uploaded', code: 'BAD_REQUEST' });
+        return;
+      }
+      events.emit('file.uploaded', { count: items.length });
+      sendJson(res, 200, { ok: true, items });
+      return;
+    }
+
+    const fileDownloadMatch = url.pathname.match(/^\/files\/([^/]+)\/download$/);
+    if (req.method === 'GET' && fileDownloadMatch) {
+      const item = files.get(decodeURIComponent(fileDownloadMatch[1] || ''));
+      if (!item) {
+        sendJson(res, 404, { ok: false, error: 'File not found', code: 'FILE_NOT_FOUND' });
+        return;
+      }
+      if (item.kind === 'link' && item.sourceUrl) {
+        res.writeHead(302, { Location: item.sourceUrl });
+        res.end();
+        return;
+      }
+      if (!item.path || !existsSync(item.path)) {
+        sendJson(res, 404, { ok: false, error: 'Stored file missing', code: 'FILE_NOT_FOUND' });
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': item.mimeType || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${item.originalName.replace(/"/g, '')}"`,
+        'Cache-Control': 'no-store'
+      });
+      files.stream(item).pipe(res);
       return;
     }
 
@@ -556,12 +694,18 @@ const server = http.createServer(async (req, res) => {
         'GET /providers/:id/history',
         'POST /providers/:id/history/import',
         'GET /sessions',
+        'GET /sessions/search',
+        'GET /sessions/:id',
         'POST /sessions',
         'GET /sessions/:id/messages',
         'POST /sessions/:id/messages',
         'POST /sessions/:id/messages/stream',
         'POST /chat',
         'POST /chat/stream',
+        'GET /files',
+        'POST /files/upload',
+        'POST /files/link',
+        'GET /files/:id/download',
         'GET /uplink',
         'GET /startup',
         'POST /uplink/connect',

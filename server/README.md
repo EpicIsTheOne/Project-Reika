@@ -30,6 +30,7 @@ Included now:
 - durable Project Reika session/message history for local dev calls
 - provider-native session id mapping persistence for provider continuity
 - provider-native history preview/import for CommandCenter and Hermes
+- CommandCenter-style session search/detail and file/link attachment endpoints
 - SSE turn lifecycle events for local chat calls
 - tested against the dev relay in `../Relay`
 - no external uplink enabled by default
@@ -91,12 +92,18 @@ Development endpoints:
 - `GET /providers/:id/history`
 - `POST /providers/:id/history/import`
 - `GET /sessions`
+- `GET /sessions/search`
+- `GET /sessions/:id`
 - `POST /sessions`
 - `GET /sessions/:id/messages`
 - `POST /sessions/:id/messages`
 - `POST /sessions/:id/messages/stream`
 - `POST /chat`
 - `POST /chat/stream`
+- `GET /files`
+- `POST /files/upload`
+- `POST /files/link`
+- `GET /files/:id/download`
 - `GET /uplink`
 - `GET /startup`
 - `POST /uplink/connect`
@@ -230,6 +237,37 @@ Intentionally unsupported in this phase:
 - provider mutation
 - agent install/update
 No remote-admin nonsense. We are behaving, unfortunately.
+
+
+## Files and Attachments
+
+Project Reika supports a lightweight CommandCenter-style file/link library without native multipart dependencies:
+
+```bash
+# Link an external resource
+curl -X POST http://127.0.0.1:47840/files/link \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com/doc","name":"Example doc","notes":"reference"}'
+
+# Upload one or more base64-encoded files
+curl -X POST http://127.0.0.1:47840/files/upload \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"note.txt","mimeType":"text/plain","base64":"SGVsbG8="}'
+
+# Use attachments in chat
+curl -X POST http://127.0.0.1:47840/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"providerId":"mock-local","agent":"reika","message":"summarize attachments","fileIds":["<file-id>"]}'
+```
+
+Storage defaults to `~/.local/share/project-reika/files/manifest.json` and `~/.local/share/project-reika/files/`. Override with:
+
+```env
+REIKA_FILE_STORE_DIR=/some/path/files
+REIKA_FILE_MANIFEST_PATH=/some/path/files/manifest.json
+```
+
+Attachments are currently passed to providers as structured context metadata (file/link names, IDs, MIME types, sizes, URLs, notes). Binary/image-native provider upload can be added later per adapter.
 
 ## Provider History Import
 
