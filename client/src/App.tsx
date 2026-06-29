@@ -408,7 +408,7 @@ function LoadingScreen({
 
   return (
     <main className="loading-screen">
-      <img className="loading-bg" src={artRuntime.globalArt("global-loading", assets.loading.bootBackdrop, "loading-backdrop")} alt="" />
+      <img className="loading-bg" src={artRuntime.agentArt("reika", "loading-screen", artRuntime.globalArt("global-loading", assets.loading.bootBackdrop, "loading-backdrop-global"), "loading-backdrop")} alt="" />
       <div className="loading-shade" />
       <div className="loading-grid" aria-hidden="true" />
 
@@ -787,7 +787,7 @@ function ChatView({ agent, initialState, artRuntime, onBack }: { agent: Agent; i
     name: headerAgentName,
     characterId: selectedLiveAgent?.characterId ?? agent.characterId
   };
-  const chatAvatar = artRuntime.agentAvatar(artAgent, "chat-avatar");
+  const chatAvatar = artRuntime.agentPortrait(artAgent, "chat-portrait");
   const chatSplash = artRuntime.agentArt(artAgent, "splash-full-body", assets.reika.splash, "chat-profile-splash");
 
   const normalizeChatError = (value: unknown, fallback = "Something went wrong.") => {
@@ -980,7 +980,7 @@ function ChatView({ agent, initialState, artRuntime, onBack }: { agent: Agent; i
     setFiles((current) => current.filter((file) => file.id !== fileId));
   };
 
-  const visibleMessages = messages.length > 0 ? messages : sendError || stateError ? [] : chatMessages;
+  const visibleMessages = messages;
   const canSend = Boolean(draft.trim()) && !busy && Boolean(selectedProvider) && !stateError;
 
   return (
@@ -1104,6 +1104,12 @@ function ChatView({ agent, initialState, artRuntime, onBack }: { agent: Agent; i
             {visibleMessages.map((message) => (
               <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={headerAgentName} />
             ))}
+            {!busy && visibleMessages.length === 0 && !sendError && !stateError ? (
+              <div className="chat-empty-state">
+                <MessageCircle size={22} />
+                <span>No messages yet. Start a new conversation when you are ready.</span>
+              </div>
+            ) : null}
             {busy ? (
               <div className="typing-row">
                 <img src={chatAvatar} alt="" />
@@ -1169,7 +1175,7 @@ function ChatView({ agent, initialState, artRuntime, onBack }: { agent: Agent; i
 }
 
 function LegacyChatView({ agent, onBack, artRuntime = createArtRuntime(null, "legacy-chat") }: { agent: Agent; onBack: () => void; artRuntime?: ArtRuntime }) {
-  const legacyAvatar = artRuntime.agentAvatar("reika", "legacy-chat-avatar");
+  const legacyAvatar = artRuntime.agentPortrait("reika", "legacy-chat-portrait");
   const legacySplash = artRuntime.agentArt("reika", "splash-full-body", assets.reika.splash, "legacy-chat-splash");
   return (
     <main className="chat-screen">
@@ -1807,7 +1813,7 @@ function DeviceDetailPanel({
   return (
     <aside className="device-detail-panel">
       <div className="device-detail-hero">
-        <img src={artRuntime.globalArt("global-backgrounds", assets.room.full, "device-detail")} alt="" />
+        <img src={artRuntime.agentArt("reika", "room-background", artRuntime.globalArt("global-backgrounds", assets.room.full, "device-detail-global"), "device-detail")} alt="" />
         <span>
           <img src={device.icon} alt="" />
         </span>
@@ -2073,7 +2079,7 @@ function NotificationDetailPanel({ item, artRuntime, onOpenChat, onDelete }: { i
     return (
       <aside className="notification-detail-panel">
         <section className="notification-detail-content">
-          <img className="empty-state-art" src={artRuntime.globalArt("global-empty-states", assets.empty.noChat, "notifications-empty")} alt="" />
+          <img className="empty-state-art" src={artRuntime.agentArt("reika", "chibi-small", artRuntime.globalArt("global-empty-states", assets.empty.noChat, "notifications-empty-global"), "notifications-empty")} alt="" />
           <h2>No notification selected</h2>
           <p>The inbox is quiet.</p>
         </section>
@@ -2160,7 +2166,7 @@ function notificationIcon(item: ReikaNotification, artRuntime: ArtRuntime) {
   if (item.kind === "device") return assets.icons.devices.pc;
   if (item.kind === "file") return assets.brand.logoSmall;
   if (item.kind === "warning") return artRuntime.agentArt("reika", "offline-error", assets.icons.devices.server, `warning-${item.id}`);
-  return artRuntime.agentArt("reika", "notifications", assets.reika.avatar, `notification-icon-${item.id}`);
+  return artRuntime.agentArt("reika", "notifications", artRuntime.agentPortrait("reika", `notification-fallback-${item.id}`), `notification-icon-${item.id}`);
 }
 
 function relativeTime(value: string) {
@@ -2780,7 +2786,7 @@ function SettingsView({
   return (
     <main className="settings-screen">
       <aside className="settings-scene">
-        <img src={artRuntime.agentArt("reika", "splash-full-body", assets.reika.splash, "settings-scene")} alt="" />
+        <img src={artRuntime.agentArt("reika", "splash-full-body", artRuntime.agentArt("reika", "room-background", assets.reika.splash, "settings-room-fallback"), "settings-scene")} alt="" />
         <div className="settings-scene-card">
           <h2>Settings</h2>
           <p>Make AgentHub truly yours.</p>

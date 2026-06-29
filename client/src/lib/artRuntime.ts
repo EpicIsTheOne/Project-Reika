@@ -17,7 +17,9 @@ export interface ArtRuntime {
   resolveAssetKey: (assetKey: string | undefined, fallback?: string) => string;
   profileForAgent: (agent: ArtAgentLike) => ReikaArtProfile | undefined;
   profileAvatar: (profile: ReikaArtProfile | null | undefined, slot?: string) => string;
+  profilePortrait: (profile: ReikaArtProfile | null | undefined, slot?: string) => string;
   agentAvatar: (agent: ArtAgentLike, slot?: string) => string;
+  agentPortrait: (agent: ArtAgentLike, slot?: string) => string;
   agentArt: (agent: ArtAgentLike, categoryId: string, fallback: string, slot?: string) => string;
   profileArt: (profile: ReikaArtProfile | null | undefined, categoryId: string, fallback: string, slot?: string) => string;
   globalArt: (categoryId: string, fallback: string, slot?: string) => string;
@@ -56,7 +58,13 @@ export function createArtRuntime(library: ReikaArtLibraryResponse | null, sessio
     return pickFromCategory(profile, "avatar-circle", fallback, slot);
   };
 
+  const profilePortrait = (profile: ReikaArtProfile | null | undefined, slot = "portrait") => {
+    const fallback = profileAvatar(profile, `${slot}-fallback`);
+    return pickFromCategory(profile, "portrait-chat", fallback, slot);
+  };
+
   const agentAvatar = (agent: ArtAgentLike, slot = "avatar") => profileAvatar(profileForAgent(agent), slot);
+  const agentPortrait = (agent: ArtAgentLike, slot = "portrait") => profilePortrait(profileForAgent(agent), slot);
 
   const agentArt = (agent: ArtAgentLike, categoryId: string, fallback: string, slot = "default") => {
     const profile = profileForAgent(agent);
@@ -80,7 +88,9 @@ export function createArtRuntime(library: ReikaArtLibraryResponse | null, sessio
     resolveAssetKey,
     profileForAgent,
     profileAvatar,
+    profilePortrait,
     agentAvatar,
+    agentPortrait,
     agentArt,
     profileArt,
     globalArt

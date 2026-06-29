@@ -1471,6 +1471,24 @@ img {
   overflow: auto;
 }
 
+.chat-empty-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: fit-content;
+  max-width: min(420px, 100%);
+  color: var(--muted);
+  border: 1px solid rgba(87, 148, 255, 0.14);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  background: rgba(9, 20, 43, 0.52);
+}
+
+.chat-empty-state svg {
+  flex: 0 0 auto;
+  color: var(--blue);
+}
+
 .chat-message {
   display: grid;
   gap: 0.6rem;

@@ -156,41 +156,4 @@ export const devices: Device[] = [
   }
 ];
 
-export const chatMessages: ChatMessage[] = [
-  {
-    id: "system-1",
-    sender: "system",
-    body: "Today",
-    time: "Today"
-  },
-  {
-    id: "agent-1",
-    sender: "agent",
-    body: "Hehe~ You're back.\n\nHow was your day, Epic?",
-    time: "10:42 AM"
-  },
-  {
-    id: "user-1",
-    sender: "user",
-    body: "Pretty good! Got a lot of coding done",
-    time: "10:43 AM"
-  },
-  {
-    id: "agent-2",
-    sender: "agent",
-    body: "That's great to hear!\n\nWhat are you building now?\n\nStill working on something cool?",
-    time: "10:43 AM"
-  },
-  {
-    id: "user-2",
-    sender: "user",
-    body: "Yeah, working on AgentHub right now",
-    time: "10:44 AM"
-  },
-  {
-    id: "agent-3",
-    sender: "agent",
-    body: "Of course you are~\n\nI can't wait to see how it turns out.\n\nYou always build the coolest things.",
-    time: "10:44 AM"
-  }
-];
+export const chatMessages: ChatMessage[] = [];
