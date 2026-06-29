@@ -234,7 +234,7 @@ server.listen(serverConfig.port, serverConfig.host, () => {
   console.log(`${serverConfig.displayName} listening on http://${serverConfig.host}:${serverConfig.port}`);
   console.log(`Local provider detection enabled. External uplink ${serverConfig.uplink.enabled ? 'enabled' : 'disabled'}. Chat transport disabled.`);
   if (process.platform === 'linux') {
-    console.log('Linux pairing: create a code in AgentHub, then run `npm run dev -- pair --code <code> --relay ws://127.0.0.1:8790/v1/device`.');
+    console.log(`Linux pairing: create a code in AgentHub, then run \`npm run dev -- pair --code <code> --relay ${serverConfig.uplink.relayUrl}\`.`);
   }
   if (cli.mode === 'pair') {
     console.log(`Pairing requested for relay ${cli.relayUrl || serverConfig.uplink.relayUrl}. Approve this device in AgentHub.`);

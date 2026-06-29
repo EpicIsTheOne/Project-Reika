@@ -19,11 +19,11 @@ export async function getLocalAgentStartup() {
   return body.startup;
 }
 
-export async function setLocalAgentStartup(enabled: boolean) {
+export async function setLocalAgentStartup(enabled: boolean, relayUrl?: string) {
   const response = await fetch(enabled ? '/agent/startup/enable' : '/agent/startup/disable', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({})
+    body: JSON.stringify(relayUrl ? { relayUrl } : {})
   });
   if (!response.ok) throw new Error(`Local agent startup update failed: ${response.status}`);
   const body = (await response.json()) as StartupResponse;
