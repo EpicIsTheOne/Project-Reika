@@ -1,3 +1,5 @@
+import { defaultDeviceId } from '../platform/runtime.js';
+
 function intFromEnv(name: string, fallback: number) {
   const value = process.env[name];
   if (!value) return fallback;
@@ -22,7 +24,7 @@ export const serverConfig = {
   uplink: {
     enabled: boolFromEnv('REIKA_UPLINK_ENABLED', false),
     relayUrl: process.env.REIKA_RELAY_URL || 'wss://relay.techexplore.us/v1/device',
-    deviceId: process.env.REIKA_DEVICE_ID || 'linux-device-local',
+    deviceId: process.env.REIKA_DEVICE_ID || defaultDeviceId(),
     deviceKeyPath: process.env.REIKA_DEVICE_KEY_PATH || '',
     pairingToken: process.env.REIKA_PAIRING_TOKEN || '',
     heartbeatMs: intFromEnv('REIKA_HEARTBEAT_MS', 25_000),

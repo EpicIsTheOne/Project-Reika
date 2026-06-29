@@ -1,12 +1,13 @@
 import os from 'node:os';
 import type { AgentRecord } from '../modules/agent/types.js';
 import type { DeviceIdentity } from '../modules/device/types.js';
+import { currentPlatform, defaultDeviceId, defaultDeviceName } from '../platform/runtime.js';
 
 export function createDeviceIdentity(): DeviceIdentity {
   return {
-    id: 'linux-device-local',
-    name: 'Linux Reika Agent Server',
-    platform: 'linux',
+    id: defaultDeviceId(),
+    name: defaultDeviceName(),
+    platform: currentPlatform(),
     hostname: os.hostname(),
     status: 'ready',
     startedAt: new Date().toISOString()

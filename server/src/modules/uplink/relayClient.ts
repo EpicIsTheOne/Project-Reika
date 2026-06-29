@@ -17,8 +17,18 @@ export interface RelayClientSnapshot {
   lastError?: string;
 }
 
+export interface RelayConnectOptions {
+  relayUrl?: string;
+  pairingToken?: string;
+  deviceId?: string;
+}
+
 export class RelayClient {
   private status: RelayClientStatus = serverConfig.uplink.enabled ? 'idle' : 'disabled';
+  private enabled = serverConfig.uplink.enabled;
+  private relayUrl = serverConfig.uplink.relayUrl;
+  private pairingToken = serverConfig.uplink.pairingToken;
+  private deviceId = serverConfig.uplink.deviceId;
   private socket?: WebSocket;
   private heartbeatTimer?: NodeJS.Timeout;
   private reconnectTimer?: NodeJS.Timeout;
@@ -26,19 +36,19 @@ export class RelayClient {
   private lastConnectedAt?: string;
   private lastError?: string;
   private readonly startedAt = Date.now();
-  private readonly deviceEndpoint: AgentHubEndpoint;
+  private deviceEndpoint: AgentHubEndpoint;
   private readonly dispatcher: CommandDispatcher;
 
   constructor(
     private readonly state: StateStore,
     private readonly events: EventBus
   ) {
-    this.deviceEndpoint = { kind: 'device', id: serverConfig.uplink.deviceId };
+    this.deviceEndpoint = { kind: 'device', id: this.deviceId };
     this.dispatcher = new CommandDispatcher(state, this.deviceEndpoint);
   }
 
   start() {
-    if (!serverConfig.uplink.enabled) {
+    if (!this.enabled) {
       this.events.emit('uplink.disabled', { reason: 'REIKA_UPLINK_ENABLED is false' });
       return;
     }
@@ -51,20 +61,32 @@ export class RelayClient {
     this.connect();
   }
 
+  connectWith(options: RelayConnectOptions) {
+    this.stop();
+    this.enabled = true;
+    this.status = 'idle';
+    this.relayUrl = options.relayUrl || this.relayUrl;
+    this.pairingToken = options.pairingToken || this.pairingToken;
+    this.deviceId = options.deviceId || this.deviceId;
+    this.deviceEndpoint = { kind: 'device', id: this.deviceId };
+    this.lastError = undefined;
+    this.start();
+  }
+
   stop() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.socket?.close();
     this.socket = undefined;
-    this.status = serverConfig.uplink.enabled ? 'disconnected' : 'disabled';
+    this.status = this.enabled ? 'disconnected' : 'disabled';
   }
 
   snapshot(): RelayClientSnapshot {
     return {
-      enabled: serverConfig.uplink.enabled,
+      enabled: this.enabled,
       status: this.status,
-      relayUrl: serverConfig.uplink.relayUrl,
-      deviceId: serverConfig.uplink.deviceId,
+      relayUrl: this.relayUrl,
+      deviceId: this.deviceId,
       lastConnectedAt: this.lastConnectedAt,
       lastError: this.lastError
     };
@@ -72,12 +94,12 @@ export class RelayClient {
 
   private connect() {
     this.status = 'connecting';
-    this.events.emit('uplink.connecting', { relayUrl: serverConfig.uplink.relayUrl });
+    this.events.emit('uplink.connecting', { relayUrl: this.relayUrl });
 
     try {
-      const url = new URL(serverConfig.uplink.relayUrl);
-      if (serverConfig.uplink.pairingToken) url.searchParams.set('pairingToken', serverConfig.uplink.pairingToken);
-      url.searchParams.set('deviceId', serverConfig.uplink.deviceId);
+      const url = new URL(this.relayUrl);
+      if (this.pairingToken) url.searchParams.set('pairingToken', this.pairingToken);
+      url.searchParams.set('deviceId', this.deviceId);
 
       this.socket = new WebSocket(url);
       this.socket.addEventListener('open', () => this.onOpen());
@@ -95,7 +117,7 @@ export class RelayClient {
     this.lastConnectedAt = new Date().toISOString();
     this.lastError = undefined;
     this.reconnectDelay = serverConfig.uplink.reconnectMinMs;
-    this.events.emit('uplink.connected', { relayUrl: serverConfig.uplink.relayUrl });
+    this.events.emit('uplink.connected', { relayUrl: this.relayUrl });
     this.sendHello();
     this.sendStateSnapshots();
     this.heartbeatTimer = setInterval(() => this.sendHeartbeat(), serverConfig.uplink.heartbeatMs);
@@ -128,7 +150,7 @@ export class RelayClient {
   }
 
   private scheduleReconnect() {
-    if (!serverConfig.uplink.enabled) return;
+    if (!this.enabled) return;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     const delay = this.reconnectDelay;
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, serverConfig.uplink.reconnectMaxMs);

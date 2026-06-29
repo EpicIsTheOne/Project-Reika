@@ -1,4 +1,4 @@
-export type DevicePlatform = 'linux';
+export type DevicePlatform = 'linux' | 'windows' | 'macos' | 'unknown';
 export type DeviceServerStatus = 'booting' | 'ready' | 'degraded' | 'offline';
 
 export interface DeviceIdentity {

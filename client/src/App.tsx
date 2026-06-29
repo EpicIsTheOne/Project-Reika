@@ -46,11 +46,13 @@ import { fetchAgentHubDevices, mapDevice, scanLocalAgentHubProviders } from "./d
 import {
   applyRelayEnvelope,
   approveRelayPairingCode,
+  claimRelayPairingCode,
   connectRelayApp,
   createRelayPairingCode,
   type RelayDeviceRecord,
   type RelayPairing
 } from "./data/relay";
+import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "./data/startup";
 import { chatMessages, devices as mockDevices, reikaProfile } from "./data/mockData";
 import type { Agent, Device, Provider, Status, View } from "./types";
 
@@ -847,6 +849,7 @@ function DevicesView({ onScanProviders }: { onScanProviders: () => void }) {
   const [relayStatus, setRelayStatus] = useState<"connecting" | "online" | "offline">("connecting");
   const [relayDevices, setRelayDevices] = useState<RelayDeviceRecord[]>([]);
   const [relayPairing, setRelayPairing] = useState<RelayPairing | null>(null);
+  const [claimedDeviceName, setClaimedDeviceName] = useState<string | null>(null);
   const [relayError, setRelayError] = useState<string | null>(null);
   const [relaySend, setRelaySend] = useState<ReturnType<typeof connectRelayApp>["send"] | null>(null);
   const relayRows = useMemo(() => relayDevices.map(mapRelayDeviceRecord), [relayDevices]);
@@ -883,6 +886,7 @@ function DevicesView({ onScanProviders }: { onScanProviders: () => void }) {
     createRelayPairingCode()
       .then((pairing) => {
         setRelayPairing(pairing);
+        setClaimedDeviceName(null);
         setRelayError(null);
       })
       .catch((error) => {
@@ -893,8 +897,28 @@ function DevicesView({ onScanProviders }: { onScanProviders: () => void }) {
   const handleApprovePairing = () => {
     if (!relayPairing) return;
     approveRelayPairingCode(relayPairing.code)
-      .then((pairing) => {
+      .then(({ pairing, device }) => {
         setRelayPairing(pairing);
+        setClaimedDeviceName(device?.name ?? claimedDeviceName);
+        setRelayError(null);
+      })
+      .catch((error) => {
+        setRelayError(error instanceof Error ? error.message : String(error));
+      });
+  };
+
+  const handleDevClaimPairing = () => {
+    if (!relayPairing) return;
+    claimRelayPairingCode(relayPairing.code, {
+      name: "Windows Agent Preview",
+      type: "pc",
+      location: "local",
+      agentVersion: "dev-ui-preview",
+      fingerprint: `dev-ui-preview-${relayPairing.code}`
+    })
+      .then(({ pairing, device }) => {
+        setRelayPairing(pairing);
+        setClaimedDeviceName(device?.name ?? null);
         setRelayError(null);
       })
       .catch((error) => {
@@ -943,25 +967,14 @@ function DevicesView({ onScanProviders }: { onScanProviders: () => void }) {
       </header>
 
       {relayPairing || relayError ? (
-        <section className="relay-pairing-strip">
-          {relayPairing ? (
-            <>
-              <span>
-                Pairing code
-                <strong>{relayPairing.code}</strong>
-              </span>
-              <span>
-                Status
-                <strong>{relayPairing.status}</strong>
-              </span>
-              <button className="secondary-action small" onClick={handleApprovePairing}>
-                <Check size={18} />
-                Approve
-              </button>
-            </>
-          ) : null}
-          {relayError ? <em>{relayError}</em> : null}
-        </section>
+        <PairingPanel
+          pairing={relayPairing}
+          claimedDeviceName={claimedDeviceName}
+          error={relayError}
+          onCreate={handleCreatePairing}
+          onDevClaim={handleDevClaimPairing}
+          onApprove={handleApprovePairing}
+        />
       ) : null}
 
       <div className="devices-layout">
@@ -1025,6 +1038,93 @@ function FilterIcon() {
     <span className="filter-icon" aria-hidden="true">
       <ChevronDown size={16} />
     </span>
+  );
+}
+
+function PairingPanel({
+  pairing,
+  claimedDeviceName,
+  error,
+  onCreate,
+  onDevClaim,
+  onApprove
+}: {
+  pairing: RelayPairing | null;
+  claimedDeviceName: string | null;
+  error: string | null;
+  onCreate: () => void;
+  onDevClaim: () => void;
+  onApprove: () => void;
+}) {
+  const linuxCommand = pairing
+    ? `curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh | bash -s -- --code ${pairing.code} --relay ws://127.0.0.1:8790/v1/device`
+    : "";
+  const canApprove = pairing?.status === "claimed";
+
+  const copyLinuxCommand = () => {
+    if (!linuxCommand || !navigator.clipboard) return;
+    void navigator.clipboard.writeText(linuxCommand);
+  };
+
+  return (
+    <section className="relay-pairing-panel">
+      <div className="relay-pairing-header">
+        <span>
+          <Link2 size={20} />
+          Pair New Device
+        </span>
+        <button className="secondary-action small" onClick={onCreate}>
+          <Plus size={18} />
+          New Code
+        </button>
+      </div>
+
+      {pairing ? (
+        <div className="relay-pairing-grid">
+          <article>
+            <small>Pairing Code</small>
+            <strong>{pairing.code}</strong>
+          </article>
+          <article>
+            <small>Status</small>
+            <strong>{pairing.status}</strong>
+          </article>
+          <article>
+            <small>Claimed Device</small>
+            <strong>{claimedDeviceName ?? pairing.deviceId ?? "Waiting for device"}</strong>
+          </article>
+        </div>
+      ) : null}
+
+      {pairing ? (
+        <div className="relay-pairing-instructions">
+          <div>
+            <h3>Linux CLI</h3>
+            <code>{linuxCommand}</code>
+            <button className="secondary-action small" onClick={copyLinuxCommand}>
+              <Terminal size={18} />
+              Copy Command
+            </button>
+          </div>
+          <div>
+            <h3>Windows Agent</h3>
+            <p>Run `reika-agent-server.exe`, paste this code into the local pairing UI, then approve the claimed device here.</p>
+            <button className="secondary-action small" onClick={onDevClaim}>
+              <Monitor size={18} />
+              Test Claim
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="relay-pairing-actions">
+        <button className="primary-action small" disabled={!canApprove} onClick={onApprove}>
+          <Check size={18} />
+          Approve Claimed Device
+        </button>
+        {error ? <em>{error}</em> : null}
+      </div>
+    </section>
   );
 }
 
@@ -1324,6 +1424,46 @@ function NotificationDetailPanel({ item, onOpenChat }: { item: NotificationItem;
 }
 
 function SettingsView({ backendMode, backendError }: { backendMode: BackendMode; backendError: string | null }) {
+  const [startupStatus, setStartupStatus] = useState<LocalAgentStartupStatus | null>(null);
+  const [startupError, setStartupError] = useState<string | null>(null);
+  const [startupBusy, setStartupBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getLocalAgentStartup()
+      .then((status) => {
+        if (!active) return;
+        setStartupStatus(status);
+        setStartupError(null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setStartupError("Local agent is not reachable.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const updateStartup = async () => {
+    if (!startupStatus?.supported || startupBusy) return;
+    setStartupBusy(true);
+    setStartupError(null);
+    try {
+      const next = await setLocalAgentStartup(!startupStatus.enabled);
+      setStartupStatus(next);
+    } catch {
+      setStartupError("Could not update local agent startup.");
+    } finally {
+      setStartupBusy(false);
+    }
+  };
+
+  const startupDetail =
+    startupError ??
+    startupStatus?.message ??
+    (startupStatus ? `Local agent startup is ${startupStatus.enabled ? "enabled" : "disabled"}.` : "Checking local agent startup.");
+
   const settingsTabs = [
     { title: "General", detail: "Basic preferences", icon: Brush, active: true },
     { title: "Devices", detail: "Manage your devices", icon: Monitor },
@@ -1391,8 +1531,8 @@ function SettingsView({ backendMode, backendError }: { backendMode: BackendMode;
             <SettingRow title="Minimize to Tray" detail="Keep AgentHub running in the background.">
               <Toggle checked />
             </SettingRow>
-            <SettingRow title="Auto Start" detail="Start AgentHub when your system starts.">
-              <Toggle />
+            <SettingRow title="Auto Start" detail={startupDetail}>
+              <Toggle checked={Boolean(startupStatus?.enabled)} disabled={!startupStatus?.supported || startupBusy} onClick={updateStartup} />
             </SettingRow>
             <SettingRow title="Data & Cache" detail={backendError ?? `Backend mode: ${backendMode}.`}>
               <button className="secondary-action small">Manage</button>
@@ -1430,9 +1570,9 @@ function SettingRow({ title, detail, children }: { title: string; detail: string
   );
 }
 
-function Toggle({ checked = false }: { checked?: boolean }) {
+function Toggle({ checked = false, disabled = false, onClick }: { checked?: boolean; disabled?: boolean; onClick?: () => void }) {
   return (
-    <button className={checked ? "toggle checked" : "toggle"} aria-pressed={checked}>
+    <button className={checked ? "toggle checked" : "toggle"} aria-pressed={checked} disabled={disabled} onClick={onClick}>
       <span />
     </button>
   );

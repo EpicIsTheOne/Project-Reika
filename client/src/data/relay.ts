@@ -28,6 +28,7 @@ export interface RelayDeviceRecord {
 interface PairingResponse {
   ok: boolean;
   pairing: RelayPairing;
+  device?: AgentHubDevice;
   error?: string;
 }
 
@@ -42,6 +43,17 @@ export async function createRelayPairingCode() {
   return payload.pairing;
 }
 
+export async function claimRelayPairingCode(code: string, device: Partial<AgentHubDevice>) {
+  const response = await fetch("/v1/pairing/claim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, device })
+  });
+  const payload = (await response.json()) as PairingResponse;
+  if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Relay pairing claim failed.");
+  return payload;
+}
+
 export async function approveRelayPairingCode(code: string) {
   const response = await fetch("/v1/pairing/approve", {
     method: "POST",
@@ -50,7 +62,7 @@ export async function approveRelayPairingCode(code: string) {
   });
   const payload = (await response.json()) as PairingResponse;
   if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Relay pairing approval failed.");
-  return payload.pairing;
+  return payload;
 }
 
 export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void, onStatus: (status: "connecting" | "online" | "offline") => void) {

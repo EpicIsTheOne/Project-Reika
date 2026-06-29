@@ -28,6 +28,10 @@ The relay is still dev-only and in-memory, but the important shape is real: devi
 Implemented:
 
 - Node/TypeScript device-agent server scaffold
+- platform-aware Windows/Linux/macOS device identity
+- Windows `.exe` build with local pairing UI
+- Linux CLI pairing flow
+- Windows and Linux startup registration
 - local provider detection for CommandCenter, OpenClaw direct, Hermes direct, and mock fallback
 - CommandCenter-first provider priority
 - versioned `AgentHubEnvelope` protocol
@@ -52,6 +56,7 @@ Implemented:
 - local/dev app backend for provider scanning
 - Devices page relay integration
 - pairing UI skeleton
+- local agent startup toggle in Settings
 - relay-backed device presence, provider snapshots, active provider, and agent roster display
 - safe controls only: request state, refresh providers, request agent roster
 
@@ -116,7 +121,37 @@ To connect the device server through the relay, create/claim/approve a pairing c
 REIKA_UPLINK_ENABLED=true
 REIKA_RELAY_URL=ws://127.0.0.1:8790/v1/device
 REIKA_PAIRING_TOKEN=<approved pairing code>
-REIKA_DEVICE_ID=linux-device-local
+REIKA_DEVICE_ID=
+```
+
+Windows agent build:
+
+```powershell
+cd server
+npm run build:windows-exe
+.\release\reika-agent-server.exe
+```
+
+The Windows executable opens a local pairing UI with startup controls. Startup can also be managed from the app Settings page while the local agent is running.
+
+Linux remains CLI-first, and the one-line installer enables the user-level startup service by default:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh | bash -s -- --code <pairing code> --relay ws://127.0.0.1:8790/v1/device
+```
+
+After install, Linux users can list commands with:
+
+```bash
+reika-agent-server --help
+```
+
+Linux startup commands:
+
+```bash
+reika-agent-server startup status
+reika-agent-server startup enable --relay ws://relay-host:8790/v1/device
+reika-agent-server startup disable
 ```
 
 ## Guardrails

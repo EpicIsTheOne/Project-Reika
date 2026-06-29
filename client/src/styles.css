@@ -1492,6 +1492,107 @@ img {
   font-style: normal;
 }
 
+.relay-pairing-panel {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid rgba(87, 148, 255, 0.2);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(7, 22, 50, 0.92), rgba(3, 9, 23, 0.84));
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.24);
+}
+
+.relay-pairing-header,
+.relay-pairing-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.relay-pairing-header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.relay-pairing-grid {
+  display: grid;
+  grid-template-columns: 150px 130px minmax(0, 1fr);
+  gap: 0.7rem;
+}
+
+.relay-pairing-grid article {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(87, 148, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(6, 18, 42, 0.76);
+}
+
+.relay-pairing-grid small,
+.relay-pairing-instructions h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.relay-pairing-grid strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.relay-pairing-instructions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
+  gap: 0.8rem;
+}
+
+.relay-pairing-instructions > div {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid rgba(87, 148, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(3, 12, 29, 0.72);
+}
+
+.relay-pairing-instructions code {
+  display: block;
+  max-height: 92px;
+  overflow: auto;
+  padding: 0.8rem;
+  border: 1px solid rgba(87, 148, 255, 0.14);
+  border-radius: 10px;
+  color: #8ed2ff;
+  background: rgba(0, 6, 16, 0.64);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.relay-pairing-instructions p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.relay-pairing-actions em {
+  color: var(--red);
+  font-style: normal;
+}
+
 .devices-left {
   display: grid;
   gap: 14px;
@@ -2414,6 +2515,11 @@ img {
 .toggle.checked {
   background: linear-gradient(135deg, #147fff, #0b63ff);
   box-shadow: var(--glow);
+}
+
+.toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .toggle.checked span {

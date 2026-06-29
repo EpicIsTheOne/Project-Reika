@@ -3,17 +3,24 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Project Reika Agent Server — Linux device-side service for Reika provider/agent state.",
+  "description": "Project Reika Agent Server - device-side service for Reika provider/agent state.",
+  "bin": {
+    "reika-agent-server": "./dist/main.js"
+  },
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:windows-exe": "node scripts/build-windows-exe.mjs"
   },
   "dependencies": {
     "@types/node": "latest",
     "tsx": "latest",
     "typescript": "5.6.3"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "postject": "^1.0.0-alpha.6"
+  }
 }

@@ -11,6 +11,12 @@ This is not the main visual app client. It is the local agent/device server that
 Included now:
 
 - Node/TypeScript device-agent service scaffold
+- platform-aware device identity for Windows, Linux, macOS, and unknown hosts
+- Windows single-file `.exe` build path
+- Windows local pairing UI at the device server root URL
+- Linux terminal-first pairing flow
+- Windows Run-key startup registration
+- Linux user-level `systemd` startup registration
 - Reika as the represented mascot/agent fallback
 - local HTTP status surface for development
 - modular boundaries for Device, Provider, Agent, Event, Commands, Uplink, and shared protocol
@@ -74,11 +80,17 @@ http://127.0.0.1:47840
 
 Development endpoints:
 
+- `GET /`
 - `GET /health`
 - `GET /state`
 - `GET /events`
 - `GET /providers`
 - `GET /uplink`
+- `GET /startup`
+- `POST /uplink/connect`
+- `POST /uplink/disconnect`
+- `POST /startup/enable`
+- `POST /startup/disable`
 - `POST /providers/refresh`
 - `POST /commands/simulate`
 
@@ -91,13 +103,77 @@ Outbound relay mode is disabled by default.
 ```env
 REIKA_UPLINK_ENABLED=false
 REIKA_RELAY_URL=wss://relay.techexplore.us/v1/device
-REIKA_DEVICE_ID=linux-device-local
+REIKA_DEVICE_ID=
 REIKA_DEVICE_KEY_PATH=
 REIKA_PAIRING_TOKEN=
 REIKA_HEARTBEAT_MS=25000
 REIKA_RECONNECT_MIN_MS=1000
 REIKA_RECONNECT_MAX_MS=30000
+REIKA_PAIRING_UI=true
+REIKA_PAIRING_UI_OPEN=true
 ```
+
+If `REIKA_DEVICE_ID` is empty, the server derives one from the detected platform and hostname.
+
+## Windows Agent
+
+Windows should be distributed as a single `.exe`:
+
+```powershell
+cd server
+npm run build:windows-exe
+.\release\reika-agent-server.exe
+```
+
+On Windows, the agent opens a simple local pairing UI at:
+
+```text
+http://127.0.0.1:47840/
+```
+
+Create a pairing code in AgentHub, paste it into the UI, and approve the device in the app. The device still connects outbound to the relay; no inbound public port is required.
+
+The Windows UI includes startup controls. It registers the current user's Run key so the agent starts when Windows signs in. The main AgentHub Settings page can also toggle this while the local agent is reachable.
+
+For headless Windows testing:
+
+```powershell
+.\release\reika-agent-server.exe --no-ui
+.\release\reika-agent-server.exe pair --code <approved pairing code> --relay ws://127.0.0.1:8790/v1/device
+.\release\reika-agent-server.exe startup status
+.\release\reika-agent-server.exe startup enable --relay ws://127.0.0.1:8790/v1/device
+.\release\reika-agent-server.exe startup disable
+```
+
+## Linux Agent
+
+Linux stays terminal-first:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh | bash -s -- --code <approved pairing code> --relay ws://127.0.0.1:8790/v1/device
+```
+
+The installer clones/updates the repo, builds the server, creates `~/.local/bin/reika-agent-server`, enables the user-level startup service by default, and starts the CLI pairing flow. Users can list commands with:
+
+```bash
+reika-agent-server --help
+```
+
+After install, pairing can be repeated without reinstalling:
+
+```bash
+reika-agent-server pair --code <approved pairing code> --relay wss://relay.example.com/v1/device
+```
+
+Startup can be changed from the CLI:
+
+```bash
+reika-agent-server startup status
+reika-agent-server startup enable --relay wss://relay.example.com/v1/device
+reika-agent-server startup disable
+```
+
+Linux startup uses `~/.config/systemd/user/reika-agent-server.service` when `systemctl --user` is available. On a headless server, the user service starts when that user session starts; production packaging can add linger/system-service setup later if we want true boot-before-login behavior.
 
 For local dev relay testing:
 
@@ -105,7 +181,7 @@ For local dev relay testing:
 REIKA_UPLINK_ENABLED=true
 REIKA_RELAY_URL=ws://127.0.0.1:8790/v1/device
 REIKA_PAIRING_TOKEN=<approved pairing code>
-REIKA_DEVICE_ID=linux-device-local
+REIKA_DEVICE_ID=
 ```
 
 When enabled, the server connects outward to the relay over WS/WSS and sends:
