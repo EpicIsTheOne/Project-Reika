@@ -1,0 +1,393 @@
+export type ReikaProviderKind = "commandcenter" | "openclaw" | "hermes" | "mock";
+export type ReikaProviderStatus = "preferred" | "available" | "planned" | "offline" | "error";
+export type ReikaMessageRole = "user" | "assistant" | "system";
+
+export interface ReikaProviderCapability {
+  id: string;
+  label: string;
+  planned?: boolean;
+}
+
+export interface ReikaAgentSummary {
+  id: string;
+  name: string;
+  label?: string;
+  model?: string;
+  source?: string;
+  role?: string;
+  characterId?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
+export interface ReikaProviderRecord {
+  id: string;
+  kind: ReikaProviderKind;
+  name: string;
+  status: ReikaProviderStatus;
+  priority: number;
+  endpointLabel: string;
+  capabilities: ReikaProviderCapability[];
+  agents: ReikaAgentSummary[];
+  notes: string;
+  error?: string;
+}
+
+export interface ReikaDeviceSnapshot {
+  id?: string;
+  name?: string;
+  deviceId?: string;
+  platform?: string;
+  hostname?: string;
+  startedAt?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
+export interface ReikaSessionSummary {
+  id: string;
+  providerId: string;
+  agent: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  lastMessagePreview: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ReikaChatMessage {
+  id: string;
+  role: ReikaMessageRole;
+  text: string;
+  timestamp: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface ReikaChatResult {
+  providerId: string;
+  agentId: string;
+  sessionId: string;
+  runtime: ReikaProviderKind;
+  text: string;
+  raw?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ReikaFileItem {
+  id: string;
+  kind: "file" | "link";
+  name: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  createdAt: number;
+  sourceUrl?: string;
+  notes?: string;
+}
+
+export interface ReikaUplinkSnapshot {
+  enabled?: boolean;
+  connected?: boolean;
+  status?: string;
+  relayUrl?: string;
+  deviceId?: string;
+  lastError?: string;
+  [key: string]: unknown;
+}
+
+export interface ReikaStartupStatus {
+  supported: boolean;
+  enabled: boolean;
+  method: string;
+  configPath?: string;
+  command?: string;
+  message?: string;
+}
+
+export interface ReikaStateResponse {
+  ok: true;
+  device: ReikaDeviceSnapshot;
+  activeProviderId: string;
+  providerDetection?: {
+    lastDetectionAt?: string;
+    priority?: string[];
+  };
+  providers: ReikaProviderRecord[];
+  agents?: ReikaAgentSummary[];
+  sessionStore?: {
+    loaded: boolean;
+    sessionCount: number;
+    path?: string;
+    lastSavedAt?: string;
+    lastError?: string;
+  };
+  fileStore?: {
+    loaded: boolean;
+    count: number;
+    path?: string;
+    dir?: string;
+  };
+  uplink?: ReikaUplinkSnapshot;
+  connectionPolicy?: Record<string, unknown>;
+}
+
+export interface ReikaChatRequest {
+  providerId?: string;
+  agent?: string;
+  sessionId?: string;
+  message: string;
+  title?: string;
+  model?: string;
+  metadata?: Record<string, unknown>;
+  fileIds?: string[];
+}
+
+export interface ReikaApiErrorBody {
+  ok?: false;
+  error?: string;
+  code?: string;
+}
+
+export class ReikaApiError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ReikaApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+const API_BASE = "/agent";
+
+export async function getState() {
+  return request<ReikaStateResponse>("/state");
+}
+
+export async function getProviders() {
+  return request<{ ok: true; activeProviderId: string; providers: ReikaProviderRecord[] }>("/providers");
+}
+
+export async function refreshProviders() {
+  return request<ReikaStateResponse>("/providers/refresh", { method: "POST" });
+}
+
+export async function getProviderAgents(providerId: string) {
+  return request<{ ok: true; providerId: string; agents: ReikaAgentSummary[] }>(`/providers/${encodeURIComponent(providerId)}/agents`);
+}
+
+export async function listSessions(input: { limit?: number; agent?: string; providerId?: string } = {}) {
+  const params = compactParams({
+    limit: input.limit,
+    agent: input.agent,
+    providerId: input.providerId
+  });
+  return request<{ ok: true; storage?: unknown; sessions: ReikaSessionSummary[] }>(`/sessions${params}`);
+}
+
+export async function searchSessions(input: { q: string; limit?: number; agent?: string; providerId?: string }) {
+  const params = compactParams({
+    q: input.q,
+    limit: input.limit,
+    agent: input.agent,
+    providerId: input.providerId
+  });
+  return request<{ ok: true; query: string; results: ReikaSessionSummary[] }>(`/sessions/search${params}`);
+}
+
+export async function getSession(sessionId: string) {
+  return request<{ ok: true; session: ReikaSessionSummary }>(`/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export async function getSessionMessages(sessionId: string, limit?: number) {
+  const params = compactParams({ limit });
+  return request<{ ok: true; sessionId: string; messages: ReikaChatMessage[] }>(`/sessions/${encodeURIComponent(sessionId)}/messages${params}`);
+}
+
+export async function createSession(input: { providerId?: string; agent?: string; title?: string; metadata?: Record<string, unknown> } = {}) {
+  return request<{ ok: true; session: ReikaSessionSummary }>("/sessions", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function postSessionMessage(sessionId: string, input: { message: string; model?: string; fileIds?: string[] }) {
+  return request<{ ok: true; session: ReikaSessionSummary; message: ReikaChatMessage; result: ReikaChatResult }>(
+    `/sessions/${encodeURIComponent(sessionId)}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export async function chat(input: ReikaChatRequest) {
+  return request<{ ok: true; session: ReikaSessionSummary; message: ReikaChatMessage; text: string; result: ReikaChatResult }>("/chat", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function streamChat(
+  input: ReikaChatRequest,
+  onEvent: (event: { type: string; data: unknown }) => void,
+  endpoint = "/chat/stream"
+) {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new ReikaApiError(`Streaming chat failed: HTTP ${response.status}`, response.status);
+  if (!response.body) return;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() ?? "";
+    for (const chunk of chunks) emitSseChunk(chunk, onEvent);
+  }
+
+  if (buffer.trim()) emitSseChunk(buffer, onEvent);
+}
+
+export async function listProviderHistory(providerId: string, limit = 25) {
+  const params = compactParams({ limit });
+  return request<{ ok: true; providerId: string; sessions: unknown[] }>(`/providers/${encodeURIComponent(providerId)}/history${params}`);
+}
+
+export async function importProviderHistory(providerId: string, input: { limit?: number; includeMessages?: boolean } = {}) {
+  return request<{ ok: true; providerId: string; imported: Array<{ providerSessionId: string; session: ReikaSessionSummary; created: boolean; messageCount: number }> }>(
+    `/providers/${encodeURIComponent(providerId)}/history/import`,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export async function listFiles() {
+  return request<{ ok: true; storage?: unknown; items: ReikaFileItem[] }>("/files");
+}
+
+export async function linkFile(input: { url: string; name?: string; notes?: string }) {
+  return request<{ ok: true; item: ReikaFileItem }>("/files/link", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function uploadFiles(files: File[]) {
+  const encoded = await Promise.all(files.map(fileToUploadBody));
+  return request<{ ok: true; items: ReikaFileItem[] }>("/files/upload", {
+    method: "POST",
+    body: JSON.stringify({ files: encoded })
+  });
+}
+
+export function fileDownloadUrl(fileId: string) {
+  return `${API_BASE}/files/${encodeURIComponent(fileId)}/download`;
+}
+
+export async function getUplink() {
+  return request<{ ok: true; uplink: ReikaUplinkSnapshot }>("/uplink");
+}
+
+export async function connectUplink(input: { relayUrl: string; pairingToken?: string; deviceId?: string }) {
+  return request<{ ok: true; uplink: ReikaUplinkSnapshot }>("/uplink/connect", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function disconnectUplink() {
+  return request<{ ok: true; uplink: ReikaUplinkSnapshot }>("/uplink/disconnect", { method: "POST" });
+}
+
+export async function getStartup() {
+  return request<{ ok: true; startup: ReikaStartupStatus }>("/startup");
+}
+
+export async function enableStartup(input: { relayUrl?: string; deviceId?: string } = {}) {
+  return request<{ ok: boolean; startup: ReikaStartupStatus }>("/startup/enable", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function disableStartup() {
+  return request<{ ok: boolean; startup: ReikaStartupStatus }>("/startup/disable", { method: "POST" });
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers
+  });
+  const payload = (await response.json().catch(() => ({}))) as T & ReikaApiErrorBody;
+  if (!response.ok || payload.ok === false) {
+    throw new ReikaApiError(payload.error || `Reika server request failed: HTTP ${response.status}`, response.status, payload.code);
+  }
+  return payload as T;
+}
+
+function compactParams(values: Record<string, string | number | undefined>) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined || value === "") continue;
+    params.set(key, String(value));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+async function fileToUploadBody(file: File) {
+  const base64 = await readFileBase64(file);
+  return {
+    name: file.name,
+    mimeType: file.type || "application/octet-stream",
+    base64
+  };
+}
+
+function readFileBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      const result = String(reader.result || "");
+      resolve(result.includes(",") ? result.split(",").pop() || "" : result);
+    });
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("Could not read file.")));
+    reader.readAsDataURL(file);
+  });
+}
+
+function emitSseChunk(chunk: string, onEvent: (event: { type: string; data: unknown }) => void) {
+  let type = "message";
+  const dataLines: string[] = [];
+  for (const rawLine of chunk.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (line.startsWith("event:")) type = line.slice("event:".length).trim() || "message";
+    if (line.startsWith("data:")) dataLines.push(line.slice("data:".length).trim());
+  }
+  if (!dataLines.length) return;
+  const rawData = dataLines.join("\n");
+  let data: unknown = rawData;
+  try {
+    data = JSON.parse(rawData);
+  } catch {
+    // Plain-text SSE data is allowed; keep it as text.
+  }
+  onEvent({ type, data });
+}

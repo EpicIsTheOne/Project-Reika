@@ -8,6 +8,7 @@ export interface Device {
   type: DeviceType;
   status: Status;
   location: string;
+  activeProviderId?: string;
   providers: Provider[];
 }
 

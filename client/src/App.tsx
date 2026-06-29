@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ElementType, ReactNode } from "react";
+import type { ChangeEvent, ElementType, FormEvent, ReactNode } from "react";
 import {
   Activity,
   ArrowLeft,
@@ -42,7 +42,7 @@ import {
   Users
 } from "lucide-react";
 import { assets } from "./data/assets";
-import { fetchAgentHubDevices, mapDevice, scanLocalAgentHubProviders } from "./data/api";
+import { mapDevice } from "./data/api";
 import {
   applyRelayEnvelope,
   approveRelayPairingCode,
@@ -55,7 +55,26 @@ import {
 import { linuxInstallCommand, reikaRelayDeviceUrl } from "./config/relay";
 import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "./data/startup";
 import { chatMessages, devices as mockDevices, reikaProfile } from "./data/mockData";
-import type { Agent, Device, Provider, Status, View } from "./types";
+import {
+  chat,
+  createSession,
+  getSessionMessages,
+  getState,
+  importProviderHistory,
+  linkFile,
+  listFiles,
+  listSessions,
+  postSessionMessage,
+  refreshProviders,
+  searchSessions,
+  uploadFiles,
+  type ReikaChatMessage,
+  type ReikaFileItem,
+  type ReikaProviderRecord,
+  type ReikaSessionSummary,
+  type ReikaStateResponse
+} from "./lib/reikaApi";
+import type { Agent, ChatMessage, Device, Provider, Status, View } from "./types";
 
 const statusLabels: Record<Status, string> = {
   online: "Online",
@@ -81,16 +100,18 @@ export function App() {
   const [view, setView] = useState<View>("loading");
   const [selectedAgentId, setSelectedAgentId] = useState("reika");
   const [appDevices, setAppDevices] = useState<Device[]>(mockDevices);
+  const [reikaState, setReikaState] = useState<ReikaStateResponse | null>(null);
   const [backendMode, setBackendMode] = useState<BackendMode>("loading");
   const [backendError, setBackendError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    fetchAgentHubDevices()
-      .then((nextDevices) => {
+    getState()
+      .then((state) => {
         if (cancelled) return;
-        setAppDevices(nextDevices.length > 0 ? nextDevices : mockDevices);
+        setReikaState(state);
+        setAppDevices([mapReikaStateToDevice(state)]);
         setBackendMode("live");
         setBackendError(null);
       })
@@ -124,13 +145,10 @@ export function App() {
   }, [presentationDevices, selectedAgentId]);
 
   const handleScanProviders = () => {
-    scanLocalAgentHubProviders()
-      .then((device) => {
-        setAppDevices((current) => {
-          const mappedDevice = mapDevice(device);
-          const others = current.filter((item) => item.id !== mappedDevice.id);
-          return [mappedDevice, ...others];
-        });
+    refreshProviders()
+      .then((state) => {
+        setReikaState(state);
+        setAppDevices([mapReikaStateToDevice(state)]);
         setBackendMode("live");
         setBackendError(null);
       })
@@ -162,8 +180,8 @@ export function App() {
             }}
           />
         )}
-        {view === "chat" && <ChatView agent={selectedAgent} onBack={() => setView("home")} />}
-        {view === "devices" && <DevicesView onScanProviders={handleScanProviders} />}
+        {view === "chat" && <ChatView agent={selectedAgent} initialState={reikaState} onBack={() => setView("home")} />}
+        {view === "devices" && <DevicesView localDevices={appDevices} onScanProviders={handleScanProviders} />}
         {view === "notifications" && (
           <NotificationsView
             onOpenChat={() => {
@@ -519,7 +537,440 @@ function ProviderBlock({ provider, onOpenChat }: { provider: Provider; onOpenCha
   );
 }
 
-function ChatView({ agent, onBack }: { agent: Agent; onBack: () => void }) {
+function ChatView({ agent, initialState, onBack }: { agent: Agent; initialState: ReikaStateResponse | null; onBack: () => void }) {
+  const [serverState, setServerState] = useState<ReikaStateResponse | null>(initialState);
+  const [providers, setProviders] = useState<ReikaProviderRecord[]>(initialState?.providers ?? []);
+  const [selectedProviderId, setSelectedProviderId] = useState(initialState?.activeProviderId ?? "");
+  const [selectedAgentKey, setSelectedAgentKey] = useState(agent.id);
+  const [sessions, setSessions] = useState<ReikaSessionSummary[]>([]);
+  const [sessionSearch, setSessionSearch] = useState("");
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [files, setFiles] = useState<ReikaFileItem[]>([]);
+  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
+  const [draft, setDraft] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkName, setLinkName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("Connecting to Reika server...");
+  const [error, setError] = useState<string | null>(null);
+
+  const selectedProvider = useMemo(
+    () => providers.find((provider) => provider.id === selectedProviderId) ?? providers.find((provider) => provider.status === "preferred") ?? providers[0],
+    [providers, selectedProviderId]
+  );
+  const providerAgents = selectedProvider?.agents ?? [];
+  const selectedProviderStatus = mapProviderStatus(selectedProvider?.status);
+  const selectedLiveAgent = providerAgents.find((item) => item.id === selectedAgentKey || item.name === selectedAgentKey) ?? providerAgents[0];
+  const headerAgentName = selectedLiveAgent?.name ?? agent.name;
+  const providerLabel = selectedProvider?.name ?? "Reika Server";
+  const deviceName = getReikaDeviceName(serverState) || "Epic PC";
+
+  const loadLiveState = async () => {
+    try {
+      const state = await getState();
+      setServerState(state);
+      setProviders(state.providers);
+      setSelectedProviderId((current) => current || state.activeProviderId || state.providers[0]?.id || "");
+      setStatus(`${state.providers.length} providers detected`);
+      setError(null);
+    } catch (loadError) {
+      setStatus("Preview chat only");
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    }
+  };
+
+  const loadSessionRows = async (query = sessionSearch, providerId = selectedProvider?.id, agentId = selectedLiveAgent?.id) => {
+    try {
+      if (query.trim()) {
+        const result = await searchSessions({ q: query.trim(), limit: 30, providerId, agent: agentId });
+        setSessions(result.results);
+      } else {
+        const result = await listSessions({ limit: 30, providerId, agent: agentId });
+        setSessions(result.sessions);
+      }
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    }
+  };
+
+  const loadFilesList = async () => {
+    try {
+      const result = await listFiles();
+      setFiles(result.items);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    }
+  };
+
+  useEffect(() => {
+    void loadLiveState();
+    void loadFilesList();
+  }, []);
+
+  useEffect(() => {
+    if (!initialState) return;
+    setServerState(initialState);
+    setProviders(initialState.providers);
+    setSelectedProviderId((current) => current || initialState.activeProviderId || initialState.providers[0]?.id || "");
+  }, [initialState]);
+
+  useEffect(() => {
+    if (!selectedProvider) return;
+    if (!providerAgents.some((item) => item.id === selectedAgentKey || item.name === selectedAgentKey)) {
+      setSelectedAgentKey(providerAgents[0]?.id ?? "reika");
+    }
+  }, [providerAgents, selectedAgentKey, selectedProvider]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadSessionRows();
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [sessionSearch, selectedProvider?.id, selectedLiveAgent?.id]);
+
+  useEffect(() => {
+    if (!selectedSessionId) {
+      setMessages([]);
+      return;
+    }
+    getSessionMessages(selectedSessionId)
+      .then((result) => {
+        setMessages(result.messages.map(mapReikaMessage));
+        setError(null);
+      })
+      .catch((loadError) => {
+        setError(loadError instanceof Error ? loadError.message : String(loadError));
+      });
+  }, [selectedSessionId]);
+
+  const handleRefreshProviders = async () => {
+    setBusy(true);
+    try {
+      const state = await refreshProviders();
+      setServerState(state);
+      setProviders(state.providers);
+      setSelectedProviderId(state.activeProviderId || state.providers[0]?.id || "");
+      setStatus("Provider scan complete");
+      setError(null);
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleNewSession = async () => {
+    if (!selectedProvider) return;
+    setBusy(true);
+    try {
+      const created = await createSession({
+        providerId: selectedProvider.id,
+        agent: selectedLiveAgent?.id ?? selectedAgentKey,
+        title: `${selectedLiveAgent?.name ?? headerAgentName} session`
+      });
+      setSelectedSessionId(created.session.id);
+      setMessages([]);
+      await loadSessionRows();
+      setError(null);
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : String(createError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const message = draft.trim();
+    if (!message || busy) return;
+    setBusy(true);
+    setDraft("");
+    setMessages((current) => [
+      ...current,
+      {
+        id: `local-${Date.now()}`,
+        sender: "user",
+        body: message,
+        time: formatClock(new Date().toISOString())
+      }
+    ]);
+    try {
+      const result = selectedSessionId
+        ? await postSessionMessage(selectedSessionId, { message, fileIds: selectedFileIds })
+        : await chat({
+            providerId: selectedProvider?.id,
+            agent: selectedLiveAgent?.id ?? selectedAgentKey,
+            message,
+            fileIds: selectedFileIds
+          });
+      setSelectedSessionId(result.session.id);
+      const refreshed = await getSessionMessages(result.session.id);
+      setMessages(refreshed.messages.map(mapReikaMessage));
+      await loadSessionRows("", selectedProvider?.id, selectedLiveAgent?.id);
+      setStatus(`Routed through ${result.result.runtime}`);
+      setError(null);
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : String(sendError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddLink = async () => {
+    if (!linkUrl.trim() || busy) return;
+    setBusy(true);
+    try {
+      const result = await linkFile({ url: linkUrl.trim(), name: linkName.trim() || undefined });
+      setFiles((current) => [result.item, ...current.filter((item) => item.id !== result.item.id)]);
+      setSelectedFileIds((current) => [...new Set([result.item.id, ...current])]);
+      setLinkUrl("");
+      setLinkName("");
+      setError(null);
+    } catch (linkError) {
+      setError(linkError instanceof Error ? linkError.message : String(linkError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const uploadList = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    if (!uploadList.length || busy) return;
+    setBusy(true);
+    try {
+      const result = await uploadFiles(uploadList);
+      setFiles((current) => [...result.items, ...current.filter((item) => !result.items.some((next) => next.id === item.id))]);
+      setSelectedFileIds((current) => [...new Set([...result.items.map((item) => item.id), ...current])]);
+      setError(null);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : String(uploadError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleHistoryImport = async (kind: "commandcenter" | "hermes") => {
+    const provider = providers.find((item) => item.kind === kind);
+    if (!provider || busy) return;
+    setBusy(true);
+    try {
+      const result = await importProviderHistory(provider.id, { limit: 25, includeMessages: true });
+      await loadSessionRows("", selectedProvider?.id, selectedLiveAgent?.id);
+      setStatus(`${result.imported.length} ${provider.name} sessions imported`);
+      setError(null);
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : String(importError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const visibleMessages = messages.length > 0 ? messages : error ? [] : chatMessages;
+  const canSend = Boolean(draft.trim()) && !busy && Boolean(selectedProvider);
+
+  return (
+    <main className="chat-screen">
+      <aside className="chat-profile">
+        <button className="back-button" onClick={onBack}>
+          <ArrowLeft size={20} />
+          Back
+        </button>
+        <img className="chat-profile-art" src={assets.reika.splash} alt="" />
+        <div className="chat-profile-card live-chat-profile-card">
+          <h2>
+            {headerAgentName}
+            <Heart size={24} fill="currentColor" />
+          </h2>
+          <p>{providerLabel} {"\u2022"} {deviceName}</p>
+          <span>
+            <StatusDot status={selectedProviderStatus} />
+            {statusLabels[selectedProviderStatus]}
+          </span>
+
+          <div className="live-chat-card">
+            <label>
+              <span>Provider</span>
+              <select value={selectedProvider?.id ?? ""} onChange={(event) => setSelectedProviderId(event.target.value)}>
+                {providers.length > 0 ? (
+                  providers.map((provider) => (
+                    <option value={provider.id} key={provider.id}>
+                      {provider.name} ({provider.status})
+                    </option>
+                  ))
+                ) : (
+                  <option value="">Server offline</option>
+                )}
+              </select>
+            </label>
+            <label>
+              <span>Agent</span>
+              <select value={selectedLiveAgent?.id ?? selectedAgentKey} onChange={(event) => setSelectedAgentKey(event.target.value)}>
+                {providerAgents.length > 0 ? (
+                  providerAgents.map((item) => (
+                    <option value={item.id} key={item.id}>
+                      {item.name || item.label || item.id}
+                    </option>
+                  ))
+                ) : (
+                  <option value="reika">Reika</option>
+                )}
+              </select>
+            </label>
+            <div className="chat-session-tools">
+              <button onClick={handleNewSession} disabled={!selectedProvider || busy}>
+                <Plus size={16} />
+                New
+              </button>
+              <button onClick={() => void handleRefreshProviders()} disabled={busy}>
+                <Activity size={16} />
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <div className="chat-session-card">
+            <header>
+              <strong>Sessions</strong>
+              <small>{sessions.length}</small>
+            </header>
+            <label className="mini-search-field">
+              <Search size={15} />
+              <input value={sessionSearch} onChange={(event) => setSessionSearch(event.target.value)} placeholder="Search sessions..." />
+            </label>
+            <div className="chat-session-list">
+              {sessions.length > 0 ? (
+                sessions.map((session) => (
+                  <button
+                    className={session.id === selectedSessionId ? "selected" : ""}
+                    key={session.id}
+                    onClick={() => setSelectedSessionId(session.id)}
+                  >
+                    <strong>{session.title}</strong>
+                    <small>{session.lastMessagePreview || `${session.messageCount} messages`}</small>
+                  </button>
+                ))
+              ) : (
+                <small>No sessions yet</small>
+              )}
+            </div>
+          </div>
+
+          <div className="chat-attachment-card">
+            <header>
+              <strong>Files</strong>
+              <label>
+                <Plus size={15} />
+                <input type="file" multiple onChange={handleUpload} />
+              </label>
+            </header>
+            <div className="attachment-link-row">
+              <input value={linkName} onChange={(event) => setLinkName(event.target.value)} placeholder="Name" />
+              <input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://..." />
+              <button onClick={handleAddLink} disabled={!linkUrl.trim() || busy}>
+                <Link2 size={15} />
+              </button>
+            </div>
+            <div className="attachment-list">
+              {files.slice(0, 5).map((file) => (
+                <label className={selectedFileIds.includes(file.id) ? "selected" : ""} key={file.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedFileIds.includes(file.id)}
+                    onChange={(event) => {
+                      setSelectedFileIds((current) =>
+                        event.target.checked ? [...current, file.id] : current.filter((id) => id !== file.id)
+                      );
+                    }}
+                  />
+                  <span>{file.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="history-import-card">
+            <button onClick={() => void handleHistoryImport("commandcenter")} disabled={!providers.some((item) => item.kind === "commandcenter") || busy}>
+              Import CommandCenter
+            </button>
+            <button onClick={() => void handleHistoryImport("hermes")} disabled={!providers.some((item) => item.kind === "hermes") || busy}>
+              Import Hermes
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <section className="chat-main">
+        <header className="chat-header">
+          <img src={assets.reika.avatar} alt="" />
+          <div>
+            <h1>
+              {headerAgentName}
+              <Heart size={26} fill="currentColor" />
+            </h1>
+            <p>
+              {providerLabel} {"\u2022"} {deviceName}
+              <StatusDot status={selectedProviderStatus} />
+              {statusLabels[selectedProviderStatus]}
+            </p>
+          </div>
+          <button className="secondary-action" onClick={() => void handleHistoryImport("commandcenter")} disabled={busy}>
+            <Database size={20} />
+            Import
+          </button>
+          <button className="icon-button" onClick={() => void handleRefreshProviders()} disabled={busy} aria-label="Refresh providers">
+            <Activity size={22} />
+          </button>
+        </header>
+
+        <section className="conversation-panel">
+          <div className="day-divider">
+            <span />
+            {status}
+            <span />
+          </div>
+          {error ? <div className="chat-error-banner">{error}</div> : null}
+          <div className="message-list">
+            {visibleMessages.map((message) => (
+              <MessageBubble message={message} key={message.id} />
+            ))}
+            {busy ? (
+              <div className="typing-row">
+                <img src={assets.reika.avatar} alt="" />
+                <span>{headerAgentName} is thinking</span>
+                <i />
+                <i />
+                <i />
+              </div>
+            ) : null}
+          </div>
+
+          <form className="chat-composer" onSubmit={handleSubmit}>
+            <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${headerAgentName}...`} />
+            <div className="composer-tools">
+              <button className="icon-button" type="button" aria-label="New session" onClick={handleNewSession} disabled={busy}>
+                <Plus size={22} />
+              </button>
+              <button className="icon-button" type="button" aria-label="Import history" onClick={() => void handleHistoryImport("hermes")} disabled={busy}>
+                <Database size={20} />
+              </button>
+            </div>
+            <button className="icon-button mic-button" type="button" aria-label="Selected files">
+              {selectedFileIds.length || <Link2 size={22} />}
+            </button>
+            <button className="send-button" type="submit" aria-label="Send" disabled={!canSend}>
+              <Send size={24} />
+            </button>
+          </form>
+        </section>
+      </section>
+    </main>
+  );
+}
+
+function LegacyChatView({ agent, onBack }: { agent: Agent; onBack: () => void }) {
   return (
     <main className="chat-screen">
       <aside className="chat-profile">
@@ -614,7 +1065,7 @@ function ChatView({ agent, onBack }: { agent: Agent; onBack: () => void }) {
   );
 }
 
-function MessageBubble({ message }: { message: (typeof chatMessages)[number] }) {
+function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.sender === "system") return null;
   const isUser = message.sender === "user";
 
@@ -846,7 +1297,7 @@ const notificationItems: NotificationItem[] = [
   }
 ];
 
-function DevicesView({ onScanProviders }: { onScanProviders: () => void }) {
+function DevicesView({ localDevices, onScanProviders }: { localDevices: Device[]; onScanProviders: () => void }) {
   const [selectedId, setSelectedId] = useState("epic-pc");
   const [filterOpen, setFilterOpen] = useState(false);
   const [relayStatus, setRelayStatus] = useState<"connecting" | "online" | "offline">("connecting");
@@ -856,7 +1307,14 @@ function DevicesView({ onScanProviders }: { onScanProviders: () => void }) {
   const [relayError, setRelayError] = useState<string | null>(null);
   const [relaySend, setRelaySend] = useState<ReturnType<typeof connectRelayApp>["send"] | null>(null);
   const relayRows = useMemo(() => relayDevices.map(mapRelayDeviceRecord), [relayDevices]);
-  const displayRows = relayRows.length > 0 ? relayRows : deviceRows;
+  const localRows = useMemo(() => localDevices.map(mapLocalDeviceRecord), [localDevices]);
+  const displayRows = relayRows.length > 0 ? relayRows : localRows.length > 0 ? localRows : deviceRows;
+  const deviceSourceLabel =
+    relayRows.length > 0
+      ? `${relayRows.length} paired ${relayRows.length === 1 ? "device" : "devices"}`
+      : localRows.length > 0
+        ? "Local server device"
+        : "Local preview fallback";
   const selectedDevice = displayRows.find((device) => device.id === selectedId) ?? displayRows[0];
   const onlineCount = displayRows.filter((device) => device.status === "online").length;
   const idleCount = displayRows.filter((device) => device.status === "busy" || device.statusLabel === "Idle").length;
@@ -945,7 +1403,8 @@ function DevicesView({ onScanProviders }: { onScanProviders: () => void }) {
             <h1>Devices</h1>
             <p>
               Relay {statusLabels[relayStatus]}
-              {relayRows.length > 0 ? ` • ${relayRows.length} paired ${relayRows.length === 1 ? "device" : "devices"}` : " • Local preview fallback"}
+              {" \u2022 "}
+              {deviceSourceLabel}
             </p>
           </span>
         </div>
@@ -1628,12 +2087,116 @@ function StatusDot({ status }: { status: Status }) {
   return <i className={`status-dot status-${status}`} aria-hidden="true" />;
 }
 
+function mapReikaStateToDevice(state: ReikaStateResponse): Device {
+  const deviceId = String(state.device.id ?? state.device.deviceId ?? "local-reika-device");
+  return {
+    id: deviceId,
+    name: getReikaDeviceName(state) || "Project Reika Device",
+    type: inferReikaDeviceType(state),
+    status: "online",
+    location: "Local",
+    activeProviderId: state.activeProviderId,
+    providers: state.providers.map((provider) => mapReikaProvider(provider, deviceId))
+  };
+}
+
+function mapReikaProvider(provider: ReikaProviderRecord, deviceId: string): Provider {
+  return {
+    id: provider.id,
+    name: labelReikaProvider(provider.kind),
+    deviceId,
+    status: mapProviderStatus(provider.status),
+    latency: provider.endpointLabel || "local",
+    agents: provider.agents.map((agent, index) => ({
+      id: agent.id || `${provider.id}-agent-${index + 1}`,
+      name: agent.name || agent.label || agent.id || "Reika",
+      providerId: provider.id,
+      deviceId,
+      role: String(agent.role || agent.source || agent.model || provider.name),
+      status: mapProviderStatus(provider.status),
+      lastActivity: provider.notes || "Detected by Reika server",
+      characterId: String(agent.id || agent.name || "").toLowerCase().includes("reika") ? "reika" : undefined
+    }))
+  };
+}
+
+function labelReikaProvider(kind: ReikaProviderRecord["kind"]): Provider["name"] {
+  if (kind === "commandcenter") return "CommandCenter";
+  if (kind === "openclaw") return "OpenClaw";
+  if (kind === "hermes") return "Hermes";
+  return "Mock";
+}
+
+function mapProviderStatus(status?: ReikaProviderRecord["status"]): Status {
+  if (status === "preferred" || status === "available") return "online";
+  if (status === "planned") return "connecting";
+  if (status === "error") return "error";
+  if (status === "offline") return "offline";
+  return "unknown";
+}
+
+function getReikaDeviceName(state: ReikaStateResponse | null) {
+  if (!state) return "";
+  return String(state.device.name ?? state.device.hostname ?? state.device.id ?? "").trim();
+}
+
+function inferReikaDeviceType(state: ReikaStateResponse): Device["type"] {
+  const label = String(state.device.platform ?? state.device.name ?? state.device.hostname ?? "").toLowerCase();
+  if (label.includes("linux") || label.includes("server")) return "server";
+  if (label.includes("laptop")) return "laptop";
+  if (label.includes("phone") || label.includes("ios") || label.includes("android")) return "phone";
+  return "pc";
+}
+
+function mapReikaMessage(message: ReikaChatMessage): ChatMessage {
+  return {
+    id: message.id,
+    sender: message.role === "assistant" ? "agent" : message.role,
+    body: message.text,
+    time: formatClock(message.timestamp)
+  };
+}
+
+function formatClock(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "now";
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
 function getAgentAvatar(agent: Agent) {
   if (agent.characterId === "reika" || agent.id === "reika") return assets.reika.avatar;
   if (agent.id.toLowerCase().includes("astra")) return assets.reika.expressions.happy;
   if (agent.id.toLowerCase().includes("miyabi")) return assets.reika.expressions.playful;
   if (agent.id.toLowerCase().includes("nyxie")) return assets.reika.expressions.thinking;
   return assets.reika.chibi;
+}
+
+function mapLocalDeviceRecord(device: Device): DevicePageRow {
+  const activeProvider =
+    device.providers.find((provider) => provider.id === device.activeProviderId) ??
+    device.providers.find((provider) => provider.status === "online") ??
+    device.providers.find((provider) => provider.status !== "offline") ??
+    device.providers[0];
+  const agents = device.providers.flatMap((provider) => provider.agents);
+  return {
+    id: device.id,
+    name: device.name,
+    icon: getDeviceIcon(device.type),
+    typeLabel: device.type,
+    system: getSystemLabel(device),
+    connection: `${device.location} Connection`,
+    status: device.status,
+    tag: device.location === "Local" ? "This Device" : "Detected",
+    tagTone: device.location === "Local" ? "blue" : "green",
+    metrics: makeDeviceMetrics(device.id),
+    provider: activeProvider?.name ?? "Custom",
+    providers: device.providers,
+    agents,
+    activeProviderId: activeProvider?.id,
+    lastConnected: "Just now",
+    localIp: device.location,
+    version: "v0.1.0"
+  };
 }
 
 function mapRelayDeviceRecord(record: RelayDeviceRecord): DevicePageRow {
@@ -1723,6 +2286,8 @@ function formatRelativeTime(value: string) {
 }
 
 function buildPresentationDevices(devices: Device[]) {
+  if (devices !== mockDevices && devices.length > 0) return devices;
+
   const hasReferenceShape = devices.some((device) =>
     device.providers.some((provider) => provider.agents.some((agent) => agent.id === "reika"))
   );

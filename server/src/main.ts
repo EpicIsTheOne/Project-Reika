@@ -504,6 +504,7 @@ const server = http.createServer(async (req, res) => {
           title: typeof body.title === 'string' ? body.title : undefined,
           model: typeof body.model === 'string' ? body.model : undefined,
           metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata as Record<string, unknown> : undefined,
+          fileIds: body.fileIds,
           message
         }, (event) => writeSse(res, event.type, event.data));
         writeSse(res, 'message', result.assistantMessage);
