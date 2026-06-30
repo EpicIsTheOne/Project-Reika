@@ -132,13 +132,12 @@ export function AgentConnectionWizard({
   };
 
   const copyLinuxCommand = () => {
-    if (!linuxCommand || !navigator.clipboard) return;
-    void navigator.clipboard.writeText(linuxCommand).then(() => setCopyNotice("Linux command copied."));
+    if (!linuxCommand) return;
+    void copyText(linuxCommand).then((copied) => setCopyNotice(copied ? "Linux command copied." : "Could not copy. Select the command text manually."));
   };
 
   const copyRelayUrl = () => {
-    if (!navigator.clipboard) return;
-    void navigator.clipboard.writeText(relayUrl).then(() => setCopyNotice("Relay URL copied."));
+    void copyText(relayUrl).then((copied) => setCopyNotice(copied ? "Relay URL copied." : "Could not copy. Select the relay URL manually."));
   };
 
   const firstAgentId = agents[0]?.id ?? "reika";
@@ -317,7 +316,7 @@ function PairingInstructions({
     <div className="connection-step-card">
       <header>
         <h2>Pair Device</h2>
-        <p>{platform === "linux" ? "Run this command on the Linux device. It installs the CLI and starts the outbound relay connection." : "Open the Windows agent .exe, paste this code into the pairing UI, then approve the claim here."}</p>
+        <p>{platform === "linux" ? "Run the one-line command on the Linux machine you want to connect. Leave this wizard open, then approve the device when it appears." : "Open the Windows agent app on the device you want to connect. Paste the code there, leave both windows open, then approve the device here."}</p>
       </header>
       <div className="connection-code-grid">
         <article>
@@ -338,6 +337,12 @@ function PairingInstructions({
           <>
             <h3>Linux one-line command</h3>
             <code>{linuxCommand || "Create a pairing code first."}</code>
+            <ol className="connection-steps-list">
+              <li>Copy the command.</li>
+              <li>Paste it into the Linux device terminal.</li>
+              <li>Wait for the device name to appear above.</li>
+              <li>Click Approve And Verify.</li>
+            </ol>
             <button className="secondary-action small" type="button" onClick={onCopyLinuxCommand} disabled={!linuxCommand}>
               <Clipboard size={18} />
               Copy Command
@@ -346,7 +351,12 @@ function PairingInstructions({
         ) : (
           <>
             <h3>Windows pairing</h3>
-            <p>Launch `reika-agent-server.exe`, choose Pair Device, paste the code above, and keep the app open until this wizard marks the device ready.</p>
+            <ol className="connection-steps-list">
+              <li>Launch <code>reika-agent-server.exe</code> on the Windows device.</li>
+              <li>Paste the relay URL and pairing code into the agent pairing window.</li>
+              <li>Click Pair Device in that window.</li>
+              <li>Return here and click Approve And Verify once the device is claimed.</li>
+            </ol>
             <button className="secondary-action small" type="button" onClick={onCopyRelayUrl}>
               <Clipboard size={18} />
               Copy Relay URL
@@ -630,4 +640,32 @@ function providerFixText(provider: Provider) {
   if (provider.status === "error") return "Open the provider locally and refresh providers.";
   if (provider.status === "connecting") return "Provider is planned or still being checked.";
   return "Start this provider on the device, then refresh.";
+}
+
+async function copyText(value: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // Fall through to the legacy clipboard path for desktop shell/webview builds.
+  }
+
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return copied;
+  } catch {
+    return false;
+  }
 }

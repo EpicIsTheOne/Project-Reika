@@ -191,6 +191,8 @@ reika-agent-server --help
 Linux startup commands:
 
 ```bash
+reika-agent-server relay status
+reika-agent-server relay set --relay ws://relay-host:8790/v1/device
 reika-agent-server startup status
 reika-agent-server startup enable --relay ws://relay-host:8790/v1/device
 reika-agent-server startup disable

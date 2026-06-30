@@ -1,7 +1,8 @@
 export interface CliOptions {
-  mode: 'server' | 'pair' | 'startup' | 'updates' | 'help';
+  mode: 'server' | 'pair' | 'startup' | 'updates' | 'relay' | 'help';
   startupAction?: 'status' | 'enable' | 'disable';
   updatesAction?: 'status' | 'check' | 'apply' | 'enable' | 'disable';
+  relayAction?: 'status' | 'set';
   updatesTarget?: 'server' | 'client' | 'all';
   relayUrl?: string;
   code?: string;
@@ -47,6 +48,14 @@ export function parseCliArgs(argv = process.argv.slice(2)): CliOptions {
     }
   } else if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
     return { mode: 'help' };
+  } else if (argv[0] === 'relay') {
+    options.mode = 'relay';
+    const action = argv[1] ?? 'status';
+    if (action !== 'status' && action !== 'set') {
+      throw new Error(`Unknown relay action: ${action}`);
+    }
+    options.relayAction = action;
+    index = argv[1] ? 2 : 1;
   }
 
   while (index < argv.length) {
@@ -88,6 +97,8 @@ export function helpText() {
     '  reika-agent-server startup status          Show startup status',
     '  reika-agent-server startup enable          Start this agent when you sign in',
     '  reika-agent-server startup disable         Disable automatic startup',
+    '  reika-agent-server relay status            Show saved relay URL',
+    '  reika-agent-server relay set --relay <url> Change saved relay URL',
     '  reika-agent-server updates status          Show GitHub update status',
     '  reika-agent-server updates check           Check GitHub for updates',
     '  reika-agent-server updates apply           Apply a safe fast-forward update',
@@ -98,6 +109,7 @@ export function helpText() {
     '  help                                      Show this help',
     '  pair                                      Connect outbound to the relay with a pairing code',
     '  startup                                   Manage OS startup registration',
+    '  relay                                     Manage the saved relay URL used by AgentHub',
     '  updates                                   Manage GitHub repo-backed updates',
     '',
     'Options:',
@@ -111,7 +123,8 @@ export function helpText() {
     '  1. Create a pairing code in AgentHub.',
     '  2. Run: reika-agent-server pair --code YOUR_CODE --relay ws://relay-host:8790/v1/device',
     '  3. Approve the device in AgentHub.',
-    '  4. Run: reika-agent-server startup enable --relay ws://relay-host:8790/v1/device',
-    '  5. Optional: reika-agent-server updates enable all'
+    '  4. Optional: reika-agent-server relay set --relay ws://relay-host:8790/v1/device',
+    '  5. Run: reika-agent-server startup enable --relay ws://relay-host:8790/v1/device',
+    '  6. Optional: reika-agent-server updates enable all'
   ].join('\n');
 }

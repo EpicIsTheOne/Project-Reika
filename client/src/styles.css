@@ -815,11 +815,16 @@ img {
   top: 0;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  padding: 28px 18px 22px;
+  height: 100vh;
+  height: 100svh;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: clamp(18px, 2.25vh, 28px) 18px clamp(14px, 1.8vh, 22px);
   border-right: 1px solid rgba(87, 148, 255, 0.2);
   background: rgba(3, 9, 21, 0.72);
   backdrop-filter: blur(18px);
+  scrollbar-width: thin;
 }
 
 .brand-lockup {
@@ -860,8 +865,8 @@ img {
 
 .nav-list {
   display: grid;
-  gap: 0.92rem;
-  margin-top: 4.8rem;
+  gap: clamp(0.52rem, 1.3vh, 0.92rem);
+  margin-top: clamp(2rem, 6vh, 4.8rem);
 }
 
 .nav-item {
@@ -952,7 +957,8 @@ img {
 .sidebar-tools {
   display: flex;
   justify-content: space-between;
-  margin-top: 1.4rem;
+  margin-top: clamp(0.7rem, 1.8vh, 1.4rem);
+  flex: 0 0 auto;
 }
 
 .sidebar-tools .icon-button {
@@ -962,10 +968,12 @@ img {
 
 .page-shell {
   min-width: 0;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 .page {
-  width: min(1250px, calc(100vw - 244px));
+  width: min(1640px, 100%);
   min-height: 100vh;
   margin: 0 auto;
   padding: 28px 28px 24px;
@@ -1198,7 +1206,7 @@ img {
 
 .device-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   gap: 22px;
 }
 
@@ -2337,6 +2345,29 @@ img {
   overflow-wrap: anywhere;
 }
 
+.connection-steps-list {
+  display: grid;
+  gap: 0.42rem;
+  margin: 0;
+  padding-left: 1.15rem;
+  color: #c8d4f2;
+  line-height: 1.45;
+}
+
+.connection-steps-list li::marker {
+  color: var(--blue-2);
+  font-weight: 800;
+}
+
+.connection-steps-list code {
+  display: inline;
+  max-height: none;
+  overflow: visible;
+  padding: 0.08rem 0.32rem;
+  border-radius: 6px;
+  font-size: 0.82em;
+}
+
 .connection-device-picker,
 .connection-provider-checks,
 .connection-agent-roster,
@@ -3240,7 +3271,7 @@ img {
 }
 
 .agent-art-page {
-  width: min(1280px, calc(100vw - 244px));
+  width: min(1680px, 100%);
   padding-top: 24px;
 }
 
@@ -4429,6 +4460,205 @@ img {
   gap: 0.8rem;
   margin-top: 38px;
   color: var(--soft);
+}
+
+@media (min-width: 1181px) and (max-height: 760px) {
+  .sidebar {
+    padding-top: 14px;
+    padding-bottom: 12px;
+  }
+
+  .brand-lockup img {
+    width: 38px;
+    height: 38px;
+  }
+
+  .brand-lockup strong {
+    font-size: 1.04rem;
+  }
+
+  .brand-lockup small {
+    font-size: 0.7rem;
+  }
+
+  .nav-list {
+    gap: 0.35rem;
+    margin-top: 1.4rem;
+  }
+
+  .nav-item {
+    min-height: 46px;
+    padding: 0 0.82rem;
+  }
+
+  .account-card {
+    gap: 0.55rem;
+    padding: 0.62rem;
+  }
+
+  .account-card img {
+    width: 38px;
+    height: 38px;
+  }
+
+  .account-card small {
+    display: none;
+  }
+
+  .plan-button {
+    min-height: 28px;
+    font-size: 0.7rem;
+  }
+
+  .sidebar-tools {
+    margin-top: 0.55rem;
+  }
+}
+
+@media (max-width: 1460px) {
+  .page,
+  .agent-art-page {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+
+  .feature-hero {
+    min-height: 316px;
+  }
+
+  .feature-copy {
+    width: min(430px, 48%);
+    padding: 2rem;
+  }
+
+  .devices-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 380px);
+  }
+
+  .device-list-row {
+    grid-template-columns: 70px minmax(0, 1fr) minmax(170px, 230px) auto;
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .device-stats-panel {
+    grid-template-columns: repeat(5, minmax(100px, 1fr));
+  }
+
+  .notifications-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
+    gap: 16px;
+  }
+
+  .notification-row {
+    grid-template-columns: 70px minmax(0, 1fr) auto;
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .notification-detail-hero {
+    height: 210px;
+  }
+
+  .settings-screen {
+    grid-template-columns: 286px minmax(0, 1fr);
+  }
+
+  .settings-main {
+    padding: 38px 20px 24px 24px;
+  }
+
+  .settings-body {
+    grid-template-columns: minmax(236px, 280px) minmax(0, 1fr);
+  }
+
+  .settings-tab {
+    min-height: 86px;
+    padding: 0 1rem;
+  }
+
+  .settings-panel {
+    min-height: 660px;
+  }
+
+  .setting-row {
+    min-height: 96px;
+  }
+
+  .art-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 372px);
+    gap: 16px;
+  }
+}
+
+@media (max-width: 1400px) {
+  .page-header,
+  .workbench-header,
+  .settings-header,
+  .art-header {
+    gap: 1rem;
+  }
+
+  .header-actions,
+  .workbench-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .search-field {
+    width: min(420px, 46vw);
+  }
+
+  .devices-layout,
+  .notifications-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .device-detail-panel,
+  .notification-detail-panel {
+    max-width: none;
+  }
+
+  .device-detail-hero,
+  .notification-detail-hero {
+    height: 220px;
+  }
+
+  .device-stats-panel {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .settings-screen {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-scene {
+    display: none;
+  }
+
+  .settings-main {
+    width: min(1180px, 100%);
+    margin: 0 auto;
+    padding: 30px 22px 24px;
+  }
+
+  .settings-body {
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  }
+
+  .agent-art-page {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  .art-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .art-detail-panel {
+    position: relative;
+    top: auto;
+  }
 }
 
 @media (max-width: 1180px) {

@@ -114,6 +114,44 @@ async function runUpdatesCli(options: CliOptions) {
   }
 }
 
+async function runRelayCli(options: CliOptions) {
+  const cliSettings = new SettingsStore();
+  try {
+    await cliSettings.load();
+    const action = options.relayAction ?? 'status';
+    if (action === 'set') {
+      if (!options.relayUrl) throw new Error('relay set requires --relay <ws:// or wss:// URL ending in /v1/device>.');
+      if (!isRelayDeviceUrl(options.relayUrl)) throw new Error('Relay URL must be a ws:// or wss:// URL ending in /v1/device.');
+      const previous = cliSettings.get().relayUrl;
+      const next = cliSettings.update({ relayUrl: options.relayUrl });
+      await cliSettings.flush();
+      if (next.relayUrl === previous) {
+        console.log(`Relay URL unchanged: ${next.relayUrl}`);
+      } else {
+        console.log(`Relay URL updated: ${next.relayUrl}`);
+      }
+      console.log('Use `pair --code <code> --relay <url>` for an immediate terminal pairing run.');
+      process.exit(0);
+    }
+    console.log(`Saved relay URL: ${cliSettings.get().relayUrl}`);
+    console.log(`Default relay URL: ${serverConfig.uplink.relayUrl}`);
+    console.log('Change it with: reika-agent-server relay set --relay wss://relay.example.com/v1/device');
+    process.exit(0);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
+function isRelayDeviceUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'ws:' || url.protocol === 'wss:') && /\/v1\/device\/?$/u.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 if (cli.mode === 'startup') {
   void runStartupCli(cli);
 }
@@ -122,7 +160,11 @@ if (cli.mode === 'updates') {
   void runUpdatesCli(cli);
 }
 
-if (cli.mode !== 'startup' && cli.mode !== 'updates') {
+if (cli.mode === 'relay') {
+  void runRelayCli(cli);
+}
+
+if (cli.mode !== 'startup' && cli.mode !== 'updates' && cli.mode !== 'relay') {
 const events = new EventBus();
 const state = new StateStore();
 const sessions = new SessionStore();
