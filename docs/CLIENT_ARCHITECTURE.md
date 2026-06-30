@@ -22,6 +22,7 @@ client/desktop/                 Electron desktop shell and local proxy runtime
 features/art/           Agent Art Studio
 features/boot/          Loading screen and boot step definitions
 features/chat/          Chat surface, sessions, provider selection, composer attachments
+features/connection/    Agent Connection Wizard for pairing and safe relay verification
 features/devices/       Relay/local devices, pairing, provider snapshots, safe relay controls
 features/home/          Home dashboard and device cards
 features/notifications/ Real notification inbox and detail panel
@@ -36,6 +37,7 @@ features/settings/      Settings tabs, relay URL, startup, mock, update controls
 - Put server/relay record transformations in `client/src/domain/`, not inside page JSX.
 - Put network calls in `client/src/lib/reikaApi.ts` or focused adapters under `client/src/data/`.
 - Keep feature modules owning their local UI state unless another page genuinely needs it.
+- Keep guided pairing and provider verification in `features/connection/`; Devices owns the live relay socket and passes safe actions into the wizard.
 - Keep hardcoded demo data isolated to `client/src/data/mockData.ts` and respect the `mockEnabled` setting when rendering fallbacks.
 - Do not add chat, device, notification, or art logic back into `App.tsx`; export a feature component instead.
 

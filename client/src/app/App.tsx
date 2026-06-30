@@ -211,7 +211,20 @@ export function App() {
           />
         )}
         {view === "chat" && <ChatView agent={selectedAgent} initialState={reikaState} artRuntime={artRuntime} onBack={() => setView("home")} />}
-        {view === "devices" && <DevicesView localDevices={appDevices} pairingOpenRequest={pairingOpenRequest} developerDiagnostics={settings.developerDiagnostics} relayUrl={settings.relayUrl} artRuntime={artRuntime} onScanProviders={handleScanProviders} />}
+        {view === "devices" && (
+          <DevicesView
+            localDevices={appDevices}
+            pairingOpenRequest={pairingOpenRequest}
+            developerDiagnostics={settings.developerDiagnostics}
+            relayUrl={settings.relayUrl}
+            artRuntime={artRuntime}
+            onScanProviders={handleScanProviders}
+            onOpenChat={(agentId) => {
+              setSelectedAgentId(agentId);
+              setView("chat");
+            }}
+          />
+        )}
         {view === "notifications" && (
           <NotificationsView
             notifications={notifications}

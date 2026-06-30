@@ -60,7 +60,7 @@ Implemented:
 - local/dev app backend for provider scanning
 - Agent Art Studio page for agent/global art profiles, categories, selection modes, prompts, references, and manual uploads
 - Devices page relay integration
-- pairing UI skeleton
+- Agent Connection Wizard for Windows/Linux/existing-device pairing, provider verification, and roster confirmation
 - local agent startup toggle in Settings
 - relay-backed device presence, provider snapshots, active provider, and agent roster display
 - safe controls only: request state, refresh providers, request agent roster
@@ -155,7 +155,9 @@ npm run desktop:shortcut
 
 The desktop shell packages the React client in a normal app window while keeping the browser/Vite path available for fast testing.
 
-To connect the device server through the relay, create/claim/approve a pairing code through the relay and run the server with:
+To connect the device server through the relay, open AgentHub, choose **Add Device** or **Connect Agent** on the Devices page, and follow the Agent Connection Wizard. The wizard creates the pairing code, shows Windows/Linux instructions, approves claimed devices, then verifies state, providers, and agent roster with safe relay requests only.
+
+Manual relay environment for development:
 
 ```env
 REIKA_UPLINK_ENABLED=true

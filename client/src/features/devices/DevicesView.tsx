@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState, type ElementType } from "react";
-import { Activity, Bot, Check, ChevronDown, ChevronRight, Cpu, Database, Globe2, Info, Link2, Monitor, Plus, Search, Server, ShieldCheck, Terminal, UserRound } from "lucide-react";
+import { Activity, Bot, ChevronDown, ChevronRight, Cpu, Database, Globe2, Info, Link2, Monitor, Plus, Search, ShieldCheck } from "lucide-react";
 import { statusLabels } from "../../app/constants";
 import { DetailRow } from "../../components/DetailRow";
 import { StatusDot, StatusPill, Toggle } from "../../components/status";
-import { normalizeRelayDeviceUrl, linuxInstallCommand } from "../../config/relay";
+import { normalizeRelayDeviceUrl } from "../../config/relay";
 import { assets } from "../../data/assets";
 import { applyRelayEnvelope, approveRelayPairingCode, claimRelayPairingCode, connectRelayApp, createRelayPairingCode, type RelayDeviceRecord, type RelayPairing } from "../../data/relay";
 import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "../../data/startup";
 import { filterDeviceRows, formatMetric, formatRelativeTime, getAgentAvatar, mapLocalDeviceRecord, mapRelayDeviceRecord, nextDeviceFilter, startupMatchesDevice, titleCase, type DevicePageRow } from "../../domain/reikaMappers";
+import { AgentConnectionWizard } from "../connection/AgentConnectionWizard";
 import type { ArtRuntime } from "../../lib/artRuntime";
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
 import type { Device } from "../../types";
@@ -18,7 +19,8 @@ export function DevicesView({
   developerDiagnostics,
   relayUrl,
   artRuntime,
-  onScanProviders
+  onScanProviders,
+  onOpenChat
 }: {
   localDevices: Device[];
   pairingOpenRequest: number;
@@ -26,6 +28,7 @@ export function DevicesView({
   relayUrl: string;
   artRuntime: ArtRuntime;
   onScanProviders: () => void;
+  onOpenChat: (agentId: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState("epic-pc");
   const [deviceSearch, setDeviceSearch] = useState("");
@@ -36,6 +39,7 @@ export function DevicesView({
   const [claimedDeviceName, setClaimedDeviceName] = useState<string | null>(null);
   const [relayError, setRelayError] = useState<string | null>(null);
   const [relaySend, setRelaySend] = useState<ReturnType<typeof connectRelayApp>["send"] | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const activeRelayUrl = normalizeRelayDeviceUrl(relayUrl);
   const relayRows = useMemo(() => relayDevices.map((record) => mapRelayDeviceRecord(record, activeRelayUrl)), [relayDevices, activeRelayUrl]);
   const localRows = useMemo(() => localDevices.map(mapLocalDeviceRecord), [localDevices]);
@@ -63,6 +67,11 @@ export function DevicesView({
     { label: "Issues", value: issueCount, tone: "red", dot: true }
   ];
 
+  const openConnectionWizard = () => {
+    setRelayError(null);
+    setWizardOpen(true);
+  };
+
   useEffect(() => {
     setRelayStatus("connecting");
     setRelayDevices([]);
@@ -84,6 +93,7 @@ export function DevicesView({
   }, [activeRelayUrl]);
 
   const handleCreatePairing = () => {
+    setWizardOpen(true);
     createRelayPairingCode(activeRelayUrl)
       .then((pairing) => {
         setRelayPairing(pairing);
@@ -96,7 +106,9 @@ export function DevicesView({
   };
 
   useEffect(() => {
-    if (pairingOpenRequest > 0) handleCreatePairing();
+    if (pairingOpenRequest > 0) {
+      openConnectionWizard();
+    }
   }, [pairingOpenRequest]);
 
   const handleApprovePairing = () => {
@@ -131,11 +143,12 @@ export function DevicesView({
       });
   };
 
-  const handleRelayRequest = (type: "device.state.request" | "provider.refresh.request" | "agent.roster.request") => {
-    if (!selectedDevice || !relaySend) return;
-    const sent = relaySend(type, selectedDevice.id);
+  const handleRelayRequest = (type: "device.state.request" | "provider.refresh.request" | "agent.roster.request", deviceId = selectedDevice?.id) => {
+    if (!deviceId || !relaySend) return false;
+    const sent = relaySend(type, deviceId);
     if (!sent) setRelayError("Relay app socket is not connected.");
     else setRelayError(null);
+    return sent;
   };
 
   return (
@@ -165,25 +178,31 @@ export function DevicesView({
             <Activity size={18} />
             Scan Local
           </button>
-          <button className="primary-action small" onClick={handleCreatePairing}>
+          <button className="primary-action small" onClick={openConnectionWizard}>
             <Plus size={18} />
-            Pair Device
+            Connect Agent
           </button>
         </div>
       </header>
 
-      {relayPairing || relayError ? (
-        <PairingPanel
-          pairing={relayPairing}
-          claimedDeviceName={claimedDeviceName}
-          error={relayError}
-          relayUrl={activeRelayUrl}
-          allowDevClaim={developerDiagnostics}
-          onCreate={handleCreatePairing}
-          onDevClaim={handleDevClaimPairing}
-          onApprove={handleApprovePairing}
-        />
-      ) : null}
+      <AgentConnectionWizard
+        open={wizardOpen}
+        relayStatus={relayStatus}
+        relayUrl={activeRelayUrl}
+        relayDevices={relayDevices}
+        localDevices={localDevices}
+        pairing={relayPairing}
+        claimedDeviceName={claimedDeviceName}
+        error={relayError}
+        allowDevClaim={developerDiagnostics}
+        onClose={() => setWizardOpen(false)}
+        onCreatePairing={handleCreatePairing}
+        onDevClaimPairing={handleDevClaimPairing}
+        onApprovePairing={handleApprovePairing}
+        onRelayRequest={handleRelayRequest}
+        onSelectDevice={setSelectedId}
+        onOpenChat={onOpenChat}
+      />
 
       <div className="devices-layout">
         <section className="devices-left">
@@ -237,7 +256,7 @@ export function DevicesView({
         </section>
 
         {selectedDevice ? (
-          <DeviceDetailPanel device={selectedDevice} relayConnected={relayStatus === "online"} artRuntime={artRuntime} onRelayRequest={handleRelayRequest} />
+          <DeviceDetailPanel device={selectedDevice} relayConnected={relayStatus === "online"} artRuntime={artRuntime} onRelayRequest={(type) => handleRelayRequest(type)} />
         ) : (
           <aside className="device-detail-panel">
             <section className="device-detail-content">
@@ -256,101 +275,6 @@ function FilterIcon() {
     <span className="filter-icon" aria-hidden="true">
       <ChevronDown size={16} />
     </span>
-  );
-}
-
-function PairingPanel({
-  pairing,
-  claimedDeviceName,
-  error,
-  relayUrl,
-  allowDevClaim,
-  onCreate,
-  onDevClaim,
-  onApprove
-}: {
-  pairing: RelayPairing | null;
-  claimedDeviceName: string | null;
-  error: string | null;
-  relayUrl: string;
-  allowDevClaim: boolean;
-  onCreate: () => void;
-  onDevClaim: () => void;
-  onApprove: () => void;
-}) {
-  const linuxCommand = pairing ? linuxInstallCommand(pairing.code, relayUrl) : "";
-  const canApprove = pairing?.status === "claimed";
-
-  const copyLinuxCommand = () => {
-    if (!linuxCommand || !navigator.clipboard) return;
-    void navigator.clipboard.writeText(linuxCommand);
-  };
-
-  return (
-    <section className="relay-pairing-panel">
-      <div className="relay-pairing-header">
-        <span>
-          <Link2 size={20} />
-          Pair New Device
-        </span>
-        <button className="secondary-action small" onClick={onCreate}>
-          <Plus size={18} />
-          New Code
-        </button>
-      </div>
-
-      {pairing ? (
-        <div className="relay-pairing-grid">
-          <article>
-            <small>Pairing Code</small>
-            <strong>{pairing.code}</strong>
-          </article>
-          <article>
-            <small>Status</small>
-            <strong>{pairing.status}</strong>
-          </article>
-          <article>
-            <small>Claimed Device</small>
-            <strong>{claimedDeviceName ?? pairing.deviceId ?? "Waiting for device"}</strong>
-          </article>
-          <article>
-            <small>Relay URL</small>
-            <strong>{relayUrl}</strong>
-          </article>
-        </div>
-      ) : null}
-
-      {pairing ? (
-        <div className="relay-pairing-instructions">
-          <div>
-            <h3>Linux CLI</h3>
-            <code>{linuxCommand}</code>
-            <button className="secondary-action small" onClick={copyLinuxCommand}>
-              <Terminal size={18} />
-              Copy Command
-            </button>
-          </div>
-          <div>
-            <h3>Windows Agent</h3>
-            <p>Run `reika-agent-server.exe`, paste this code into the local pairing UI, then approve the claimed device here.</p>
-            {allowDevClaim ? (
-              <button className="secondary-action small" onClick={onDevClaim}>
-                <Monitor size={18} />
-                Dev Claim
-              </button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="relay-pairing-actions">
-        <button className="primary-action small" disabled={!canApprove} onClick={onApprove}>
-          <Check size={18} />
-          Approve Claimed Device
-        </button>
-        {error ? <em>{error}</em> : null}
-      </div>
-    </section>
   );
 }
 

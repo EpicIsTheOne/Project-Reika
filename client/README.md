@@ -120,6 +120,13 @@ More detail lives in `../docs/CLIENT_ARCHITECTURE.md`.
 
 The Devices UI can show relay-backed paired devices, provider snapshots, active provider state, and agent roster data.
 
+Use **Add Device** on Home or **Connect Agent** on Devices to open the Agent Connection Wizard. It supports:
+
+- Windows agent pairing through the local `.exe` pairing UI
+- Linux CLI pairing with the current relay URL embedded in the one-line command
+- existing paired-device verification
+- automatic safe requests after approval for state, provider refresh, and roster
+
 Safe controls only:
 
 - request state
