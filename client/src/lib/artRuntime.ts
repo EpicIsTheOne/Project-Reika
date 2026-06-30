@@ -164,9 +164,21 @@ function cleanKey(value: unknown) {
 
 function findCategory(profile: ReikaArtProfile | null | undefined, categoryId: string) {
   if (!profile) return undefined;
+  const wanted = cleanCategoryKey(categoryId);
   return profile.categories.find((category) => category.id === categoryId)
     ?? profile.categories.find((category) => category.id.endsWith(`-${categoryId}`))
-    ?? profile.categories.find((category) => category.name.toLowerCase() === categoryId.toLowerCase());
+    ?? profile.categories.find((category) => cleanCategoryKey(category.id) === wanted)
+    ?? profile.categories.find((category) => cleanCategoryKey(category.id).endsWith(`-${wanted}`))
+    ?? profile.categories.find((category) => cleanCategoryKey(category.name) === wanted);
+}
+
+function cleanCategoryKey(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function pickAsset(category: ReikaArtCategory | undefined, key: string) {

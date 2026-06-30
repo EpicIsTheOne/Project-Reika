@@ -3041,9 +3041,21 @@ function mapReikaProvider(provider: ReikaProviderRecord, deviceId: string): Prov
       role: String(agent.role || agent.source || agent.model || provider.name),
       status: mapProviderStatus(provider.status),
       lastActivity: provider.notes || "Detected by Reika server",
-      characterId: String(agent.id || agent.name || "").toLowerCase().includes("reika") ? "reika" : undefined
+      characterId: inferAgentCharacterId(agent, provider)
     }))
   };
+}
+
+function inferAgentCharacterId(agent: ReikaProviderRecord["agents"][number], provider: ReikaProviderRecord) {
+  const text = [agent.characterId, agent.id, agent.name, agent.label, agent.role, agent.source, agent.model, provider.id, provider.name]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+  if (text.includes("astra")) return "astra";
+  if (text.includes("miyabi")) return "miyabi";
+  if (text.includes("nyxie")) return "nyxie";
+  if (text.includes("reika")) return "reika";
+  if (provider.kind === "hermes") return "reika";
+  return undefined;
 }
 
 function labelReikaProvider(kind: ReikaProviderRecord["kind"]): Provider["name"] {
