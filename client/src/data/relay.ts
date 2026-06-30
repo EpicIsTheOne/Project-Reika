@@ -1,5 +1,5 @@
 import type { AgentHubAgent, AgentHubDevice } from "../shared/agenthub";
-import { reikaRelayAppWebSocketUrl, relayApiUrl } from "../config/relay";
+import { relayApiUrl, relayAppWebSocketUrl, relayDeviceWebSocketUrl } from "../config/relay";
 import {
   createEnvelope,
   isAgentHubEnvelope,
@@ -33,8 +33,8 @@ interface PairingResponse {
   error?: string;
 }
 
-export async function createRelayPairingCode() {
-  const response = await fetch(relayApiUrl("/pairing/create"), {
+export async function createRelayPairingCode(relayUrl?: string) {
+  const response = await fetch(relayApiUrl("/pairing/create", relayUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({})
@@ -44,8 +44,8 @@ export async function createRelayPairingCode() {
   return payload.pairing;
 }
 
-export async function claimRelayPairingCode(code: string, device: Partial<AgentHubDevice>) {
-  const response = await fetch(relayApiUrl("/pairing/claim"), {
+export async function claimRelayPairingCode(code: string, device: Partial<AgentHubDevice>, relayUrl?: string) {
+  const response = await fetch(relayApiUrl("/pairing/claim", relayUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, device })
@@ -55,8 +55,8 @@ export async function claimRelayPairingCode(code: string, device: Partial<AgentH
   return payload;
 }
 
-export async function approveRelayPairingCode(code: string) {
-  const response = await fetch(relayApiUrl("/pairing/approve"), {
+export async function approveRelayPairingCode(code: string, relayUrl?: string) {
+  const response = await fetch(relayApiUrl("/pairing/approve", relayUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code })
@@ -66,14 +66,14 @@ export async function approveRelayPairingCode(code: string) {
   return payload;
 }
 
-export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void, onStatus: (status: "connecting" | "online" | "offline") => void) {
+export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void, onStatus: (status: "connecting" | "online" | "offline") => void, relayUrl?: string) {
   let closed = false;
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
 
   const connect = () => {
     onStatus("connecting");
-    socket = new WebSocket(getRelayAppWebSocketUrl());
+    socket = new WebSocket(getRelayAppWebSocketUrl(relayUrl));
 
     socket.addEventListener("open", () => {
       onStatus("online");
@@ -193,12 +193,12 @@ function upsertRelayRecord(records: RelayDeviceRecord[], next: RelayDeviceRecord
   );
 }
 
-export function getRelayAppWebSocketUrl() {
-  return reikaRelayAppWebSocketUrl;
+export function getRelayAppWebSocketUrl(relayUrl?: string) {
+  return relayAppWebSocketUrl(relayUrl);
 }
 
-export function getRelayDeviceWebSocketUrl() {
-  return getRelayAppWebSocketUrl().replace(/\/v1\/app$/, "/v1/device");
+export function getRelayDeviceWebSocketUrl(relayUrl?: string) {
+  return relayDeviceWebSocketUrl(relayUrl);
 }
 
 function getEnvelopeDeviceId(envelope: AgentHubEnvelope) {

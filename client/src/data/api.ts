@@ -34,6 +34,8 @@ export function mapDevice(device: AgentHubDevice): Device {
     type: device.type,
     status: device.status,
     location: labelLocation(device.location),
+    lastSeenAt: device.lastSeenAt,
+    agentVersion: device.agentVersion,
     providers: device.providers.map(mapProvider)
   };
 }

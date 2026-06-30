@@ -6,6 +6,7 @@ export interface ReikaSettings {
   version: 1;
   language: string;
   startupView: 'home' | 'chat' | 'devices' | 'notifications' | 'settings';
+  relayUrl: string;
   minimizeToTray: boolean;
   mockEnabled: boolean;
   autoUpdateServer: boolean;
@@ -25,6 +26,7 @@ const defaultSettings: ReikaSettings = {
   version: 1,
   language: 'English',
   startupView: 'home',
+  relayUrl: process.env.REIKA_RELAY_URL || 'wss://relay.techexplore.us/v1/device',
   minimizeToTray: true,
   mockEnabled: true,
   autoUpdateServer: false,
@@ -49,6 +51,7 @@ function normalizeSettings(input: Partial<ReikaSettings> = {}): ReikaSettings {
     version: 1,
     language: typeof input.language === 'string' && input.language.trim() ? input.language.trim() : defaultSettings.language,
     startupView,
+    relayUrl: normalizeRelayUrl(input.relayUrl) ?? defaultSettings.relayUrl,
     minimizeToTray: typeof input.minimizeToTray === 'boolean' ? input.minimizeToTray : defaultSettings.minimizeToTray,
     mockEnabled: typeof input.mockEnabled === 'boolean' ? input.mockEnabled : defaultSettings.mockEnabled,
     autoUpdateServer: typeof input.autoUpdateServer === 'boolean' ? input.autoUpdateServer : defaultSettings.autoUpdateServer,
@@ -56,6 +59,18 @@ function normalizeSettings(input: Partial<ReikaSettings> = {}): ReikaSettings {
     developerDiagnostics: typeof input.developerDiagnostics === 'boolean' ? input.developerDiagnostics : defaultSettings.developerDiagnostics,
     updatedAt: typeof input.updatedAt === 'string' ? input.updatedAt : new Date().toISOString()
   };
+}
+
+function normalizeRelayUrl(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const trimmed = value.trim();
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') return undefined;
+    return trimmed;
+  } catch {
+    return undefined;
+  }
 }
 
 export class SettingsStore {

@@ -1,0 +1,97 @@
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createWriteStream, existsSync, mkdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { app } from "electron";
+
+export interface LocalAgentRuntime {
+  url: string;
+  started: boolean;
+  logPath?: string;
+  stop: () => void;
+}
+
+interface LocalAgentOptions {
+  target?: string;
+  exePath?: string;
+  host?: string;
+  port?: number;
+  waitMs?: number;
+}
+
+let child: ChildProcessWithoutNullStreams | undefined;
+
+export async function ensureLocalAgent(options: LocalAgentOptions = {}): Promise<LocalAgentRuntime> {
+  const host = options.host ?? "127.0.0.1";
+  const port = options.port ?? 47840;
+  const url = options.target ?? `http://${host}:${port}`;
+
+  if (await isAgentReady(url)) {
+    return { url, started: false, stop: () => undefined };
+  }
+
+  const exePath = options.exePath ?? resolveBundledAgentPath();
+  if (!exePath || !existsSync(exePath)) {
+    return { url, started: false, stop: () => undefined };
+  }
+
+  const logPath = join(app.getPath("userData"), "logs", "agent-server.log");
+  mkdirSync(dirname(logPath), { recursive: true });
+  const log = createWriteStream(logPath, { flags: "a" });
+  log.write(`\n[${new Date().toISOString()}] starting ${exePath}\n`);
+
+  child = spawn(exePath, [], {
+    env: {
+      ...process.env,
+      REIKA_AGENT_HOST: host,
+      REIKA_AGENT_PORT: String(port),
+      REIKA_PAIRING_UI_OPEN: "false"
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+
+  child.stdout.pipe(log, { end: false });
+  child.stderr.pipe(log, { end: false });
+  child.once("exit", (code, signal) => {
+    log.write(`[${new Date().toISOString()}] exited code=${code ?? "null"} signal=${signal ?? "null"}\n`);
+  });
+
+  await waitForAgent(url, options.waitMs ?? 8000);
+  return { url, started: true, logPath, stop: stopLocalAgent };
+}
+
+export function stopLocalAgent() {
+  if (!child || child.killed) return;
+  child.kill();
+  child = undefined;
+}
+
+function resolveBundledAgentPath() {
+  if (process.env.AGENTHUB_AGENT_EXE) return process.env.AGENTHUB_AGENT_EXE;
+  if (app.isPackaged) return join(process.resourcesPath, "agent-server", "reika-agent-server.exe");
+  return resolve(__dirname, "../../server/release/reika-agent-server.exe");
+}
+
+async function waitForAgent(url: string, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await isAgentReady(url)) return true;
+    await sleep(250);
+  }
+  return false;
+}
+
+async function isAgentReady(url: string) {
+  try {
+    const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(800) });
+    if (!response.ok) return false;
+    const body = (await response.json()) as { ok?: boolean; service?: string };
+    return body.ok === true && body.service === "project-reika-agent-server";
+  } catch {
+    return false;
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}

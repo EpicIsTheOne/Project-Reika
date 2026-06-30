@@ -55,6 +55,7 @@ Implemented:
 
 - Vite + React AgentHub UI
 - Windows desktop client shell using Electron
+- modular client architecture with app, feature, component, domain, data, and runtime layers
 - generated/local Reika and AgentHub visual assets
 - local/dev app backend for provider scanning
 - Agent Art Studio page for agent/global art profiles, categories, selection modes, prompts, references, and manual uploads
@@ -63,6 +64,13 @@ Implemented:
 - local agent startup toggle in Settings
 - relay-backed device presence, provider snapshots, active provider, and agent roster display
 - safe controls only: request state, refresh providers, request agent roster
+
+See:
+
+```text
+client/README.md
+docs/CLIENT_ARCHITECTURE.md
+```
 
 ### `Relay/`
 

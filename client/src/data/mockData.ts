@@ -1,5 +1,5 @@
 import { assets } from "./assets";
-import type { CharacterProfile, ChatMessage, Device } from "../types";
+import type { CharacterProfile, Device } from "../types";
 
 export const reikaProfile: CharacterProfile = {
   id: "reika",
@@ -155,5 +155,3 @@ export const devices: Device[] = [
     ]
   }
 ];
-
-export const chatMessages: ChatMessage[] = [];

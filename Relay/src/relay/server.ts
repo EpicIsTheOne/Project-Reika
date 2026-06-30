@@ -222,11 +222,6 @@ deviceSocketServer.on("connection", (socket, request) => {
       return;
     }
 
-    if (parsed.type === "agent.chat.response") {
-      broadcastToApps(parsed);
-      return;
-    }
-
     if (parsed.type.startsWith("command.")) {
       broadcastToApps(parsed);
       return;

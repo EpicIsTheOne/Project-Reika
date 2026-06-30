@@ -1,10 +1,12 @@
 import { app, BrowserWindow, shell } from "electron";
 import { join } from "node:path";
 import { startDesktopServer, type DesktopServer } from "./localServer.js";
+import { ensureLocalAgent, stopLocalAgent, type LocalAgentRuntime } from "./localAgent.js";
 
 const isDev = process.env.AGENTHUB_DESKTOP_DEV === "1";
 
 let desktopServer: DesktopServer | undefined;
+let localAgent: LocalAgentRuntime | undefined;
 let mainWindow: BrowserWindow | undefined;
 
 async function createWindow() {
@@ -45,11 +47,15 @@ async function createWindow() {
   const distDir = app.isPackaged
     ? join(process.resourcesPath, "client-dist")
     : join(__dirname, "../dist");
+  localAgent = await ensureLocalAgent({
+    target: process.env.AGENTHUB_AGENT_TARGET,
+    waitMs: 10000
+  });
 
   desktopServer = await startDesktopServer({
     distDir,
     port: Number(process.env.AGENTHUB_DESKTOP_PORT ?? 0) || 0,
-    agentTarget: process.env.AGENTHUB_AGENT_TARGET,
+    agentTarget: localAgent.url,
     relayTarget: process.env.AGENTHUB_RELAY_TARGET,
     apiTarget: process.env.AGENTHUB_API_TARGET
   });
@@ -71,4 +77,5 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   void desktopServer?.close();
+  if (localAgent?.started) stopLocalAgent();
 });

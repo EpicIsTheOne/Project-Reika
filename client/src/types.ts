@@ -8,6 +8,11 @@ export interface Device {
   type: DeviceType;
   status: Status;
   location: string;
+  systemLabel?: string;
+  lastSeenAt?: string;
+  localIp?: string;
+  agentVersion?: string;
+  metrics?: { cpu?: number; ram?: number; disk?: number };
   activeProviderId?: string;
   providers: Provider[];
 }

@@ -727,6 +727,7 @@ const server = http.createServer(async (req, res) => {
       const next = settings.update({
         language: typeof body.language === 'string' ? body.language : undefined,
         startupView: typeof body.startupView === 'string' ? body.startupView as typeof before.startupView : undefined,
+        relayUrl: typeof body.relayUrl === 'string' ? body.relayUrl : undefined,
         minimizeToTray: typeof body.minimizeToTray === 'boolean' ? body.minimizeToTray : undefined,
         mockEnabled: typeof body.mockEnabled === 'boolean' ? body.mockEnabled : undefined,
         autoUpdateServer: typeof body.autoUpdateServer === 'boolean' ? body.autoUpdateServer : undefined,
@@ -744,6 +745,16 @@ const server = http.createServer(async (req, res) => {
           source: 'settings',
           tone: next.mockEnabled ? 'green' : 'orange',
           data: { mockEnabled: next.mockEnabled }
+        });
+      }
+      if (before.relayUrl !== next.relayUrl) {
+        notifications.add({
+          kind: 'system',
+          title: 'Relay URL updated',
+          body: `Device pairing will now use ${next.relayUrl}.`,
+          source: 'settings',
+          tone: 'blue',
+          data: { relayUrl: next.relayUrl }
         });
       }
       if ((!before.autoUpdateServer && next.autoUpdateServer) || (!before.autoUpdateClient && next.autoUpdateClient)) {
@@ -1204,21 +1215,28 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-await boot();
+async function startServer() {
+  await boot();
 
-server.listen(serverConfig.port, serverConfig.host, () => {
-  console.log(`${serverConfig.displayName} listening on http://${serverConfig.host}:${serverConfig.port}`);
-  console.log(`Local provider detection enabled. External uplink ${serverConfig.uplink.enabled ? 'enabled' : 'disabled'}. Direct provider chat enabled for CommandCenter, OpenClaw, Hermes, and mock.`);
-  if (process.platform === 'linux') {
-    console.log(`Linux pairing: create a code in AgentHub, then run \`npm run dev -- pair --code <code> --relay ${serverConfig.uplink.relayUrl}\`.`);
-  }
-  if (cli.mode === 'pair') {
-    console.log(`Pairing requested for relay ${cli.relayUrl || serverConfig.uplink.relayUrl}. Approve this device in AgentHub.`);
-  } else if (!cli.noUi && shouldOpenPairingUi()) {
-    const localUrl = `http://${serverConfig.host}:${serverConfig.port}/`;
-    console.log(`Opening Windows pairing UI at ${localUrl}`);
-    openLocalUrl(localUrl);
-  }
+  server.listen(serverConfig.port, serverConfig.host, () => {
+    console.log(`${serverConfig.displayName} listening on http://${serverConfig.host}:${serverConfig.port}`);
+    console.log(`Local provider detection enabled. External uplink ${serverConfig.uplink.enabled ? 'enabled' : 'disabled'}. Direct provider chat enabled for CommandCenter, OpenClaw, Hermes, and mock.`);
+    if (process.platform === 'linux') {
+      console.log(`Linux pairing: create a code in AgentHub, then run \`npm run dev -- pair --code <code> --relay ${serverConfig.uplink.relayUrl}\`.`);
+    }
+    if (cli.mode === 'pair') {
+      console.log(`Pairing requested for relay ${cli.relayUrl || serverConfig.uplink.relayUrl}. Approve this device in AgentHub.`);
+    } else if (!cli.noUi && shouldOpenPairingUi()) {
+      const localUrl = `http://${serverConfig.host}:${serverConfig.port}/`;
+      console.log(`Opening Windows pairing UI at ${localUrl}`);
+      openLocalUrl(localUrl);
+    }
+  });
+}
+
+void startServer().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
 });
 
 process.on('SIGTERM', () => {

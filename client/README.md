@@ -100,14 +100,21 @@ The page uses the existing AgentHub/Reika asset library as seeded production art
 ## Main Folders
 
 ```text
-src/App.tsx                  Main visual shell and page views
+src/App.tsx                  Compatibility export for the Vite entrypoint
+src/app/                     App orchestration, boot state, routing, constants, app types
+src/features/                Page-level modules for boot, home, chat, devices, notifications, settings, and art
+src/components/              Shared UI primitives
+src/domain/                  Pure API/relay-to-UI mapping helpers
+src/lib/                     API helpers, art runtime, motion helpers
+src/data/                    Client data adapters, assets, relay/startup helpers
 desktop/                     Electron desktop shell and local packaged proxy
-src/data/relay.ts            App-side relay WebSocket/API client
 src/shared/protocol/         Versioned AgentHub envelope helpers
 src/backend/                 Local/dev app backend and provider scanner
 assets/agenthub_phase1*/     Project-local visual assets
 Refrence Docs/               Source planning/reference docs
 ```
+
+More detail lives in `../docs/CLIENT_ARCHITECTURE.md`.
 
 ## Relay Phase 1 Scope
 

@@ -118,6 +118,7 @@ export interface ReikaSettings {
   version: 1;
   language: string;
   startupView: "home" | "chat" | "devices" | "notifications" | "settings";
+  relayUrl: string;
   minimizeToTray: boolean;
   mockEnabled: boolean;
   autoUpdateServer: boolean;
