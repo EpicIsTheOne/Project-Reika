@@ -50,6 +50,10 @@ export function App() {
   const artRuntime = useMemo(() => createArtRuntime(artLibrary, artSeed), [artLibrary, artSeed]);
 
   useEffect(() => {
+    document.documentElement.dataset.agenthubTheme = settings.theme ?? "dark";
+  }, [settings.theme]);
+
+  useEffect(() => {
     let cancelled = false;
     const startedAt = Date.now();
 

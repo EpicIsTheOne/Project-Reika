@@ -1,0 +1,21 @@
+{
+  "name": "project-reika",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "client",
+    "server",
+    "Relay",
+    "shared"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace project-reika-shared && npm run build --workspace project-reika-agent-server && npm run build --workspace project-reika-relay && npm run build --workspace agenthub-phase1-ui",
+    "build:shared": "npm run build --workspace project-reika-shared",
+    "dev:client": "npm run dev --workspace agenthub-phase1-ui",
+    "dev:server": "npm run dev --workspace project-reika-agent-server",
+    "dev:relay": "npm run dev --workspace project-reika-relay",
+    "sync:protocol": "node shared/scripts/sync-protocol.mjs",
+    "check:protocol": "node shared/scripts/check-protocol-sync.mjs"
+  }
+}

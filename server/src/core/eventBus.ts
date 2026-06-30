@@ -18,4 +18,14 @@ export class EventBus {
   recent(limit = 50): ServerEvent[] {
     return this.events.slice(-limit);
   }
+
+  count() {
+    return this.events.length;
+  }
+
+  clear() {
+    const count = this.events.length;
+    this.events.length = 0;
+    return count;
+  }
 }

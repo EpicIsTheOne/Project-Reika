@@ -27,6 +27,7 @@ export const defaultSettings: ReikaSettings = {
   language: "English",
   startupView: "home",
   relayUrl: defaultReikaRelayDeviceUrl,
+  theme: "dark",
   minimizeToTray: true,
   mockEnabled: true,
   notificationPreferences: {

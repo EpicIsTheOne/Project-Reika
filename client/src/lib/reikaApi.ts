@@ -119,6 +119,7 @@ export interface ReikaSettings {
   language: string;
   startupView: "home" | "chat" | "devices" | "notifications" | "settings";
   relayUrl: string;
+  theme: "dark" | "blue" | "contrast";
   minimizeToTray: boolean;
   mockEnabled: boolean;
   notificationPreferences: ReikaNotificationPreferences;
@@ -146,6 +147,7 @@ export interface ReikaUpdateDescription {
 export interface ReikaUpdateStatus {
   ok: true;
   supported: boolean;
+  mode?: "git" | "packaged";
   repoRoot?: string;
   branch?: string;
   localSha?: string;
@@ -157,12 +159,41 @@ export interface ReikaUpdateStatus {
   descriptions: ReikaUpdateDescription[];
   message: string;
   checkedAt: string;
+  installerAsset?: {
+    name: string;
+    url: string;
+    size?: number;
+    version?: string;
+  };
   settings?: {
     autoUpdateServer: boolean;
     autoUpdateClient: boolean;
   };
   applied?: boolean;
   applyOutput?: string;
+}
+
+export interface ReikaCacheStatus {
+  ok: true;
+  cache: {
+    events: { count: number };
+    sessions?: unknown;
+    files?: unknown;
+    art?: unknown;
+    notifications?: unknown;
+  };
+  cleared?: boolean;
+}
+
+export interface ReikaSecurityStatus {
+  ok: true;
+  security: {
+    localOnly: boolean;
+    relayAuth: string;
+    activeSessions: ReikaSessionSummary[];
+    device?: ReikaDeviceSnapshot;
+    uplink?: ReikaUplinkSnapshot;
+  };
 }
 
 export type ReikaArtScope = "agent" | "global";
@@ -359,6 +390,23 @@ export async function checkForUpdates() {
 
 export async function applyUpdates() {
   return request<ReikaUpdateStatus>("/updates/apply", { method: "POST" });
+}
+
+export async function getCacheStatus() {
+  return request<ReikaCacheStatus>("/cache");
+}
+
+export async function clearCache() {
+  return request<ReikaCacheStatus>("/cache/clear", { method: "POST" });
+}
+
+export async function getSecurityStatus() {
+  return request<ReikaSecurityStatus>("/security/sessions");
+}
+
+export async function browseAgentMemory(agent = "reika", limit = 12) {
+  const params = compactParams({ agent, limit });
+  return request<{ ok: true; agent: string; memories: ReikaSessionSummary[] }>(`/memory/reika${params}`);
 }
 
 export async function getArtLibrary() {

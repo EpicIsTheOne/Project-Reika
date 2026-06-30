@@ -29,6 +29,35 @@
   --motion-delay: 0ms;
 }
 
+:root[data-agenthub-theme="blue"] {
+  --bg: #020a1d;
+  --bg-2: #071b38;
+  --panel: rgba(7, 22, 52, 0.78);
+  --panel-strong: rgba(10, 31, 68, 0.92);
+  --panel-soft: rgba(16, 45, 88, 0.6);
+  --line: rgba(84, 174, 255, 0.25);
+  --line-strong: rgba(55, 178, 255, 0.66);
+  --blue: #0988ff;
+  --blue-2: #55d6ff;
+  --glow: 0 0 34px rgba(67, 196, 255, 0.38);
+}
+
+:root[data-agenthub-theme="contrast"] {
+  --bg: #00050d;
+  --bg-2: #030b18;
+  --panel: rgba(4, 12, 27, 0.9);
+  --panel-strong: rgba(5, 14, 32, 0.96);
+  --panel-soft: rgba(9, 20, 43, 0.72);
+  --line: rgba(139, 188, 255, 0.34);
+  --line-strong: rgba(107, 196, 255, 0.8);
+  --text: #ffffff;
+  --muted: #c8d5f3;
+  --soft: #95a8ce;
+  --blue: #2da8ff;
+  --blue-2: #8ce7ff;
+  --glow: 0 0 26px rgba(141, 229, 255, 0.48);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1913,6 +1942,42 @@ img {
   gap: 0.85rem;
 }
 
+.notification-menu-wrap {
+  position: relative;
+}
+
+.notification-overflow-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 20;
+  min-width: 190px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+}
+
+.notification-overflow-menu button {
+  width: 100%;
+  display: flex;
+  justify-content: flex-start;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+}
+
+.notification-overflow-menu button:hover:not(:disabled) {
+  background: rgba(20, 119, 255, 0.16);
+}
+
+.notification-overflow-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .filter-icon {
   display: grid;
   width: 18px;
@@ -3268,6 +3333,28 @@ img {
 .quick-actions .secondary-action {
   width: 100%;
   min-height: 48px;
+}
+
+.notification-memory-list {
+  display: grid;
+  gap: 8px;
+}
+
+.notification-memory-list button {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(8, 18, 39, 0.62);
+  text-align: left;
+}
+
+.notification-memory-list small {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-art-page {

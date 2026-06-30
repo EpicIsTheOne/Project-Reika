@@ -7,6 +7,7 @@ export interface ReikaSettings {
   language: string;
   startupView: 'home' | 'chat' | 'devices' | 'notifications' | 'settings';
   relayUrl: string;
+  theme: 'dark' | 'blue' | 'contrast';
   minimizeToTray: boolean;
   mockEnabled: boolean;
   notificationPreferences: NotificationPreferences;
@@ -31,6 +32,7 @@ const defaultSettings: ReikaSettings = {
   language: 'English',
   startupView: 'home',
   relayUrl: process.env.REIKA_RELAY_URL || 'wss://relay.techexplore.us/v1/device',
+  theme: 'dark',
   minimizeToTray: true,
   mockEnabled: true,
   notificationPreferences: {
@@ -65,6 +67,7 @@ function normalizeSettings(input: Partial<ReikaSettings> = {}): ReikaSettings {
     language: typeof input.language === 'string' && input.language.trim() ? input.language.trim() : defaultSettings.language,
     startupView,
     relayUrl: normalizeRelayUrl(input.relayUrl) ?? defaultSettings.relayUrl,
+    theme: normalizeTheme(input.theme),
     minimizeToTray: typeof input.minimizeToTray === 'boolean' ? input.minimizeToTray : defaultSettings.minimizeToTray,
     mockEnabled: typeof input.mockEnabled === 'boolean' ? input.mockEnabled : defaultSettings.mockEnabled,
     notificationPreferences: normalizeNotificationPreferences(input.notificationPreferences),
@@ -73,6 +76,10 @@ function normalizeSettings(input: Partial<ReikaSettings> = {}): ReikaSettings {
     developerDiagnostics: typeof input.developerDiagnostics === 'boolean' ? input.developerDiagnostics : defaultSettings.developerDiagnostics,
     updatedAt: typeof input.updatedAt === 'string' ? input.updatedAt : new Date().toISOString()
   };
+}
+
+function normalizeTheme(value: unknown): ReikaSettings['theme'] {
+  return value === 'blue' || value === 'contrast' || value === 'dark' ? value : defaultSettings.theme;
 }
 
 function normalizeNotificationPreferences(value: unknown): NotificationPreferences {

@@ -75,9 +75,16 @@ The UI reads update status from the local agent server at `/agent/updates/status
 - changed files and their status
 - whether the local clone can safely apply the update
 
-Auto-update applies only when the project is running from a git clone and the server can fast-forward from `origin/main`. The browser/Vite workflow remains intact, and packaged desktop builds still need to be rebuilt after repo files update.
+Auto-update has two modes:
+
+- clone mode applies a safe fast-forward from `origin/main`
+- packaged mode checks the latest GitHub Release, stages the Windows installer, and launches it on Windows
+
+The browser/Vite workflow remains intact.
 
 If auto-update is off, the server still creates a local notification when GitHub has a newer update. The notification includes the same changed-file list and update description shown in Settings.
+
+Settings also persists real local preferences for theme, relay URL, mock provider use, notification categories, startup behavior, cache clearing, and security/session status.
 
 ## Agent Art Studio
 
@@ -132,8 +139,9 @@ Safe controls only:
 - request state
 - refresh providers
 - request agent roster
+- relay chat request
 
-No chat transport, file operations, shell commands, provider mutation, or generic remote admin controls are implemented in this phase.
+File operations, shell commands, provider mutation, and generic remote admin controls are intentionally not implemented.
 
 ## Relay Behavior
 
@@ -141,10 +149,11 @@ The app opens `WS /v1/app` through the Vite `/v1` proxy.
 
 If relay data is available, the Devices page shows relay-backed devices. If the relay is offline or empty, the UI falls back to local mock/demo device rows so the visual shell stays usable.
 
-The app sends only these safe request envelopes:
+The app can send these relay request envelopes:
 
 - `device.state.request`
 - `provider.refresh.request`
 - `agent.roster.request`
+- `agent.chat.request`
 
 Responses from the relay can be in the simplified client shape or Astra server's `source`/`target` shape. `src/data/relay.ts` normalizes both for display.

@@ -1,5 +1,8 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, verify } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import type {
   AgentHubAgent,
@@ -10,6 +13,7 @@ import type {
   ProviderSnapshot
 } from "../shared/agenthub.js";
 import {
+  agentHubEnvelopeTypes,
   createEnvelope,
   isAgentHubEnvelope,
   isRelayRequestType,
@@ -23,7 +27,10 @@ const relayConfig = {
   port: Number(process.env.REIKA_RELAY_PORT ?? 8790),
   accountId: process.env.REIKA_RELAY_ACCOUNT_ID ?? "epic-local",
   accountName: process.env.REIKA_RELAY_ACCOUNT_NAME ?? "Epic",
-  pairingTtlMs: Number(process.env.REIKA_PAIRING_TTL_MS ?? 10 * 60 * 1000)
+  pairingTtlMs: Number(process.env.REIKA_PAIRING_TTL_MS ?? 10 * 60 * 1000),
+  offlineQueueTtlMs: Number(process.env.REIKA_RELAY_OFFLINE_QUEUE_TTL_MS ?? 15 * 60 * 1000),
+  offlineQueueLimit: Number(process.env.REIKA_RELAY_OFFLINE_QUEUE_LIMIT ?? 50),
+  storePath: process.env.REIKA_RELAY_STORE_PATH ?? join(homedir(), ".local", "share", "project-reika", "relay-store.json")
 };
 
 type PairingSessionStatus = "created" | "claimed" | "approved";
@@ -37,21 +44,51 @@ interface PairingSession {
   claimedAt?: string;
   approvedAt?: string;
   deviceId?: string;
-  device?: AgentHubDevice;
+  device?: RelayDevice;
+  publicKey?: string;
 }
 
 interface RelayDeviceRecord {
-  device: AgentHubDevice;
+  device: RelayDevice;
   socket?: WebSocket;
   lastHeartbeatAt?: string;
   activeProviderId?: string;
   latestProviders: ProviderSnapshot["providers"];
   latestRoster: AgentHubAgent[];
+  queuedEnvelopes: QueuedEnvelope[];
+}
+
+interface RelayDevice extends AgentHubDevice {
+  publicKey?: string;
+  keyVersion?: number;
+  revokedAt?: string;
+}
+
+interface QueuedEnvelope {
+  envelope: AgentHubEnvelope;
+  queuedAt: string;
+  expiresAt: string;
+}
+
+interface DeviceChallenge {
+  deviceId: string;
+  challenge: string;
+  expiresAt: string;
+}
+
+interface PersistedRelayStore {
+  version: 1;
+  updatedAt: string;
+  pairingSessions: PairingSession[];
+  devices: Array<Omit<RelayDeviceRecord, "socket">>;
 }
 
 const pairingSessions = new Map<string, PairingSession>();
 const devices = new Map<string, RelayDeviceRecord>();
 const appSockets = new Set<WebSocket>();
+const deviceChallenges = new Map<string, DeviceChallenge>();
+
+loadRelayStore();
 
 const server = createServer(async (request, response) => {
   setCorsHeaders(response);
@@ -70,7 +107,41 @@ const server = createServer(async (request, response) => {
         service: "agenthub-relay",
         accountId: relayConfig.accountId,
         deviceCount: devices.size,
-        appSocketCount: appSockets.size
+        appSocketCount: appSockets.size,
+        durable: true,
+        storePath: relayConfig.storePath,
+        offlineQueue: {
+          ttlMs: relayConfig.offlineQueueTtlMs,
+          limit: relayConfig.offlineQueueLimit,
+          queuedCount: Array.from(devices.values()).reduce((total, record) => total + record.queuedEnvelopes.length, 0)
+        },
+        security: {
+          perDeviceKeypairs: true,
+          signedChallenges: true,
+          revocation: true,
+          keyRotation: true,
+          optionalEncryptedEnvelopes: true
+        }
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/policy") {
+      sendJson(response, 200, {
+        ok: true,
+        accountId: relayConfig.accountId,
+        allowedEnvelopeTypes: agentHubEnvelopeTypes,
+        offlineDelivery: {
+          enabled: true,
+          ttlMs: relayConfig.offlineQueueTtlMs,
+          perDeviceLimit: relayConfig.offlineQueueLimit,
+          storedTypes: ["device.state.request", "provider.refresh.request", "agent.roster.request", "agent.chat.request"]
+        },
+        encryption: {
+          optional: true,
+          routingOnly: true,
+          supportedMarkers: ["x25519-xsalsa20-poly1305", "age-v1", "custom"]
+        }
       });
       return;
     }
@@ -98,7 +169,7 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === "POST" && url.pathname === "/v1/pairing/claim") {
-      const body = await readJsonBody<{ code: string; device: DeviceRegistrationRequest }>(request);
+      const body = await readJsonBody<{ code: string; device: DeviceRegistrationRequest & { publicKey?: string } }>(request);
       const session = claimPairingSession(body.code, body.device);
       if (!session) {
         sendJson(response, 404, { ok: false, error: "Pairing code is invalid, expired, or already approved." });
@@ -118,8 +189,63 @@ const server = createServer(async (request, response) => {
       }
       const record = upsertDevice({ ...session.device, trusted: true });
       session.device = record.device;
+      session.publicKey = record.device.publicKey;
+      saveRelayStore();
       sendJson(response, 200, { ok: true, pairing: publicPairing(session), device: record.device });
       broadcastRelayState();
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/device/challenge") {
+      const body = await readJsonBody<{ deviceId: string }>(request);
+      const record = devices.get(String(body.deviceId || ""));
+      if (!record || record.device.revokedAt) {
+        sendJson(response, 404, { ok: false, error: "Device is not approved or was revoked." });
+        return;
+      }
+      const challenge = createDeviceChallenge(record.device.id);
+      sendJson(response, 200, { ok: true, challenge });
+      return;
+    }
+
+    const revokeMatch = url.pathname.match(/^\/v1\/devices\/([^/]+)\/revoke$/);
+    if (request.method === "POST" && revokeMatch) {
+      const deviceId = decodeURIComponent(revokeMatch[1] || "");
+      const record = devices.get(deviceId);
+      if (!record) {
+        sendJson(response, 404, { ok: false, error: "Device not found." });
+        return;
+      }
+      record.device.trusted = false;
+      record.device.status = "offline";
+      record.device.revokedAt = new Date().toISOString();
+      record.socket?.close(4003, "Device revoked");
+      record.socket = undefined;
+      saveRelayStore();
+      broadcastRelayState();
+      sendJson(response, 200, { ok: true, device: record.device });
+      return;
+    }
+
+    const rotateKeyMatch = url.pathname.match(/^\/v1\/devices\/([^/]+)\/rotate-key$/);
+    if (request.method === "POST" && rotateKeyMatch) {
+      const body = await readJsonBody<{ publicKey: string }>(request);
+      const deviceId = decodeURIComponent(rotateKeyMatch[1] || "");
+      const record = devices.get(deviceId);
+      if (!record) {
+        sendJson(response, 404, { ok: false, error: "Device not found." });
+        return;
+      }
+      if (!looksLikePublicKey(body.publicKey)) {
+        sendJson(response, 400, { ok: false, error: "publicKey must be a PEM public key." });
+        return;
+      }
+      record.device.publicKey = body.publicKey.trim();
+      record.device.keyVersion = (record.device.keyVersion ?? 1) + 1;
+      record.device.revokedAt = undefined;
+      record.device.trusted = true;
+      saveRelayStore();
+      sendJson(response, 200, { ok: true, device: record.device });
       return;
     }
 
@@ -170,6 +296,11 @@ deviceSocketServer.on("connection", (socket, request) => {
         sendEnvelope(socket, createCommandStatus("command.rejected", "Device is not paired or approved.", parsed.id));
         return;
       }
+      if (!authorizeDeviceSocket(device, parsed, pairingToken)) {
+        sendEnvelope(socket, createCommandStatus("command.rejected", "Device challenge signature is missing or invalid.", parsed.id, device.id));
+        socket.close(4003, "Unauthorized device");
+        return;
+      }
 
       deviceId = device.id;
       const record = upsertDevice(device);
@@ -177,6 +308,8 @@ deviceSocketServer.on("connection", (socket, request) => {
       record.device.status = "online";
       record.device.lastSeenAt = new Date().toISOString();
       sendEnvelope(socket, createCommandStatus("command.accepted", "Device connected to relay.", parsed.id, device.id));
+      saveRelayStore();
+      flushQueuedEnvelopes(record);
       broadcastRelayState();
       return;
     }
@@ -199,6 +332,7 @@ deviceSocketServer.on("connection", (socket, request) => {
         record.device.status = "online";
         record.device.lastSeenAt = parsed.timestamp;
       }
+      saveRelayStore();
       broadcastRelayState(parsed);
       return;
     }
@@ -206,6 +340,7 @@ deviceSocketServer.on("connection", (socket, request) => {
     if (parsed.type === "device.provider.snapshot") {
       const snapshot = parsed.payload as ProviderSnapshot & { activeProviderId?: string };
       updateProviderSnapshot(deviceId, snapshot.providers ?? [], snapshot.activeProviderId);
+      saveRelayStore();
       broadcastRelayState(parsed);
       return;
     }
@@ -218,6 +353,7 @@ deviceSocketServer.on("connection", (socket, request) => {
     if (parsed.type === "agent.roster.snapshot") {
       const record = devices.get(deviceId);
       if (record) record.latestRoster = (parsed.payload as { agents?: AgentHubAgent[] }).agents ?? [];
+      saveRelayStore();
       broadcastToApps(parsed);
       return;
     }
@@ -237,6 +373,7 @@ deviceSocketServer.on("connection", (socket, request) => {
       record.socket = undefined;
       record.device.status = "offline";
       record.device.lastSeenAt = new Date().toISOString();
+      saveRelayStore();
       broadcastRelayState();
     }
   });
@@ -265,6 +402,12 @@ appSocketServer.on("connection", (socket) => {
 
     const record = devices.get(envelope.deviceId);
     if (!record?.socket || record.socket.readyState !== WebSocket.OPEN) {
+      if (record) {
+        queueOfflineEnvelope(record, envelope);
+        sendEnvelope(socket, createCommandStatus("command.accepted", "Device is offline; request queued according to relay offline policy.", envelope.id, envelope.deviceId));
+        saveRelayStore();
+        return;
+      }
       sendEnvelope(socket, createCommandStatus("command.rejected", "Device is offline.", envelope.id, envelope.deviceId));
       return;
     }
@@ -293,17 +436,21 @@ function createPairingSession(accountId = relayConfig.accountId, ttlMs = relayCo
     expiresAt: new Date(now.getTime() + ttlMs).toISOString()
   };
   pairingSessions.set(code, session);
+  saveRelayStore();
   return session;
 }
 
-function claimPairingSession(code: string, request: DeviceRegistrationRequest) {
+function claimPairingSession(code: string, request: DeviceRegistrationRequest & { publicKey?: string }) {
   const session = findValidPairingSession(code);
   if (!session || session.status === "approved") return null;
   const device = makeDevice(request, session.accountId);
+  if (looksLikePublicKey(request.publicKey)) device.publicKey = request.publicKey.trim();
   session.status = "claimed";
   session.claimedAt = new Date().toISOString();
   session.deviceId = device.id;
   session.device = device;
+  session.publicKey = device.publicKey;
+  saveRelayStore();
   return session;
 }
 
@@ -312,6 +459,8 @@ function approvePairingSession(code: string) {
   if (!session?.device) return null;
   session.status = "approved";
   session.approvedAt = new Date().toISOString();
+  if (session.device?.publicKey) session.publicKey = session.device.publicKey;
+  saveRelayStore();
   return session;
 }
 
@@ -371,7 +520,8 @@ function upsertDevice(device: AgentHubDevice) {
   const record: RelayDeviceRecord = existing ?? {
     device,
     latestProviders: [],
-    latestRoster: []
+    latestRoster: [],
+    queuedEnvelopes: []
   };
   const socketOnline = existing?.socket?.readyState === WebSocket.OPEN;
   record.device = {
@@ -381,6 +531,7 @@ function upsertDevice(device: AgentHubDevice) {
     providers: existing?.device.providers ?? device.providers
   };
   devices.set(device.id, record);
+  saveRelayStore();
   return record;
 }
 
@@ -432,10 +583,10 @@ function normalizeProvider(deviceId: string, provider: ProviderSnapshot["provide
   };
 }
 
-function makeDevice(request: Partial<DeviceRegistrationRequest> & Partial<DeviceHelloPayload>, accountId: string, explicitId?: string | null): AgentHubDevice {
+function makeDevice(request: Partial<DeviceRegistrationRequest> & Partial<DeviceHelloPayload> & { publicKey?: string; keyVersion?: number; revokedAt?: string }, accountId: string, explicitId?: string | null): RelayDevice {
   const name = request.name ?? request.deviceName ?? explicitId ?? "Device";
   const fingerprint = request.fingerprint ?? explicitId ?? `${name}-${request.platform ?? "unknown"}`;
-  return {
+  const device: RelayDevice = {
     id: explicitId ?? makeDeviceId(name, fingerprint),
     accountId,
     name,
@@ -448,6 +599,10 @@ function makeDevice(request: Partial<DeviceRegistrationRequest> & Partial<Device
     lastSeenAt: new Date().toISOString(),
     providers: []
   };
+  if (looksLikePublicKey(request.publicKey)) device.publicKey = request.publicKey.trim();
+  if (typeof request.keyVersion === "number") device.keyVersion = request.keyVersion;
+  if (typeof request.revokedAt === "string") device.revokedAt = request.revokedAt;
+  return device;
 }
 
 function makeDeviceId(name: string, fingerprint: string) {
@@ -542,6 +697,103 @@ function toDeviceEnvelope(envelope: AgentHubEnvelope, deviceId: string): AgentHu
     correlationId: envelope.correlationId ?? envelope.commandId ?? envelope.id,
     payload: envelope.payload ?? {}
   };
+}
+
+function createDeviceChallenge(deviceId: string) {
+  const challenge: DeviceChallenge = {
+    deviceId,
+    challenge: randomBytes(32).toString("base64url"),
+    expiresAt: new Date(Date.now() + 2 * 60 * 1000).toISOString()
+  };
+  deviceChallenges.set(challenge.challenge, challenge);
+  return challenge;
+}
+
+function authorizeDeviceSocket(device: RelayDevice, envelope: AgentHubEnvelope, pairingToken?: string | null) {
+  if (device.revokedAt) return false;
+  if (pairingToken) return true;
+  if (!device.publicKey) return true;
+  const payload = envelope.payload as { challenge?: string; challengeId?: string; signature?: string };
+  const challengeId = payload.challengeId || payload.challenge;
+  const signature = payload.signature;
+  if (!challengeId || !signature) return false;
+  const challenge = deviceChallenges.get(challengeId);
+  if (!challenge || challenge.deviceId !== device.id || Date.parse(challenge.expiresAt) < Date.now()) return false;
+  try {
+    const ok = verify(null, Buffer.from(challenge.challenge), device.publicKey, Buffer.from(signature, "base64"));
+    if (ok) deviceChallenges.delete(challengeId);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function looksLikePublicKey(value: unknown): value is string {
+  return typeof value === "string" && /-----BEGIN [A-Z ]*PUBLIC KEY-----/.test(value) && /-----END [A-Z ]*PUBLIC KEY-----/.test(value);
+}
+
+function queueOfflineEnvelope(record: RelayDeviceRecord, envelope: AgentHubEnvelope) {
+  const now = Date.now();
+  record.queuedEnvelopes = record.queuedEnvelopes
+    .filter((item) => Date.parse(item.expiresAt) > now)
+    .slice(-Math.max(0, relayConfig.offlineQueueLimit - 1));
+  record.queuedEnvelopes.push({
+    envelope,
+    queuedAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + relayConfig.offlineQueueTtlMs).toISOString()
+  });
+}
+
+function flushQueuedEnvelopes(record: RelayDeviceRecord) {
+  if (!record.socket || record.socket.readyState !== WebSocket.OPEN) return;
+  const now = Date.now();
+  const ready = record.queuedEnvelopes.filter((item) => Date.parse(item.expiresAt) > now);
+  record.queuedEnvelopes = [];
+  for (const queued of ready) record.socket.send(JSON.stringify(toDeviceEnvelope(queued.envelope, record.device.id)));
+  if (ready.length > 0) saveRelayStore();
+}
+
+function loadRelayStore() {
+  if (!existsSync(relayConfig.storePath)) return;
+  try {
+    const parsed = JSON.parse(readFileSync(relayConfig.storePath, "utf8").replace(/^\uFEFF/, "")) as Partial<PersistedRelayStore>;
+    pairingSessions.clear();
+    devices.clear();
+    for (const session of parsed.pairingSessions ?? []) {
+      if (session?.code) pairingSessions.set(normalizeCode(session.code), session);
+    }
+    for (const record of parsed.devices ?? []) {
+      if (!record?.device?.id) continue;
+      devices.set(record.device.id, {
+        device: { ...record.device, status: "offline" },
+        activeProviderId: record.activeProviderId,
+        latestProviders: record.latestProviders ?? [],
+        latestRoster: record.latestRoster ?? [],
+        queuedEnvelopes: record.queuedEnvelopes ?? [],
+        lastHeartbeatAt: record.lastHeartbeatAt
+      });
+    }
+  } catch (error) {
+    console.warn(`[agenthub-relay] Could not load relay store: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function saveRelayStore() {
+  const payload: PersistedRelayStore = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    pairingSessions: Array.from(pairingSessions.values()),
+    devices: Array.from(devices.values()).map((record) => ({
+      device: { ...record.device, status: record.socket?.readyState === WebSocket.OPEN ? record.device.status : "offline" },
+      activeProviderId: record.activeProviderId,
+      latestProviders: record.latestProviders,
+      latestRoster: record.latestRoster,
+      queuedEnvelopes: record.queuedEnvelopes,
+      lastHeartbeatAt: record.lastHeartbeatAt
+    }))
+  };
+  mkdirSync(dirname(relayConfig.storePath), { recursive: true });
+  writeFileSync(relayConfig.storePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
 function normalizeCapabilities(value: unknown): ProviderCapability[] {

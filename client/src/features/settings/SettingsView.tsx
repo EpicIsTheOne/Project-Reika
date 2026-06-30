@@ -6,9 +6,14 @@ import { assets } from "../../data/assets";
 import {
   applyUpdates,
   checkForUpdates,
+  clearCache,
+  getCacheStatus,
+  getSecurityStatus,
   getUpdateStatus,
   patchSettings,
   refreshProviders,
+  type ReikaCacheStatus,
+  type ReikaSecurityStatus,
   type ReikaSettings,
   type ReikaStateResponse,
   type ReikaUpdateStatus
@@ -40,6 +45,8 @@ export function SettingsView({
   const [startupBusy, setStartupBusy] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<ReikaUpdateStatus | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
+  const [cacheStatus, setCacheStatus] = useState<ReikaCacheStatus | null>(null);
+  const [securityStatus, setSecurityStatus] = useState<ReikaSecurityStatus | null>(null);
   const [relayUrlDraft, setRelayUrlDraft] = useState(settings.relayUrl);
   const settingsTabs = [
     { title: "General", detail: "Basic preferences", icon: Brush },
@@ -60,6 +67,16 @@ export function SettingsView({
     getUpdateStatus()
       .then((status) => {
         if (active) setUpdateStatus(status);
+      })
+      .catch(() => undefined);
+    getCacheStatus()
+      .then((status) => {
+        if (active) setCacheStatus(status);
+      })
+      .catch(() => undefined);
+    getSecurityStatus()
+      .then((status) => {
+        if (active) setSecurityStatus(status);
       })
       .catch(() => undefined);
     return () => {
@@ -131,6 +148,32 @@ export function SettingsView({
         onSettingsChange(state.settings ?? settings, state);
         setSettingsError("Provider scan complete.");
       })
+      .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setBusySetting(null));
+  };
+
+  const cycleTheme = () => {
+    const order: ReikaSettings["theme"][] = ["dark", "blue", "contrast"];
+    const next = order[(order.indexOf(settings.theme) + 1) % order.length] ?? "dark";
+    updateSetting("theme", next);
+  };
+
+  const runCacheClear = () => {
+    setBusySetting("cache");
+    setSettingsError(null);
+    clearCache()
+      .then((status) => {
+        setCacheStatus(status);
+        setSettingsError("Transient local cache cleared. Persistent app data was preserved.");
+      })
+      .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setBusySetting(null));
+  };
+
+  const refreshSecurity = () => {
+    setBusySetting("security");
+    getSecurityStatus()
+      .then(setSecurityStatus)
       .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
       .finally(() => setBusySetting(null));
   };
@@ -252,10 +295,10 @@ export function SettingsView({
             ) : null}
             {activeTab === "Appearance" ? (
               <>
-                <SettingRow title="Theme" detail="Dark AgentHub theme is active for Phase 1.">
-                  <button className="select-button" disabled title="Theme switching is not implemented yet.">
+                <SettingRow title="Theme" detail="Theme is saved locally and applied immediately.">
+                  <button className="select-button" onClick={cycleTheme} disabled={busySetting === "theme"}>
                     <Palette size={18} />
-                    Dark
+                    {themeLabel(settings.theme)}
                   </button>
                 </SettingRow>
               </>
@@ -272,17 +315,36 @@ export function SettingsView({
                   <Toggle checked={settings.autoUpdateClient} disabled={busySetting === "autoUpdateClient"} onClick={() => updateSetting("autoUpdateClient", !settings.autoUpdateClient)} />
                 </SettingRow>
                 <UpdateStatusCard status={updateStatus} busy={updateBusy} onCheck={runUpdateCheck} onApply={runUpdateApply} />
-                <SettingRow title="Data & Cache" detail={backendError ?? `Backend mode: ${backendMode}.`}>
-                  <button className="secondary-action small" disabled title="Cache management endpoints are not available yet.">Manage</button>
+                <SettingRow title="Data & Cache" detail={cacheStatus ? `${cacheStatus.cache.events.count} transient events. Chat, files, art, and settings are preserved.` : backendError ?? `Backend mode: ${backendMode}.`}>
+                  <button className="secondary-action small" onClick={runCacheClear} disabled={busySetting === "cache"}>Clear Transient</button>
                 </SettingRow>
-                <div className="security-row" aria-disabled="true">
+                <div className="security-row" onClick={refreshSecurity} role="button" tabIndex={0}>
                   <Shield size={28} />
                   <span>
                     <strong>Security</strong>
-                    <small>Pairing-code approval only in Phase 1.</small>
+                    <small>{securityStatus?.security.relayAuth ?? "Refresh local security/session status."}</small>
                   </span>
                   <ChevronRight size={20} />
                 </div>
+                {securityStatus ? (
+                  <div className="update-status-card">
+                    <header>
+                      <span>
+                        <strong>Local Sessions</strong>
+                        <small>{securityStatus.security.activeSessions.length} recent chat sessions tracked locally.</small>
+                      </span>
+                      <StatusPill status={securityStatus.security.uplink?.connected ? "online" : "offline"} />
+                    </header>
+                    <div className="update-file-list">
+                      {securityStatus.security.activeSessions.slice(0, 5).map((session) => (
+                        <span key={session.id}>
+                          <code>{session.providerId}</code>
+                          {session.title}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </>
             ) : null}
           </section>
@@ -413,6 +475,12 @@ function labelView(view: ReikaSettings["startupView"]) {
   if (view === "devices") return "Devices";
   if (view === "notifications") return "Notifications";
   return "Settings";
+}
+
+function themeLabel(theme: ReikaSettings["theme"]) {
+  if (theme === "blue") return "Electric Blue";
+  if (theme === "contrast") return "High Contrast";
+  return "Midnight";
 }
 
 function isValidRelayDeviceUrl(value: string) {

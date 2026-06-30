@@ -1,4 +1,4 @@
-import type { AgentHubAgent, AgentHubDevice, DeviceRegistrationRequest, ProviderSnapshot } from "../agenthub";
+import type { AgentHubAgent, AgentHubDevice, DeviceRegistrationRequest, ProviderSnapshot } from "../agenthub.js";
 
 export const AGENTHUB_PROTOCOL_VERSION = 1;
 
@@ -11,6 +11,8 @@ export const agentHubEnvelopeTypes = [
   "provider.refresh.request",
   "agent.roster.request",
   "agent.roster.snapshot",
+  "agent.chat.request",
+  "agent.chat.response",
   "command.accepted",
   "command.rejected",
   "command.completed",
@@ -77,6 +79,11 @@ export interface AgentHubEnvelope<TPayload = unknown> {
   replyTo?: string;
   correlationId?: string;
   commandId?: string;
+  encrypted?: {
+    alg: "x25519-xsalsa20-poly1305" | "age-v1" | "custom";
+    keyId: string;
+    contentType?: string;
+  };
   payload: TPayload;
 }
 
@@ -88,6 +95,8 @@ export type DeviceProviderSnapshotEnvelope = AgentHubEnvelope<ProviderSnapshot> 
 export type ProviderRefreshRequestEnvelope = AgentHubEnvelope<Record<string, never>> & { type: "provider.refresh.request" };
 export type AgentRosterRequestEnvelope = AgentHubEnvelope<Record<string, never>> & { type: "agent.roster.request" };
 export type AgentRosterSnapshotEnvelope = AgentHubEnvelope<AgentRosterSnapshotPayload> & { type: "agent.roster.snapshot" };
+export type AgentChatRequestEnvelope = AgentHubEnvelope<AgentChatRequestPayload> & { type: "agent.chat.request" };
+export type AgentChatResponseEnvelope = AgentHubEnvelope<AgentChatResponsePayload> & { type: "agent.chat.response" };
 export type CommandAcceptedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.accepted" };
 export type CommandRejectedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.rejected" };
 export type CommandCompletedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.completed" };
@@ -102,6 +111,8 @@ export type KnownAgentHubEnvelope =
   | ProviderRefreshRequestEnvelope
   | AgentRosterRequestEnvelope
   | AgentRosterSnapshotEnvelope
+  | AgentChatRequestEnvelope
+  | AgentChatResponseEnvelope
   | CommandAcceptedEnvelope
   | CommandRejectedEnvelope
   | CommandCompletedEnvelope
@@ -136,7 +147,7 @@ export function isAgentHubEnvelope(value: unknown): value is KnownAgentHubEnvelo
 }
 
 export function isRelayRequestType(type: AgentHubEnvelopeType) {
-  return type === "device.state.request" || type === "provider.refresh.request" || type === "agent.roster.request";
+  return type === "device.state.request" || type === "provider.refresh.request" || type === "agent.roster.request" || type === "agent.chat.request";
 }
 
 export function createEnvelopeId(prefix = "env") {

@@ -1,0 +1,24 @@
+{
+  "name": "project-reika-shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Canonical shared AgentHub protocol and data contracts for Project Reika.",
+  "exports": {
+    "./agenthub": {
+      "types": "./dist/agenthub.d.ts",
+      "default": "./dist/agenthub.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol/index.d.ts",
+      "default": "./dist/protocol/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

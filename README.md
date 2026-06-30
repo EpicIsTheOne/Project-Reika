@@ -22,7 +22,7 @@ Device Agent Server  --->  Reika Relay  <---  Main App Client
           outbound WS             dev WS/API
 ```
 
-The relay is still dev-only and in-memory, but the important shape is real: devices call home, the app connects to the relay, and only safe state/provider/roster requests are routed.
+The important shape is real: devices call home, the app connects to the relay, pairing/device state is durable, and state/provider/roster/chat request envelopes can be routed without adding shell or file-control scope.
 
 ### `server/`
 
@@ -34,6 +34,7 @@ Implemented:
 - Linux CLI pairing flow
 - Windows and Linux startup registration
 - local provider detection for CommandCenter, OpenClaw direct, Hermes direct, and mock fallback
+- CommandCenter, Hermes, and OpenClaw direct history import
 - CommandCenter-first provider priority
 - versioned `AgentHubEnvelope` protocol
 - safe command dispatcher
@@ -61,9 +62,10 @@ Implemented:
 - Agent Art Studio page for agent/global art profiles, categories, selection modes, prompts, references, and manual uploads
 - Devices page relay integration
 - Agent Connection Wizard for Windows/Linux/existing-device pairing, provider verification, and roster confirmation
-- local agent startup toggle in Settings
+- local agent startup toggle in Settings and Devices
+- working notification preferences, theme selection, cache controls, security/session status, and update status
 - relay-backed device presence, provider snapshots, active provider, and agent roster display
-- safe controls only: request state, refresh providers, request agent roster
+- safe controls only: request state, refresh providers, request agent roster, and paired-device chat envelopes
 
 See:
 
@@ -77,29 +79,53 @@ docs/CLIENT_ARCHITECTURE.md
 Implemented:
 
 - standalone TypeScript relay package
-- in-memory dev pairing flow
+- durable JSON relay store for pairing sessions, approved devices, snapshots, and offline queues
 - `POST /v1/pairing/create`
 - `POST /v1/pairing/claim`
 - `POST /v1/pairing/approve`
+- `POST /v1/device/challenge`
+- `POST /v1/devices/:id/revoke`
+- `POST /v1/devices/:id/rotate-key`
+- `GET /v1/policy`
 - `WS /v1/device`
 - `WS /v1/app`
 - `GET /v1/devices` for dev-time relay state inspection
 - device presence tracking
 - safe envelope routing between app and device
+- optional encrypted-envelope marker support
+- offline request delivery policy for reconnecting devices
+- Dockerfile for production relay deployment
 - compatibility shim for the client envelope shape and Astra's server envelope shape
 
 ### `shared/`
 
-Added as the canonical Phase 1 protocol/model reference. Until this repo becomes a real workspace/package setup, update `shared/` first and mirror protocol changes into `server/`, `client/`, and `Relay/`.
+Added as the canonical protocol/model reference and root npm workspace package. Update `shared/` first, then run:
+
+```bash
+npm run sync:protocol
+npm run check:protocol
+```
 
 ## Local Development
 
-Install dependencies once in each lane:
+Install dependencies once from the root or in each lane:
+
+```bash
+npm install
+```
+
+Lane-by-lane still works:
 
 ```bash
 cd Relay && npm install
 cd ../server && npm install
 cd ../client && npm install
+```
+
+Build everything from the root:
+
+```bash
+npm run build
 ```
 
 Start the relay:
@@ -207,7 +233,12 @@ Settings includes separate toggles for:
 - Server Auto Update
 - Client Auto Update
 
-Phase 1 auto-update is git-clone based. When the app is running from a local clone, the server compares the current `HEAD` against `EpicIsTheOne/Project-Reika` on `main`, reports available commit descriptions, and lists changed files. If either auto-update toggle is enabled, startup will attempt a safe `git pull --ff-only origin main`. If the local clone has commits ahead of GitHub, the updater refuses to apply automatically.
+Auto-update supports two modes:
+
+- **Git clone mode:** compares local `HEAD` against `EpicIsTheOne/Project-Reika` on `main`, reports commit descriptions and changed files, and can apply a safe `git pull --ff-only origin main`.
+- **Packaged mode:** when no `.git` clone is present, checks the latest GitHub Release, stages the Windows installer asset, writes an update manifest, and launches the installer on Windows.
+
+If the local clone has commits ahead of GitHub, the updater refuses to apply automatically.
 
 Update API:
 
@@ -217,7 +248,7 @@ POST /updates/check
 POST /updates/apply
 ```
 
-Update notifications include the update description and changed file list so users can see what changed before or after applying. Packaged self-replacement is intentionally not part of this pass; installed `.exe` builds should still be rebuilt from the updated repo.
+Update notifications include the update description and changed file list so users can see what changed before or after applying.
 
 When auto-update is off, AgentHub still checks GitHub on server startup and creates a local notification if a new update is available. The notification includes the changed files and update description.
 

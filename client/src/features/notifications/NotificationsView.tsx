@@ -4,10 +4,12 @@ import { DetailRow } from "../../components/DetailRow";
 import { StatusDot } from "../../components/status";
 import { assets } from "../../data/assets";
 import {
+  browseAgentMemory,
   deleteNotification,
   markAllNotificationsRead,
   markNotificationRead,
-  type ReikaNotification
+  type ReikaNotification,
+  type ReikaSessionSummary
 } from "../../lib/reikaApi";
 import type { ArtRuntime } from "../../lib/artRuntime";
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
@@ -29,6 +31,8 @@ export function NotificationsView({
 }) {
   const [selectedId, setSelectedId] = useState<string>("");
   const [filter, setFilter] = useState<"all" | "unread">("all");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [memoryItems, setMemoryItems] = useState<ReikaSessionSummary[]>([]);
   const visibleItems = useMemo(() => {
     const source = notifications.length > 0 ? notifications : [];
     return filter === "all" ? source : source.filter((item) => item.unread);
@@ -69,6 +73,12 @@ export function NotificationsView({
       .catch(() => undefined);
   };
 
+  const loadMemory = () => {
+    browseAgentMemory("reika", 8)
+      .then((response) => setMemoryItems(response.memories))
+      .catch(() => setMemoryItems([]));
+  };
+
   return (
     <main className={pageMotionClass("page notifications-page")}>
       <header className="workbench-header">
@@ -88,9 +98,18 @@ export function NotificationsView({
             {filter === "all" ? "All" : "Unread"}
             <ChevronDown size={16} />
           </button>
-          <button className="icon-button compact" aria-label="More notification actions unavailable" disabled title="More notification actions are not implemented yet.">
-            <MoreHorizontal size={20} />
-          </button>
+          <div className="notification-menu-wrap">
+            <button className="icon-button compact" aria-label="More notification actions" onClick={() => setMenuOpen((current) => !current)}>
+              <MoreHorizontal size={20} />
+            </button>
+            {menuOpen ? (
+              <div className="notification-overflow-menu">
+                <button onClick={() => { onRefresh(); setMenuOpen(false); }}>Refresh inbox</button>
+                <button onClick={() => { markAllRead(); setMenuOpen(false); }}>Mark all read</button>
+                <button onClick={() => { removeSelected(); setMenuOpen(false); }} disabled={!selected}>Delete selected</button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -120,7 +139,7 @@ export function NotificationsView({
           </footer>
         </section>
 
-        <NotificationDetailPanel item={selected} artRuntime={artRuntime} onOpenChat={onOpenChat} onDelete={removeSelected} />
+        <NotificationDetailPanel item={selected} artRuntime={artRuntime} memoryItems={memoryItems} onOpenChat={onOpenChat} onDelete={removeSelected} onBrowseMemory={loadMemory} />
       </div>
     </main>
   );
@@ -145,7 +164,21 @@ function NotificationIcon({ item, artRuntime }: { item: ReikaNotification; artRu
   );
 }
 
-function NotificationDetailPanel({ item, artRuntime, onOpenChat, onDelete }: { item: ReikaNotification | null; artRuntime: ArtRuntime; onOpenChat: () => void; onDelete: () => void }) {
+function NotificationDetailPanel({
+  item,
+  artRuntime,
+  memoryItems,
+  onOpenChat,
+  onDelete,
+  onBrowseMemory
+}: {
+  item: ReikaNotification | null;
+  artRuntime: ArtRuntime;
+  memoryItems: ReikaSessionSummary[];
+  onOpenChat: () => void;
+  onDelete: () => void;
+  onBrowseMemory: () => void;
+}) {
   if (!item) {
     return (
       <aside className="notification-detail-panel motion-surface">
@@ -186,11 +219,22 @@ function NotificationDetailPanel({ item, artRuntime, onOpenChat, onDelete }: { i
             <MessageCircle size={20} />
             Start Chat with Reika
           </button>
-          <button className="secondary-action" disabled title="Memory browsing is not implemented yet.">
+          <button className="secondary-action" onClick={onBrowseMemory}>
             <Database size={20} />
             View Reika's Memory
           </button>
         </section>
+
+        {memoryItems.length > 0 ? (
+          <section className="notification-memory-list">
+            {memoryItems.slice(0, 4).map((memory) => (
+              <button key={memory.id} onClick={onOpenChat}>
+                <strong>{memory.title}</strong>
+                <small>{memory.lastMessagePreview || `${memory.messageCount} messages`}</small>
+              </button>
+            ))}
+          </section>
+        ) : null}
 
         <button className="danger-action" onClick={onDelete}>
           <Trash2 size={18} />

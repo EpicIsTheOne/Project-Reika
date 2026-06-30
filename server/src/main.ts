@@ -57,6 +57,7 @@ async function runStartupCli(options: CliOptions) {
 function formatUpdateStatus(status: Awaited<ReturnType<typeof getUpdateStatus>>) {
   const lines = [
     `Supported: ${status.supported ? 'yes' : 'no'}`,
+    `Mode: ${status.mode || 'unknown'}`,
     `Available: ${status.available ? 'yes' : 'no'}`,
     `Behind: ${status.behindBy}`,
     `Ahead: ${status.aheadBy}`,
@@ -78,6 +79,11 @@ function formatUpdateStatus(status: Awaited<ReturnType<typeof getUpdateStatus>>)
     lines.push('', 'Changed files:');
     for (const file of status.files.slice(0, 40)) lines.push(`- ${file.status} ${file.path}`);
     if (status.files.length > 40) lines.push(`- ...and ${status.files.length - 40} more`);
+  }
+  if (status.installerAsset) {
+    lines.push('', 'Packaged installer:');
+    lines.push(`- ${status.installerAsset.name}`);
+    lines.push(`- ${status.installerAsset.url}`);
   }
   return lines.join('\n');
 }
@@ -776,6 +782,7 @@ const server = http.createServer(async (req, res) => {
         language: typeof body.language === 'string' ? body.language : undefined,
         startupView: typeof body.startupView === 'string' ? body.startupView as typeof before.startupView : undefined,
         relayUrl: typeof body.relayUrl === 'string' ? body.relayUrl : undefined,
+        theme: typeof body.theme === 'string' ? body.theme as typeof before.theme : undefined,
         minimizeToTray: typeof body.minimizeToTray === 'boolean' ? body.minimizeToTray : undefined,
         mockEnabled: typeof body.mockEnabled === 'boolean' ? body.mockEnabled : undefined,
         notificationPreferences: typeof body.notificationPreferences === 'object' && body.notificationPreferences
@@ -813,6 +820,70 @@ const server = http.createServer(async (req, res) => {
       }
       events.emit('settings.updated', next);
       sendJson(res, 200, { ok: true, settings: next, state: fullSnapshot() });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/cache') {
+      sendJson(res, 200, {
+        ok: true,
+        cache: {
+          events: { count: events.count() },
+          sessions: sessions.snapshot(),
+          files: files.snapshot(),
+          art: art.snapshot(),
+          notifications: notifications.snapshot()
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/cache/clear') {
+      const clearedEvents = events.clear();
+      const notice = addNotification({
+        kind: 'system',
+        title: 'Local cache cleared',
+        body: `Cleared ${clearedEvents} transient event records. Persistent chat, files, art, and settings were preserved.`,
+        source: 'settings',
+        tone: 'green',
+        data: { clearedEvents }
+      });
+      sendJson(res, 200, {
+        ok: true,
+        cleared: true,
+        notification: notice,
+        cache: {
+          events: { count: events.count(), cleared: clearedEvents },
+          sessions: sessions.snapshot(),
+          files: files.snapshot(),
+          art: art.snapshot(),
+          notifications: notifications.snapshot()
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/security/sessions') {
+      const activeSessions = sessions.list()
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .slice(0, 12)
+        .map(publicSession);
+      sendJson(res, 200, {
+        ok: true,
+        security: {
+          localOnly: true,
+          relayAuth: 'Pairing approval now supports persisted devices, per-device public keys, signed challenges, revocation, and key rotation on the relay.',
+          activeSessions,
+          device: state.snapshot().device,
+          uplink: relayClient.snapshot()
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/memory/reika') {
+      const limit = Math.max(1, Math.min(50, Number(url.searchParams.get('limit') || 12) || 12));
+      const results = searchSessions({ agent: url.searchParams.get('agent') || 'reika', limit });
+      sendJson(res, 200, { ok: true, agent: url.searchParams.get('agent') || 'reika', memories: results });
       return;
     }
 
@@ -1211,6 +1282,10 @@ const server = http.createServer(async (req, res) => {
         'GET /state',
         'GET /settings',
         'PATCH /settings',
+        'GET /cache',
+        'POST /cache/clear',
+        'GET /security/sessions',
+        'GET /memory/reika',
         'GET /updates/status',
         'POST /updates/check',
         'POST /updates/apply',

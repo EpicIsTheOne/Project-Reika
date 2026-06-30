@@ -36,6 +36,11 @@ export interface AgentHubEnvelope<TPayload = unknown> {
   replyTo?: string;
   correlationId?: string;
   commandId?: string;
+  encrypted?: {
+    alg: 'x25519-xsalsa20-poly1305' | 'age-v1' | 'custom';
+    keyId: string;
+    contentType?: string;
+  };
   payload: TPayload;
 }
 
@@ -48,6 +53,7 @@ export function createEnvelope<TPayload>(input: {
   replyTo?: string;
   correlationId?: string;
   commandId?: string;
+  encrypted?: AgentHubEnvelope['encrypted'];
   payload: TPayload;
 }): AgentHubEnvelope<TPayload> {
   return {

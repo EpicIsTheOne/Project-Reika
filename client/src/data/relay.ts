@@ -101,9 +101,13 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
   connect();
 
   return {
-    send(type: Extract<AgentHubEnvelopeType, "device.state.request" | "provider.refresh.request" | "agent.roster.request">, deviceId: string) {
+    send(
+      type: Extract<AgentHubEnvelopeType, "device.state.request" | "provider.refresh.request" | "agent.roster.request" | "agent.chat.request">,
+      deviceId: string,
+      payload: Record<string, unknown> = {}
+    ) {
       if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-      socket.send(JSON.stringify(createEnvelope(type, {}, { deviceId })));
+      socket.send(JSON.stringify(createEnvelope(type, payload, { deviceId })));
       return true;
     },
     close() {

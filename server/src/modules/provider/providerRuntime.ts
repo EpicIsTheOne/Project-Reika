@@ -254,6 +254,70 @@ function parseHermesSessionsList(output: string, providerId: string): ProviderHi
   return sessions;
 }
 
+function parseOpenClawSessionsList(output: string, providerId: string): ProviderHistorySession[] {
+  try {
+    const parsed = JSON.parse(output) as { sessions?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+    const sessions = Array.isArray(parsed) ? parsed : parsed.sessions || [];
+    return sessions.map((session) => ({
+      providerId,
+      providerSessionId: String(session.id || session.sessionId || ''),
+      agentId: String(session.agent || session.agentId || 'openclaw'),
+      title: String(session.title || session.preview || session.id || 'OpenClaw session'),
+      createdAt: typeof session.createdAt === 'string' ? session.createdAt : undefined,
+      updatedAt: typeof session.updatedAt === 'string' ? session.updatedAt : undefined,
+      messageCount: typeof session.messageCount === 'number' ? session.messageCount : undefined,
+      lastMessagePreview: typeof session.lastMessagePreview === 'string' ? session.lastMessagePreview : typeof session.preview === 'string' ? session.preview : undefined,
+      metadata: { openClawSessionId: String(session.id || session.sessionId || '') }
+    })).filter((session) => session.providerSessionId);
+  } catch {
+    return output.split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !/^[-=\s]+$/.test(line) && !/^id\s+/i.test(line))
+      .map((line) => {
+        const parts = line.split(/\s{2,}|\t+/).filter(Boolean);
+        const id = parts.find((part) => /^[A-Za-z0-9_-]{6,}$/.test(part)) || parts[0] || '';
+        return {
+          providerId,
+          providerSessionId: id,
+          agentId: 'openclaw',
+          title: parts[1] || parts[0] || `OpenClaw ${id}`,
+          lastMessagePreview: parts.slice(2).join(' '),
+          metadata: { openClawSessionId: id, raw: line }
+        };
+      })
+      .filter((session) => session.providerSessionId);
+  }
+}
+
+function normalizeOpenClawMessages(output: string): ProviderHistoryMessage[] {
+  try {
+    const parsed = JSON.parse(output) as { messages?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+    const messages = Array.isArray(parsed) ? parsed : parsed.messages || [];
+    return messages.map((message) => {
+      const role: ProviderHistoryMessage['role'] = message.role === 'assistant' || message.role === 'system' ? message.role : 'user';
+      return {
+        id: typeof message.id === 'string' ? message.id : undefined,
+        role,
+        text: String(message.text || message.content || message.message || ''),
+        timestamp: typeof message.timestamp === 'string' ? message.timestamp : typeof message.createdAt === 'string' ? message.createdAt : undefined,
+        meta: typeof message.meta === 'object' && message.meta ? message.meta as Record<string, unknown> : undefined
+      };
+    }).filter((message) => message.text);
+  } catch {
+    return output.split(/\r?\n/).map((line, index) => {
+      const match = line.match(/^(user|assistant|system|you|openclaw|agent)\s*:\s*(.+)$/i);
+      if (!match) return undefined;
+      const rawRole = String(match[1] || '').toLowerCase();
+      const role: ProviderHistoryMessage['role'] = rawRole === 'assistant' || rawRole === 'openclaw' || rawRole === 'agent' ? 'assistant' : rawRole === 'system' ? 'system' : 'user';
+      return {
+        id: `openclaw_text_${index}`,
+        role,
+        text: String(match[2] || '').trim()
+      };
+    }).filter(Boolean) as ProviderHistoryMessage[];
+  }
+}
+
 export async function listProviderHistorySessions(providerId: string, providers: ProviderRecord[], limit = 25): Promise<ProviderHistorySession[]> {
   const provider = findProvider(providers, providerId);
   if (!provider) throw new Error(`Provider not found: ${providerId}`);
@@ -280,12 +344,23 @@ export async function listProviderHistorySessions(providerId: string, providers:
     return parseHermesSessionsList(stdout, provider.id).slice(0, limit);
   }
 
+  if (provider.kind === 'openclaw') {
+    const { stdout, stderr } = await runCommand(openClawBin, ['sessions', 'list', '--json', '--limit', String(limit)], 30000)
+      .catch(() => runCommand(openClawBin, ['sessions', 'list', '--limit', String(limit)], 30000));
+    return parseOpenClawSessionsList(stdout || stderr, provider.id).slice(0, limit);
+  }
+
   return [];
 }
 
 export async function getProviderHistoryMessages(providerId: string, providerSessionId: string, providers: ProviderRecord[]): Promise<ProviderHistoryMessage[]> {
   const provider = findProvider(providers, providerId);
   if (!provider) throw new Error(`Provider not found: ${providerId}`);
+  if (provider.kind === 'openclaw') {
+    const { stdout, stderr } = await runCommand(openClawBin, ['sessions', 'export', providerSessionId, '--json'], 30000)
+      .catch(() => runCommand(openClawBin, ['sessions', 'show', providerSessionId], 30000));
+    return normalizeOpenClawMessages(stdout || stderr);
+  }
   if (provider.kind !== 'commandcenter') return [];
   const response = await fetch(`${commandCenterBaseUrl}/sessions/${encodeURIComponent(providerSessionId)}/messages`);
   const body = await response.json().catch(() => ({})) as { ok?: boolean; messages?: Array<Record<string, unknown>>; error?: unknown };
