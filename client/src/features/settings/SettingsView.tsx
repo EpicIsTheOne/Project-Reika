@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Box, Brush, ChevronDown, ChevronRight, Code2, Globe2, Info, Monitor, Palette, Shield } from "lucide-react";
+import { Bell, Box, Brush, ChevronDown, ChevronRight, Code2, Globe2, Info, Monitor, Palette, Shield } from "lucide-react";
 import { defaultReikaRelayDeviceUrl } from "../../config/relay";
 import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "../../data/startup";
 import { assets } from "../../data/assets";
@@ -45,6 +45,7 @@ export function SettingsView({
     { title: "General", detail: "Basic preferences", icon: Brush },
     { title: "Devices", detail: "Manage your devices", icon: Monitor },
     { title: "Providers", detail: "Manage providers", icon: Box },
+    { title: "Notifications", detail: "Choose alerts", icon: Bell },
     { title: "Appearance", detail: "Theme, colors, layout", icon: Palette },
     { title: "Developer", detail: "Logs, diagnostics, tools", icon: Code2 }
   ];
@@ -70,13 +71,20 @@ export function SettingsView({
     setRelayUrlDraft(settings.relayUrl);
   }, [settings.relayUrl]);
 
-  const updateSetting = (key: keyof Omit<ReikaSettings, "version" | "updatedAt">, value: string | boolean) => {
+  const updateSetting = (key: keyof Omit<ReikaSettings, "version" | "updatedAt">, value: string | boolean | ReikaSettings["notificationPreferences"]) => {
     setBusySetting(key);
     setSettingsError(null);
     patchSettings({ [key]: value } as Partial<Omit<ReikaSettings, "version" | "updatedAt">>)
       .then(({ settings, state }) => onSettingsChange(settings, state))
       .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
       .finally(() => setBusySetting(null));
+  };
+
+  const updateNotificationPreference = (key: keyof ReikaSettings["notificationPreferences"], value: boolean) => {
+    updateSetting("notificationPreferences", {
+      ...settings.notificationPreferences,
+      [key]: value
+    });
   };
 
   const saveRelayUrl = () => {
@@ -229,6 +237,19 @@ export function SettingsView({
                 </SettingRow>
               </>
             ) : null}
+            {activeTab === "Notifications" ? (
+              <>
+                {notificationPreferenceRows.map((item) => (
+                  <SettingRow title={item.title} detail={settings.notificationPreferences[item.key] ? item.onDetail : item.offDetail} key={item.key}>
+                    <Toggle
+                      checked={settings.notificationPreferences[item.key]}
+                      disabled={busySetting === "notificationPreferences"}
+                      onClick={() => updateNotificationPreference(item.key, !settings.notificationPreferences[item.key])}
+                    />
+                  </SettingRow>
+                ))}
+              </>
+            ) : null}
             {activeTab === "Appearance" ? (
               <>
                 <SettingRow title="Theme" detail="Dark AgentHub theme is active for Phase 1.">
@@ -329,6 +350,56 @@ function UpdateStatusCard({ status, busy, onCheck, onApply }: { status: ReikaUpd
     </div>
   );
 }
+
+const notificationPreferenceRows: Array<{
+  key: keyof ReikaSettings["notificationPreferences"];
+  title: string;
+  onDetail: string;
+  offDetail: string;
+}> = [
+  {
+    key: "agent",
+    title: "Agent Alerts",
+    onDetail: "Agent status and roster notices can appear.",
+    offDetail: "Agent status and roster notices are muted."
+  },
+  {
+    key: "device",
+    title: "Device Alerts",
+    onDetail: "Pairing, relay, and device connection notices can appear.",
+    offDetail: "Pairing, relay, and device connection notices are muted."
+  },
+  {
+    key: "provider",
+    title: "Provider Alerts",
+    onDetail: "Provider refresh, active-provider, and history notices can appear.",
+    offDetail: "Provider refresh and provider history notices are muted."
+  },
+  {
+    key: "chat",
+    title: "Chat Alerts",
+    onDetail: "Completed chat responses can appear in Notifications.",
+    offDetail: "Completed chat response notices are muted."
+  },
+  {
+    key: "file",
+    title: "File And Art Alerts",
+    onDetail: "Upload, link, and art-file notices can appear.",
+    offDetail: "Upload, link, and art-file notices are muted."
+  },
+  {
+    key: "system",
+    title: "System Alerts",
+    onDetail: "Settings and Project Reika update notices can appear.",
+    offDetail: "Settings and Project Reika update notices are muted."
+  },
+  {
+    key: "warning",
+    title: "Warnings",
+    onDetail: "Failures, blocked generation, and important warnings can appear.",
+    offDetail: "Warnings are muted. Use this carefully."
+  }
+];
 
 function nextStartupView(view: ReikaSettings["startupView"]): ReikaSettings["startupView"] {
   const order: ReikaSettings["startupView"][] = ["home", "chat", "devices", "notifications", "settings"];

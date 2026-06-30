@@ -121,6 +121,7 @@ export interface ReikaSettings {
   relayUrl: string;
   minimizeToTray: boolean;
   mockEnabled: boolean;
+  notificationPreferences: ReikaNotificationPreferences;
   autoUpdateServer: boolean;
   autoUpdateClient: boolean;
   developerDiagnostics: boolean;
@@ -249,6 +250,7 @@ export interface ReikaArtLibraryResponse {
 
 export type ReikaNotificationKind = "agent" | "device" | "provider" | "chat" | "file" | "system" | "warning";
 export type ReikaNotificationTone = "blue" | "green" | "purple" | "orange" | "red" | "gray" | "pink";
+export type ReikaNotificationPreferences = Record<ReikaNotificationKind, boolean>;
 
 export interface ReikaNotification {
   id: string;

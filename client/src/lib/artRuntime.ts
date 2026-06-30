@@ -186,8 +186,12 @@ function pickAsset(category: ReikaArtCategory | undefined, key: string) {
   if (category.selectionMode === "single") {
     return category.assets.find((assetRecord) => assetRecord.id === category.selectedAssetId) ?? category.assets[0];
   }
-  const index = positiveHash(key) % category.assets.length;
-  return category.assets[index];
+  const randomPool = category.assets.length > 1
+    ? category.assets.filter((assetRecord) => assetRecord.id !== category.selectedAssetId)
+    : category.assets;
+  const pool = randomPool.length > 0 ? randomPool : category.assets;
+  const index = positiveHash(key) % pool.length;
+  return pool[index];
 }
 
 function positiveHash(value: string) {

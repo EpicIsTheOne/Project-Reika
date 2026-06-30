@@ -174,6 +174,7 @@ export function App() {
   };
 
   const unreadCount = notifications.filter((item) => item.unread).length;
+  const loadingArtReady = artLibrary !== null || bootSteps.some((step) => step.id === "art" && step.state === "error");
 
   const refreshNotifications = () => {
     listNotifications({ limit: 100 })
@@ -184,7 +185,7 @@ export function App() {
   if (view === "loading") {
     return (
       <div className="app-root">
-        <LoadingScreen steps={bootSteps} ready={bootReady} mode={backendMode} error={backendError} artRuntime={artRuntime} onEnter={() => setView(settings.startupView)} />
+        <LoadingScreen steps={bootSteps} ready={bootReady} mode={backendMode} error={backendError} artRuntime={artRuntime} artReady={loadingArtReady} onEnter={() => setView(settings.startupView)} />
       </div>
     );
   }

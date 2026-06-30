@@ -29,6 +29,15 @@ export const defaultSettings: ReikaSettings = {
   relayUrl: defaultReikaRelayDeviceUrl,
   minimizeToTray: true,
   mockEnabled: true,
+  notificationPreferences: {
+    agent: true,
+    device: true,
+    provider: true,
+    chat: true,
+    file: true,
+    system: true,
+    warning: true
+  },
   autoUpdateServer: false,
   autoUpdateClient: false,
   developerDiagnostics: false,

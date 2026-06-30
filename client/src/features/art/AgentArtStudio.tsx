@@ -84,6 +84,11 @@ export function AgentArtStudio({
     : categories;
   const selectedCategory = categories.find((category) => category.id === selectedCategoryId) ?? categories[0] ?? null;
   const selectedAsset = selectedCategory?.assets.find((item) => item.id === selectedCategory.selectedAssetId) ?? selectedCategory?.assets[0] ?? null;
+  const selectedPreviewUrl = selectedCategory && selectedCategory.selectionMode === "random"
+    ? artRuntime.profileArt(selectedProfile, selectedCategory.id, selectedAsset ? resolveArtAssetUrl(selectedAsset) : "", "studio-detail-preview")
+    : selectedAsset
+      ? resolveArtAssetUrl(selectedAsset)
+      : "";
   const selectedReferences = selectedCategory?.referenceAssetIds
     .map((id) => selectedCategory.assets.find((item) => item.id === id))
     .filter((item): item is ReikaArtAsset => Boolean(item)) ?? [];
@@ -401,7 +406,7 @@ export function AgentArtStudio({
               </header>
 
               <div className="art-preview-frame">
-                {selectedAsset ? <img src={resolveArtAssetUrl(selectedAsset)} alt="" /> : <div>No artwork yet</div>}
+                {selectedPreviewUrl ? <img src={selectedPreviewUrl} alt="" /> : <div>No artwork yet</div>}
               </div>
 
               <section className="art-detail-section">

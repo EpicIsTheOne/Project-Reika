@@ -220,6 +220,12 @@ function updateDescriptionText(descriptions: { title: string; body?: string }[])
   return first.body ? `${first.title}: ${first.body}` : first.title;
 }
 
+function addNotification(input: Parameters<NotificationStore['add']>[0]) {
+  const preferences = settings.get().notificationPreferences;
+  if (preferences[input.kind] === false) return undefined;
+  return notifications.add(input);
+}
+
 function notifyUpdateAvailable(status: Awaited<ReturnType<typeof getUpdateStatus>>) {
   if (!status.available) return;
   const alreadyUnread = notifications.list({ unreadOnly: true, limit: 200 }).some((item) => {
@@ -227,7 +233,7 @@ function notifyUpdateAvailable(status: Awaited<ReturnType<typeof getUpdateStatus
     return item.source === 'github' && (item.title === 'Project Reika update available' || item.title === 'AgentHub update available') && update?.remoteSha === status.remoteSha;
   });
   if (alreadyUnread) return;
-  notifications.add({
+  addNotification({
     kind: 'system',
     title: 'Project Reika update available',
     body: `${status.message} Changed files: ${summarizeUpdateFiles(status.files)}. ${updateDescriptionText(status.descriptions)}`,
@@ -238,7 +244,7 @@ function notifyUpdateAvailable(status: Awaited<ReturnType<typeof getUpdateStatus
 }
 
 function notifyUpdateApplied(result: Awaited<ReturnType<typeof applyGitHubUpdate>>) {
-  notifications.add({
+  addNotification({
     kind: 'system',
     title: result.applied ? 'Project Reika updated from GitHub' : 'Project Reika update checked',
     body: `${result.message} Changed files: ${summarizeUpdateFiles(result.files)}. ${updateDescriptionText(result.descriptions)}`,
@@ -264,7 +270,7 @@ async function runConfiguredUpdateCheck() {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     events.emit('updates.error', { error: message });
-    notifications.add({
+    addNotification({
       kind: 'warning',
       title: 'Project Reika update check failed',
       body: message,
@@ -474,7 +480,7 @@ async function runChatTurn(input: { sessionId?: string; providerId?: string; age
     session.metadata.providerSessionIds = providerSessionIds;
     if (result.runtime === 'hermes') session.metadata.hermesSessionId = typeof result.metadata?.hermesSessionId === 'string' ? result.metadata.hermesSessionId : result.sessionId;
     const assistantMessage = appendMessage(session, 'assistant', result.text, { providerId: result.providerId, agent: result.agentId, runtime: result.runtime, files: [] });
-    notifications.add({
+    addNotification({
       kind: 'chat',
       title: `${result.runtime === 'mock' ? 'Mock' : result.agentId} replied`,
       body: result.text.slice(0, 160) || 'A chat response completed.',
@@ -548,7 +554,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/art/profiles') {
       const body = await readJson(req);
       const profile = art.createProfile({ name: body.name, subtitle: body.subtitle, scope: body.scope });
-      notifications.add({
+      addNotification({
         kind: 'system',
         title: 'Art profile created',
         body: `${profile.name} now has an AgentHub art profile.`,
@@ -563,7 +569,7 @@ const server = http.createServer(async (req, res) => {
     const artDuplicateMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/duplicate$/);
     if (req.method === 'POST' && artDuplicateMatch) {
       const profile = art.duplicateProfile(decodeURIComponent(artDuplicateMatch[1] || ''));
-      notifications.add({
+      addNotification({
         kind: 'system',
         title: 'Art profile duplicated',
         body: `${profile.name} was created from an existing art profile.`,
@@ -578,7 +584,7 @@ const server = http.createServer(async (req, res) => {
     const artProfileDeleteMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)$/);
     if (req.method === 'DELETE' && artProfileDeleteMatch) {
       const profile = art.deleteProfile(decodeURIComponent(artProfileDeleteMatch[1] || ''));
-      notifications.add({
+      addNotification({
         kind: 'warning',
         title: 'Art profile deleted',
         body: `${profile.name} was removed from Agent Art Studio.`,
@@ -615,7 +621,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'DELETE' && artCategoryMatch) {
       const category = art.deleteCategory(decodeURIComponent(artCategoryMatch[1] || ''), decodeURIComponent(artCategoryMatch[2] || ''));
-      notifications.add({
+      addNotification({
         kind: 'warning',
         title: 'Art category deleted',
         body: `${category.name} was removed from Agent Art Studio.`,
@@ -636,7 +642,7 @@ const server = http.createServer(async (req, res) => {
         base64: body.base64,
         prompt: body.prompt
       });
-      notifications.add({
+      addNotification({
         kind: 'file',
         title: 'Art uploaded',
         body: `${assetRecord.name} was added to Agent Art Studio.`,
@@ -663,7 +669,7 @@ const server = http.createServer(async (req, res) => {
     const artGenerateMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/categories\/([^/]+)\/generate$/);
     if (req.method === 'POST' && artGenerateMatch) {
       const generation = art.requestGeneration(decodeURIComponent(artGenerateMatch[1] || ''), decodeURIComponent(artGenerateMatch[2] || ''));
-      notifications.add({
+      addNotification({
         kind: 'warning',
         title: 'Image generation waiting on OAuth',
         body: generation.message,
@@ -703,7 +709,7 @@ const server = http.createServer(async (req, res) => {
       events.emit('provider.state', state.snapshot().providers);
       const snapshot = state.snapshot();
       const activeProvider = snapshot.providers.find((provider) => provider.id === snapshot.activeProviderId);
-      notifications.add({
+      addNotification({
         kind: activeProvider ? 'provider' : 'warning',
         title: activeProvider ? `${activeProvider.name} is active` : 'No active provider found',
         body: activeProvider ? activeProvider.notes : settings.get().mockEnabled ? 'No provider was selected.' : 'Mock is disabled and no live provider is available.',
@@ -730,6 +736,9 @@ const server = http.createServer(async (req, res) => {
         relayUrl: typeof body.relayUrl === 'string' ? body.relayUrl : undefined,
         minimizeToTray: typeof body.minimizeToTray === 'boolean' ? body.minimizeToTray : undefined,
         mockEnabled: typeof body.mockEnabled === 'boolean' ? body.mockEnabled : undefined,
+        notificationPreferences: typeof body.notificationPreferences === 'object' && body.notificationPreferences
+          ? body.notificationPreferences as typeof before.notificationPreferences
+          : undefined,
         autoUpdateServer: typeof body.autoUpdateServer === 'boolean' ? body.autoUpdateServer : undefined,
         autoUpdateClient: typeof body.autoUpdateClient === 'boolean' ? body.autoUpdateClient : undefined,
         developerDiagnostics: typeof body.developerDiagnostics === 'boolean' ? body.developerDiagnostics : undefined
@@ -738,7 +747,7 @@ const server = http.createServer(async (req, res) => {
         await state.refreshProviders({ mockEnabled: next.mockEnabled });
         events.emit('provider.state', state.snapshot().providers);
         relayClient.sendStateSnapshots();
-        notifications.add({
+        addNotification({
           kind: 'system',
           title: next.mockEnabled ? 'Mock provider enabled' : 'Mock provider disabled',
           body: next.mockEnabled ? 'Mock fallback is available again.' : 'Mock fallback is disabled across the local app.',
@@ -748,7 +757,7 @@ const server = http.createServer(async (req, res) => {
         });
       }
       if (before.relayUrl !== next.relayUrl) {
-        notifications.add({
+        addNotification({
           kind: 'system',
           title: 'Relay URL updated',
           body: `Device pairing will now use ${next.relayUrl}.`,
@@ -994,7 +1003,7 @@ const server = http.createServer(async (req, res) => {
       }
       const item = await files.link({ url: sourceUrl, name: typeof body.name === 'string' ? body.name : undefined, notes: typeof body.notes === 'string' ? body.notes : undefined });
       events.emit('file.linked', publicFile(item));
-      notifications.add({ kind: 'file', title: 'Link attached', body: `${item.name} is available for Reika chat context.`, source: 'files', tone: 'purple', data: { fileId: item.id } });
+      addNotification({ kind: 'file', title: 'Link attached', body: `${item.name} is available for Reika chat context.`, source: 'files', tone: 'purple', data: { fileId: item.id } });
       sendJson(res, 200, { ok: true, item: publicFile(item) });
       return;
     }
@@ -1018,7 +1027,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       events.emit('file.uploaded', { count: items.length });
-      notifications.add({ kind: 'file', title: 'File upload complete', body: `${items.length} ${items.length === 1 ? 'file is' : 'files are'} available for chat context.`, source: 'files', tone: 'purple', data: { count: items.length } });
+      addNotification({ kind: 'file', title: 'File upload complete', body: `${items.length} ${items.length === 1 ? 'file is' : 'files are'} available for chat context.`, source: 'files', tone: 'purple', data: { count: items.length } });
       sendJson(res, 200, { ok: true, items });
       return;
     }
@@ -1073,7 +1082,7 @@ const server = http.createServer(async (req, res) => {
         imported.push({ providerSessionId: record.providerSessionId, session: publicSession(result.session), created: result.created, messageCount: result.messageCount });
       }
       events.emit('chat.history.imported', { providerId, count: imported.length });
-      notifications.add({ kind: 'provider', title: 'Provider history imported', body: `${imported.length} sessions imported from ${providerId}.`, source: providerId, tone: 'green', data: { providerId, count: imported.length } });
+      addNotification({ kind: 'provider', title: 'Provider history imported', body: `${imported.length} sessions imported from ${providerId}.`, source: providerId, tone: 'green', data: { providerId, count: imported.length } });
       sendJson(res, 200, { ok: true, providerId, imported });
       return;
     }
@@ -1119,7 +1128,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       relayClient.connectWith({ relayUrl, pairingToken, deviceId: deviceId || undefined });
-      notifications.add({ kind: 'device', title: 'Relay uplink connecting', body: `Connecting this device to ${relayUrl}.`, source: 'uplink', tone: 'blue', data: { relayUrl, deviceId: deviceId || undefined } });
+      addNotification({ kind: 'device', title: 'Relay uplink connecting', body: `Connecting this device to ${relayUrl}.`, source: 'uplink', tone: 'blue', data: { relayUrl, deviceId: deviceId || undefined } });
       sendJson(res, 200, { ok: true, uplink: relayClient.snapshot() });
       return;
     }
@@ -1142,7 +1151,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && url.pathname === '/uplink/disconnect') {
       relayClient.stop();
-      notifications.add({ kind: 'device', title: 'Relay uplink disconnected', body: 'This device stopped its relay uplink.', source: 'uplink', tone: 'orange' });
+      addNotification({ kind: 'device', title: 'Relay uplink disconnected', body: 'This device stopped its relay uplink.', source: 'uplink', tone: 'orange' });
       sendJson(res, 200, { ok: true, uplink: relayClient.snapshot() });
       return;
     }

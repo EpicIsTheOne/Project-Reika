@@ -9,6 +9,7 @@ export function LoadingScreen({
   mode,
   error,
   artRuntime,
+  artReady,
   onEnter
 }: {
   steps: BootStep[];
@@ -16,6 +17,7 @@ export function LoadingScreen({
   mode: BackendMode;
   error: string | null;
   artRuntime: ArtRuntime;
+  artReady: boolean;
   onEnter: () => void;
 }) {
   const doneCount = steps.filter((step) => step.state === "done").length;
@@ -24,10 +26,13 @@ export function LoadingScreen({
   const activeStep = steps.find((step) => step.state === "active") ?? [...steps].reverse().find((step) => step.state === "done") ?? steps[0];
   const systemStatus =
     mode === "fallback" ? "Fallback mode active" : mode === "live" ? "All systems nominal" : activeStep?.detail ?? "Scanning local providers";
+  const backgroundUrl = artReady
+    ? artRuntime.agentArt("reika", "loading-screen", artRuntime.globalArt("global-loading", assets.loading.bootBackdrop, "loading-backdrop-global"), "loading-backdrop")
+    : "";
 
   return (
     <main className="loading-screen">
-      <img className="loading-bg" src={artRuntime.agentArt("reika", "loading-screen", artRuntime.globalArt("global-loading", assets.loading.bootBackdrop, "loading-backdrop-global"), "loading-backdrop")} alt="" />
+      {backgroundUrl ? <img className="loading-bg" src={backgroundUrl} alt="" /> : null}
       <div className="loading-shade" />
       <div className="loading-grid" aria-hidden="true" />
 

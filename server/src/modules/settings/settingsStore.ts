@@ -9,11 +9,15 @@ export interface ReikaSettings {
   relayUrl: string;
   minimizeToTray: boolean;
   mockEnabled: boolean;
+  notificationPreferences: NotificationPreferences;
   autoUpdateServer: boolean;
   autoUpdateClient: boolean;
   developerDiagnostics: boolean;
   updatedAt: string;
 }
+
+export type NotificationPreferenceKey = 'agent' | 'device' | 'provider' | 'chat' | 'file' | 'system' | 'warning';
+export type NotificationPreferences = Record<NotificationPreferenceKey, boolean>;
 
 export interface SettingsStoreSnapshot {
   path: string;
@@ -29,6 +33,15 @@ const defaultSettings: ReikaSettings = {
   relayUrl: process.env.REIKA_RELAY_URL || 'wss://relay.techexplore.us/v1/device',
   minimizeToTray: true,
   mockEnabled: true,
+  notificationPreferences: {
+    agent: true,
+    device: true,
+    provider: true,
+    chat: true,
+    file: true,
+    system: true,
+    warning: true
+  },
   autoUpdateServer: false,
   autoUpdateClient: false,
   developerDiagnostics: false,
@@ -54,10 +67,24 @@ function normalizeSettings(input: Partial<ReikaSettings> = {}): ReikaSettings {
     relayUrl: normalizeRelayUrl(input.relayUrl) ?? defaultSettings.relayUrl,
     minimizeToTray: typeof input.minimizeToTray === 'boolean' ? input.minimizeToTray : defaultSettings.minimizeToTray,
     mockEnabled: typeof input.mockEnabled === 'boolean' ? input.mockEnabled : defaultSettings.mockEnabled,
+    notificationPreferences: normalizeNotificationPreferences(input.notificationPreferences),
     autoUpdateServer: typeof input.autoUpdateServer === 'boolean' ? input.autoUpdateServer : defaultSettings.autoUpdateServer,
     autoUpdateClient: typeof input.autoUpdateClient === 'boolean' ? input.autoUpdateClient : defaultSettings.autoUpdateClient,
     developerDiagnostics: typeof input.developerDiagnostics === 'boolean' ? input.developerDiagnostics : defaultSettings.developerDiagnostics,
     updatedAt: typeof input.updatedAt === 'string' ? input.updatedAt : new Date().toISOString()
+  };
+}
+
+function normalizeNotificationPreferences(value: unknown): NotificationPreferences {
+  const input = typeof value === 'object' && value ? value as Partial<Record<NotificationPreferenceKey, unknown>> : {};
+  return {
+    agent: typeof input.agent === 'boolean' ? input.agent : defaultSettings.notificationPreferences.agent,
+    device: typeof input.device === 'boolean' ? input.device : defaultSettings.notificationPreferences.device,
+    provider: typeof input.provider === 'boolean' ? input.provider : defaultSettings.notificationPreferences.provider,
+    chat: typeof input.chat === 'boolean' ? input.chat : defaultSettings.notificationPreferences.chat,
+    file: typeof input.file === 'boolean' ? input.file : defaultSettings.notificationPreferences.file,
+    system: typeof input.system === 'boolean' ? input.system : defaultSettings.notificationPreferences.system,
+    warning: typeof input.warning === 'boolean' ? input.warning : defaultSettings.notificationPreferences.warning
   };
 }
 
