@@ -557,8 +557,8 @@ function providerTone(kind: string) {
   return 'blue';
 }
 
-function artPayload(extra: Record<string, unknown> = {}) {
-  return { ok: true, storage: art.snapshot(), oauth: art.oauthStatus(), profiles: art.list(), ...extra };
+async function artPayload(extra: Record<string, unknown> = {}) {
+  return { ok: true, storage: art.snapshot(), oauth: await art.oauthStatus(), profiles: art.list(), ...extra };
 }
 
 const server = http.createServer(async (req, res) => {
@@ -578,23 +578,23 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/art') {
-      sendJson(res, 200, artPayload());
+      sendJson(res, 200, await artPayload());
       return;
     }
 
     if (req.method === 'GET' && url.pathname === '/art/oauth/status') {
-      sendJson(res, 200, { ok: true, oauth: art.oauthStatus() });
+      sendJson(res, 200, { ok: true, oauth: await art.oauthStatus() });
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/art/oauth/connect') {
-      const oauth = art.oauthStatus();
+      const oauth = await art.oauthStatus();
       sendJson(res, 200, { ok: true, oauth, message: oauth.message });
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/art/oauth/disconnect') {
-      const oauth = art.oauthStatus();
+      const oauth = await art.oauthStatus();
       sendJson(res, 200, { ok: true, oauth, message: 'Codex/ChatGPT OAuth is disconnected.' });
       return;
     }
@@ -610,7 +610,7 @@ const server = http.createServer(async (req, res) => {
         tone: 'blue',
         data: { profileId: profile.id }
       });
-      sendJson(res, 200, artPayload({ profile }));
+      sendJson(res, 200, await artPayload({ profile }));
       return;
     }
 
@@ -625,7 +625,7 @@ const server = http.createServer(async (req, res) => {
         tone: 'purple',
         data: { profileId: profile.id }
       });
-      sendJson(res, 200, artPayload({ profile }));
+      sendJson(res, 200, await artPayload({ profile }));
       return;
     }
 
@@ -640,7 +640,7 @@ const server = http.createServer(async (req, res) => {
         tone: 'orange',
         data: { profileId: profile.id }
       });
-      sendJson(res, 200, artPayload({ profile }));
+      sendJson(res, 200, await artPayload({ profile }));
       return;
     }
 
@@ -649,7 +649,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const profileId = decodeURIComponent(artCategoryCreateMatch[1] || '');
       const category = art.addCategory(profileId, { name: body.name });
-      sendJson(res, 200, artPayload({ category }));
+      sendJson(res, 200, await artPayload({ category }));
       return;
     }
 
@@ -663,7 +663,7 @@ const server = http.createServer(async (req, res) => {
         systemPrompt: typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined,
         referenceAssetIds: Array.isArray(body.referenceAssetIds) ? body.referenceAssetIds.filter((item): item is string => typeof item === 'string') : undefined
       });
-      sendJson(res, 200, artPayload({ category }));
+      sendJson(res, 200, await artPayload({ category }));
       return;
     }
 
@@ -677,7 +677,7 @@ const server = http.createServer(async (req, res) => {
         tone: 'orange',
         data: { categoryId: category.id }
       });
-      sendJson(res, 200, artPayload({ category }));
+      sendJson(res, 200, await artPayload({ category }));
       return;
     }
 
@@ -698,7 +698,7 @@ const server = http.createServer(async (req, res) => {
         tone: 'purple',
         data: { assetId: assetRecord.id }
       });
-      sendJson(res, 200, artPayload({ asset: assetRecord }));
+      sendJson(res, 200, await artPayload({ asset: assetRecord }));
       return;
     }
 
@@ -710,13 +710,13 @@ const server = http.createServer(async (req, res) => {
         url: body.url,
         prompt: body.prompt
       });
-      sendJson(res, 200, artPayload({ asset: assetRecord }));
+      sendJson(res, 200, await artPayload({ asset: assetRecord }));
       return;
     }
 
     const artGenerateMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/categories\/([^/]+)\/generate$/);
     if (req.method === 'POST' && artGenerateMatch) {
-      const generation = art.requestGeneration(decodeURIComponent(artGenerateMatch[1] || ''), decodeURIComponent(artGenerateMatch[2] || ''));
+      const generation = await art.requestGeneration(decodeURIComponent(artGenerateMatch[1] || ''), decodeURIComponent(artGenerateMatch[2] || ''));
       addNotification({
         kind: 'warning',
         title: 'Image generation waiting on OAuth',
@@ -725,14 +725,14 @@ const server = http.createServer(async (req, res) => {
         tone: 'orange',
         data: { generation }
       });
-      sendJson(res, 200, artPayload({ generation }));
+      sendJson(res, 200, await artPayload({ generation }));
       return;
     }
 
     const artAssetDeleteMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/categories\/([^/]+)\/assets\/([^/]+)$/);
     if (req.method === 'DELETE' && artAssetDeleteMatch) {
       const assetRecord = art.deleteAsset(decodeURIComponent(artAssetDeleteMatch[1] || ''), decodeURIComponent(artAssetDeleteMatch[2] || ''), decodeURIComponent(artAssetDeleteMatch[3] || ''));
-      sendJson(res, 200, artPayload({ asset: assetRecord }));
+      sendJson(res, 200, await artPayload({ asset: assetRecord }));
       return;
     }
 

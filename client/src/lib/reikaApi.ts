@@ -246,7 +246,7 @@ export interface ReikaArtProfile {
 
 export interface ReikaArtOAuthStatus {
   connected: boolean;
-  provider: "codex-oauth";
+  provider: "codex-oauth" | "openai-api-key";
   imageGenerationAvailable: boolean;
   quotaLabel?: string;
   message: string;
@@ -267,6 +267,7 @@ export interface ReikaArtGenerationStatus {
   provider: string;
   profileId: string;
   categoryId: string;
+  assetId?: string;
   message: string;
   prompt?: string;
   systemPrompt?: string;

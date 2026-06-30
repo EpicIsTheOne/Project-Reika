@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, extname, join } from 'node:path';
 import { homedir } from 'node:os';
+import { generateImageWithOpenAI, getImageAuthStatus, type ImageAuthStatus } from './imageGeneration.js';
 
 export type ArtScope = 'agent' | 'global';
 export type ArtSelectionMode = 'single' | 'random';
@@ -54,7 +55,7 @@ export interface ArtProfileRecord {
 
 export interface ArtOAuthStatus {
   connected: boolean;
-  provider: 'codex-oauth';
+  provider: ImageAuthStatus['provider'];
   imageGenerationAvailable: boolean;
   quotaLabel?: string;
   message: string;
@@ -476,14 +477,8 @@ export class ArtStore {
     };
   }
 
-  oauthStatus(): ArtOAuthStatus {
-    return {
-      connected: false,
-      provider: 'codex-oauth',
-      imageGenerationAvailable: false,
-      quotaLabel: 'Unavailable',
-      message: 'Codex/ChatGPT OAuth image generation is not connected to the local server yet.'
-    };
+  async oauthStatus(): Promise<ArtOAuthStatus> {
+    return getImageAuthStatus();
   }
 
   list() {
@@ -672,18 +667,73 @@ export class ArtStore {
     return undefined;
   }
 
-  requestGeneration(profileId: string, categoryId: string) {
+  async requestGeneration(profileId: string, categoryId: string) {
     const profile = this.requireProfile(profileId);
     const categoryRecord = this.requireCategory(profile, categoryId);
-    return {
-      status: 'blocked' as const,
-      provider: 'gpt-image-2',
-      profileId: profile.id,
-      categoryId: categoryRecord.id,
-      message: 'GPT-image 2 generation is waiting on Codex/ChatGPT OAuth support in the local server.',
-      prompt: categoryRecord.prompt,
-      systemPrompt: categoryRecord.systemPrompt
-    };
+    const auth = await this.oauthStatus();
+    if (!auth.imageGenerationAvailable) {
+      return {
+        status: 'blocked' as const,
+        provider: auth.provider,
+        profileId: profile.id,
+        categoryId: categoryRecord.id,
+        message: auth.message,
+        prompt: categoryRecord.prompt,
+        systemPrompt: categoryRecord.systemPrompt
+      };
+    }
+
+    try {
+      const generated = await generateImageWithOpenAI({
+        prompt: categoryRecord.prompt,
+        systemPrompt: categoryRecord.systemPrompt
+      });
+      const id = makeId('art_generated');
+      const filePath = join(this.assetDir, `${id}.png`);
+      const buffer = Buffer.from(generated.base64, 'base64');
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, buffer);
+      const record: ArtAssetRecord = {
+        id,
+        name: `Generated ${categoryRecord.name}`,
+        kind: 'generated',
+        createdAt: nowIso(),
+        filePath,
+        mimeType: generated.mimeType,
+        size: buffer.byteLength,
+        prompt: categoryRecord.prompt,
+        model: generated.model,
+        metadata: {
+          provider: generated.provider,
+          revisedPrompt: generated.revisedPrompt,
+          source: 'openai-images'
+        }
+      };
+      categoryRecord.assets.unshift(record);
+      categoryRecord.selectedAssetId = record.id;
+      profile.updatedAt = nowIso();
+      this.queueSave();
+      return {
+        status: 'completed' as const,
+        provider: generated.model,
+        profileId: profile.id,
+        categoryId: categoryRecord.id,
+        assetId: record.id,
+        message: `${record.name} generated and selected.`,
+        prompt: categoryRecord.prompt,
+        systemPrompt: categoryRecord.systemPrompt
+      };
+    } catch (error) {
+      return {
+        status: 'failed' as const,
+        provider: auth.provider,
+        profileId: profile.id,
+        categoryId: categoryRecord.id,
+        message: error instanceof Error ? error.message : String(error),
+        prompt: categoryRecord.prompt,
+        systemPrompt: categoryRecord.systemPrompt
+      };
+    }
   }
 
   async flush() {

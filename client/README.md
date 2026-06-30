@@ -100,9 +100,9 @@ Current Phase 1 behavior:
 - prompt and system-prompt editing
 - reference image toggles
 - manual image upload and linked-image add
-- generation readiness surfaced through the server
+- real image generation through the local server when OpenAI API key or Codex/ChatGPT OAuth auth is available
 
-The page uses the existing AgentHub/Reika asset library as seeded production art. GPT-image 2 generation is represented honestly: the button checks the local server generation path and reports that Codex/ChatGPT OAuth is not connected yet instead of fabricating a generated image.
+The page uses the existing AgentHub/Reika asset library as seeded production art. **Generate More** calls the local server, which stores successful generations as normal Art Studio assets and selects the new asset automatically. If ChatGPT OAuth is not accepted by the OpenAI image endpoint, the server reports that upstream error and can be switched to `OPENAI_API_KEY` / `REIKA_OPENAI_API_KEY`.
 
 ## Main Folders
 

@@ -338,7 +338,25 @@ REIKA_ART_STORE_PATH=~/.local/share/project-reika/art-library.json
 REIKA_ART_ASSET_DIR=~/.local/share/project-reika/art-assets
 ```
 
-The seeded library uses the project-local AgentHub/Reika assets as production defaults. User uploads are stored under `REIKA_ART_ASSET_DIR` and served through `GET /art/assets/:id/content`. GPT-image 2 generation is not faked; `POST /art/profiles/:id/categories/:categoryId/generate` reports the current Codex/ChatGPT OAuth readiness state until that auth path is connected.
+The seeded library uses the project-local AgentHub/Reika assets as production defaults. User uploads and generated images are stored under `REIKA_ART_ASSET_DIR` and served through `GET /art/assets/:id/content`.
+
+`POST /art/profiles/:id/categories/:categoryId/generate` now attempts real OpenAI image generation and inserts the returned image into the selected category as a `generated` asset. Auth is resolved in this order:
+
+1. `OPENAI_API_KEY` or `REIKA_OPENAI_API_KEY`
+2. `OPENAI_API_KEY` inside the local Codex auth file
+3. Codex/ChatGPT OAuth access token from `~/.codex/auth.json`
+
+Useful image-generation overrides:
+
+```env
+REIKA_CODEX_AUTH_PATH=C:\Users\Epic\.codex\auth.json
+REIKA_ART_IMAGE_MODEL=gpt-image-2
+REIKA_ART_IMAGE_SIZE=1024x1024
+REIKA_ART_IMAGE_QUALITY=high
+REIKA_OPENAI_IMAGES_URL=https://api.openai.com/v1/images/generations
+```
+
+If the OpenAI API rejects the ChatGPT OAuth bearer token, set `OPENAI_API_KEY` or `REIKA_OPENAI_API_KEY`. The server returns the upstream error clearly instead of pretending the image was generated.
 
 ## Provider History Import
 
