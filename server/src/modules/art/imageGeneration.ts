@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { getStoredImageApiKey, hasStoredImageApiKey } from './imageCredentials.js';
 
 export interface ImageAuthStatus {
   connected: boolean;
   provider: 'openai-api-key' | 'codex-oauth';
+  source: 'env' | 'stored' | 'codex-auth' | 'codex-oauth' | 'none';
   imageGenerationAvailable: boolean;
   quotaLabel?: string;
   message: string;
@@ -65,9 +67,21 @@ export async function getImageAuthStatus(): Promise<ImageAuthStatus> {
     return {
       connected: true,
       provider: 'openai-api-key',
+      source: 'env',
       imageGenerationAvailable: true,
       quotaLabel: 'OpenAI API',
       message: `OpenAI image generation is configured with ${imageModel()}.`
+    };
+  }
+
+  if (await hasStoredImageApiKey()) {
+    return {
+      connected: true,
+      provider: 'openai-api-key',
+      source: 'stored',
+      imageGenerationAvailable: true,
+      quotaLabel: 'Saved OpenAI API key',
+      message: `OpenAI image generation is configured from the saved local API key with ${imageModel()}.`
     };
   }
 
@@ -77,6 +91,7 @@ export async function getImageAuthStatus(): Promise<ImageAuthStatus> {
     return {
       connected: true,
       provider: 'openai-api-key',
+      source: 'codex-auth',
       imageGenerationAvailable: true,
       quotaLabel: 'Codex auth API key',
       message: `OpenAI image generation is configured from Codex auth with ${imageModel()}.`
@@ -87,6 +102,7 @@ export async function getImageAuthStatus(): Promise<ImageAuthStatus> {
     return {
       connected: true,
       provider: 'codex-oauth',
+      source: 'codex-oauth',
       imageGenerationAvailable: true,
       quotaLabel: 'ChatGPT OAuth',
       message: `Codex/ChatGPT OAuth token found. AgentHub will try ${imageModel()} through the OpenAI image API.`
@@ -96,6 +112,7 @@ export async function getImageAuthStatus(): Promise<ImageAuthStatus> {
   return {
     connected: false,
     provider: 'codex-oauth',
+    source: 'none',
     imageGenerationAvailable: false,
     quotaLabel: 'Unavailable',
     message: 'No OpenAI API key or Codex/ChatGPT OAuth token is available to the local server.'
@@ -105,6 +122,9 @@ export async function getImageAuthStatus(): Promise<ImageAuthStatus> {
 async function resolveAuthHeader() {
   const apiKey = cleanToken(process.env.OPENAI_API_KEY || process.env.REIKA_OPENAI_API_KEY);
   if (apiKey) return { provider: 'openai-api-key' as const, value: apiKey };
+
+  const storedApiKey = await getStoredImageApiKey();
+  if (storedApiKey) return { provider: 'openai-api-key' as const, value: storedApiKey };
 
   const auth = await readCodexAuth();
   const codexApiKey = cleanToken(auth?.OPENAI_API_KEY);

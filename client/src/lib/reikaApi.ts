@@ -247,6 +247,7 @@ export interface ReikaArtProfile {
 export interface ReikaArtOAuthStatus {
   connected: boolean;
   provider: "codex-oauth" | "openai-api-key";
+  source: "env" | "stored" | "codex-auth" | "codex-oauth" | "none";
   imageGenerationAvailable: boolean;
   quotaLabel?: string;
   message: string;
@@ -412,6 +413,21 @@ export async function browseAgentMemory(agent = "reika", limit = 12) {
 
 export async function getArtLibrary() {
   return request<ReikaArtLibraryResponse>("/art");
+}
+
+export async function getArtOAuthStatus() {
+  return request<{ ok: true; oauth: ReikaArtOAuthStatus }>("/art/oauth/status");
+}
+
+export async function connectArtOAuth(input: { apiKey?: string }) {
+  return request<{ ok: true; oauth: ReikaArtOAuthStatus; message: string }>("/art/oauth/connect", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function disconnectArtOAuth() {
+  return request<{ ok: true; oauth: ReikaArtOAuthStatus; message: string }>("/art/oauth/disconnect", { method: "POST" });
 }
 
 export async function createArtProfile(input: { name?: string; subtitle?: string; scope?: ReikaArtScope }) {

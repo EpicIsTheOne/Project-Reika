@@ -3366,6 +3366,7 @@ img {
 .art-title-line,
 .art-header-actions,
 .art-credit-card,
+.art-auth-card,
 .art-tabs,
 .art-section-heading,
 .art-toolbar,
@@ -3419,6 +3420,56 @@ img {
   border: 1px solid rgba(87, 148, 255, 0.22);
   border-radius: 10px;
   background: rgba(7, 16, 36, 0.7);
+}
+
+.art-auth-card {
+  min-height: 56px;
+  gap: 0.65rem;
+  padding: 0 0.7rem 0 0.95rem;
+  border: 1px solid rgba(87, 148, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(7, 16, 36, 0.7);
+}
+
+.art-auth-card.connected {
+  border-color: rgba(42, 214, 128, 0.28);
+  box-shadow: 0 0 18px rgba(22, 163, 255, 0.08);
+}
+
+.art-auth-card > svg {
+  color: var(--blue-2);
+}
+
+.art-auth-card span {
+  display: grid;
+  min-width: 92px;
+}
+
+.art-auth-card small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.art-auth-card strong {
+  color: #eff6ff;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.art-auth-card input {
+  width: 176px;
+  min-height: 36px;
+  padding: 0 0.8rem;
+  border: 1px solid rgba(87, 148, 255, 0.18);
+  border-radius: 8px;
+  color: #eef4ff;
+  background: rgba(8, 18, 39, 0.76);
+  outline: none;
+}
+
+.art-auth-card input:focus {
+  border-color: rgba(0, 149, 255, 0.68);
+  box-shadow: 0 0 0 3px rgba(0, 128, 255, 0.13);
 }
 
 .art-credit-card > svg {
@@ -4390,6 +4441,14 @@ img {
   grid-template-columns: minmax(260px, 420px) auto auto;
   gap: 0.65rem;
   align-items: center;
+}
+
+.relay-url-control.secret-control {
+  grid-template-columns: auto minmax(220px, 360px) auto auto;
+}
+
+.relay-url-control.secret-control > svg {
+  color: var(--blue-2);
 }
 
 .relay-url-control input {

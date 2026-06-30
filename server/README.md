@@ -343,8 +343,25 @@ The seeded library uses the project-local AgentHub/Reika assets as production de
 `POST /art/profiles/:id/categories/:categoryId/generate` now attempts real OpenAI image generation and inserts the returned image into the selected category as a `generated` asset. Auth is resolved in this order:
 
 1. `OPENAI_API_KEY` or `REIKA_OPENAI_API_KEY`
-2. `OPENAI_API_KEY` inside the local Codex auth file
-3. Codex/ChatGPT OAuth access token from `~/.codex/auth.json`
+2. saved local image key from `POST /art/oauth/connect`
+3. `OPENAI_API_KEY` inside the local Codex auth file
+4. Codex/ChatGPT OAuth access token from `~/.codex/auth.json`
+
+The saved local key is written to `~/.local/share/project-reika/image-auth.json` by default. Override that path for tests or alternate packaging with:
+
+```env
+REIKA_IMAGE_AUTH_STORE_PATH=C:\path\to\image-auth.json
+```
+
+Connect or clear the saved local key through the API:
+
+```bash
+curl -X POST http://127.0.0.1:47840/art/oauth/connect \
+  -H "Content-Type: application/json" \
+  -d "{\"apiKey\":\"sk-...\"}"
+
+curl -X POST http://127.0.0.1:47840/art/oauth/disconnect
+```
 
 Useful image-generation overrides:
 
@@ -356,7 +373,7 @@ REIKA_ART_IMAGE_QUALITY=high
 REIKA_OPENAI_IMAGES_URL=https://api.openai.com/v1/images/generations
 ```
 
-If the OpenAI API rejects the ChatGPT OAuth bearer token, set `OPENAI_API_KEY` or `REIKA_OPENAI_API_KEY`. The server returns the upstream error clearly instead of pretending the image was generated.
+If the OpenAI API rejects the ChatGPT OAuth bearer token, save an API key through Agent Art Studio/Settings or set `OPENAI_API_KEY` / `REIKA_OPENAI_API_KEY`. The server returns the upstream error clearly instead of pretending the image was generated.
 
 ## Provider History Import
 

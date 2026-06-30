@@ -40,7 +40,7 @@ Implemented:
 - safe command dispatcher
 - disabled-by-default outbound relay/uplink client
 - local development endpoints for health/state/providers/uplink/events
-- local Agent Art Studio endpoints for art profiles, categories, prompts, uploads, references, and OpenAI-backed image generation
+- local Agent Art Studio endpoints for art profiles, categories, prompts, uploads, references, saved image auth, and OpenAI-backed image generation
 - tested outbound connection against the dev relay
 
 See:

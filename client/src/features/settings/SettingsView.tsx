@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bell, Box, Brush, ChevronDown, ChevronRight, Code2, Globe2, Info, Monitor, Palette, Shield } from "lucide-react";
+import { Bell, Box, Brush, ChevronDown, ChevronRight, Code2, Globe2, Info, KeyRound, Monitor, Palette, Shield } from "lucide-react";
 import { defaultReikaRelayDeviceUrl } from "../../config/relay";
 import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "../../data/startup";
 import { assets } from "../../data/assets";
@@ -7,12 +7,16 @@ import {
   applyUpdates,
   checkForUpdates,
   clearCache,
+  connectArtOAuth,
+  disconnectArtOAuth,
+  getArtOAuthStatus,
   getCacheStatus,
   getSecurityStatus,
   getUpdateStatus,
   patchSettings,
   refreshProviders,
   type ReikaCacheStatus,
+  type ReikaArtOAuthStatus,
   type ReikaSecurityStatus,
   type ReikaSettings,
   type ReikaStateResponse,
@@ -48,6 +52,8 @@ export function SettingsView({
   const [cacheStatus, setCacheStatus] = useState<ReikaCacheStatus | null>(null);
   const [securityStatus, setSecurityStatus] = useState<ReikaSecurityStatus | null>(null);
   const [relayUrlDraft, setRelayUrlDraft] = useState(settings.relayUrl);
+  const [artOauth, setArtOauth] = useState<ReikaArtOAuthStatus | null>(null);
+  const [artApiKeyDraft, setArtApiKeyDraft] = useState("");
   const settingsTabs = [
     { title: "General", detail: "Basic preferences", icon: Brush },
     { title: "Devices", detail: "Manage your devices", icon: Monitor },
@@ -77,6 +83,11 @@ export function SettingsView({
     getSecurityStatus()
       .then((status) => {
         if (active) setSecurityStatus(status);
+      })
+      .catch(() => undefined);
+    getArtOAuthStatus()
+      .then((status) => {
+        if (active) setArtOauth(status.oauth);
       })
       .catch(() => undefined);
     return () => {
@@ -147,6 +158,32 @@ export function SettingsView({
       .then((state) => {
         onSettingsChange(state.settings ?? settings, state);
         setSettingsError("Provider scan complete.");
+      })
+      .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setBusySetting(null));
+  };
+
+  const saveArtApiKey = () => {
+    if (!artApiKeyDraft.trim()) return;
+    setBusySetting("artOauth");
+    setSettingsError(null);
+    connectArtOAuth({ apiKey: artApiKeyDraft.trim() })
+      .then((response) => {
+        setArtOauth(response.oauth);
+        setArtApiKeyDraft("");
+        setSettingsError(response.message);
+      })
+      .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setBusySetting(null));
+  };
+
+  const clearArtApiKey = () => {
+    setBusySetting("artOauth");
+    setSettingsError(null);
+    disconnectArtOAuth()
+      .then((response) => {
+        setArtOauth(response.oauth);
+        setSettingsError(response.message);
       })
       .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
       .finally(() => setBusySetting(null));
@@ -251,6 +288,25 @@ export function SettingsView({
                 </SettingRow>
                 <SettingRow title="Provider Refresh" detail={backendError ?? `Backend mode: ${backendMode}.`}>
                   <button className="secondary-action small" onClick={runProviderRefresh} disabled={Boolean(busySetting)}>Refresh</button>
+                </SettingRow>
+                <SettingRow title="Art Generation Key" detail={artOauth?.message ?? "Saved locally on the Reika server. The key is never echoed back to the client."}>
+                  <div className="relay-url-control secret-control">
+                    <KeyRound size={18} />
+                    <input
+                      value={artApiKeyDraft}
+                      onChange={(event) => setArtApiKeyDraft(event.target.value)}
+                      placeholder={artOauth?.connected ? `${authLabel(artOauth.source)} connected` : "OpenAI API key"}
+                      type="password"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <button className="primary-action small" onClick={saveArtApiKey} disabled={busySetting === "artOauth" || !artApiKeyDraft.trim()}>
+                      Save
+                    </button>
+                    <button className="secondary-action small" onClick={clearArtApiKey} disabled={busySetting === "artOauth"}>
+                      Clear
+                    </button>
+                  </div>
                 </SettingRow>
               </>
             ) : null}
@@ -481,6 +537,14 @@ function themeLabel(theme: ReikaSettings["theme"]) {
   if (theme === "blue") return "Electric Blue";
   if (theme === "contrast") return "High Contrast";
   return "Midnight";
+}
+
+function authLabel(source?: string) {
+  if (source === "stored") return "Saved key";
+  if (source === "env") return "Env key";
+  if (source === "codex-auth") return "Codex key";
+  if (source === "codex-oauth") return "Codex OAuth";
+  return "No key";
 }
 
 function isValidRelayDeviceUrl(value: string) {

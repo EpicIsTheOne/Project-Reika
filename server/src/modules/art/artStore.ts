@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { dirname, extname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { generateImageWithOpenAI, getImageAuthStatus, type ImageAuthStatus } from './imageGeneration.js';
+import { clearStoredImageApiKey, saveStoredImageApiKey } from './imageCredentials.js';
 
 export type ArtScope = 'agent' | 'global';
 export type ArtSelectionMode = 'single' | 'random';
@@ -56,6 +57,7 @@ export interface ArtProfileRecord {
 export interface ArtOAuthStatus {
   connected: boolean;
   provider: ImageAuthStatus['provider'];
+  source: ImageAuthStatus['source'];
   imageGenerationAvailable: boolean;
   quotaLabel?: string;
   message: string;
@@ -479,6 +481,16 @@ export class ArtStore {
 
   async oauthStatus(): Promise<ArtOAuthStatus> {
     return getImageAuthStatus();
+  }
+
+  async connectImageAuth(input: { apiKey?: unknown } = {}) {
+    if (input.apiKey !== undefined) await saveStoredImageApiKey(input.apiKey);
+    return this.oauthStatus();
+  }
+
+  async disconnectImageAuth() {
+    await clearStoredImageApiKey();
+    return this.oauthStatus();
   }
 
   list() {

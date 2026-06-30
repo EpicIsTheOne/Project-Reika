@@ -588,14 +588,31 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && url.pathname === '/art/oauth/connect') {
-      const oauth = await art.oauthStatus();
+      const body = await readJson(req);
+      const oauth = await art.connectImageAuth({ apiKey: body.apiKey });
+      addNotification({
+        kind: 'system',
+        title: 'Image generation connected',
+        body: oauth.message,
+        source: 'art-studio',
+        tone: 'green',
+        data: { oauth: { provider: oauth.provider, source: oauth.source, connected: oauth.connected } }
+      });
       sendJson(res, 200, { ok: true, oauth, message: oauth.message });
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/art/oauth/disconnect') {
-      const oauth = await art.oauthStatus();
-      sendJson(res, 200, { ok: true, oauth, message: 'Codex/ChatGPT OAuth is disconnected.' });
+      const oauth = await art.disconnectImageAuth();
+      addNotification({
+        kind: 'system',
+        title: 'Saved image key cleared',
+        body: oauth.connected ? `Saved key cleared. ${oauth.message}` : 'Saved local OpenAI API key was cleared.',
+        source: 'art-studio',
+        tone: oauth.connected ? 'blue' : 'orange',
+        data: { oauth: { provider: oauth.provider, source: oauth.source, connected: oauth.connected } }
+      });
+      sendJson(res, 200, { ok: true, oauth, message: oauth.connected ? oauth.message : 'Saved local OpenAI API key was cleared.' });
       return;
     }
 
@@ -717,14 +734,25 @@ const server = http.createServer(async (req, res) => {
     const artGenerateMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/categories\/([^/]+)\/generate$/);
     if (req.method === 'POST' && artGenerateMatch) {
       const generation = await art.requestGeneration(decodeURIComponent(artGenerateMatch[1] || ''), decodeURIComponent(artGenerateMatch[2] || ''));
-      addNotification({
-        kind: 'warning',
-        title: 'Image generation waiting on OAuth',
-        body: generation.message,
-        source: 'art-studio',
-        tone: 'orange',
-        data: { generation }
-      });
+      if (generation.status === 'completed') {
+        addNotification({
+          kind: 'file',
+          title: 'Art generated',
+          body: generation.message,
+          source: 'art-studio',
+          tone: 'green',
+          data: { generation }
+        });
+      } else {
+        addNotification({
+          kind: 'warning',
+          title: generation.status === 'blocked' ? 'Image generation needs auth' : 'Image generation failed',
+          body: generation.message,
+          source: 'art-studio',
+          tone: 'orange',
+          data: { generation }
+        });
+      }
       sendJson(res, 200, await artPayload({ generation }));
       return;
     }

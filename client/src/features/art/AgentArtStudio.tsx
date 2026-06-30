@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, ElementType } from "react";
-import { Activity, Bell, Box, Check, ChevronDown, Copy, Gift, Grid2X2, Heart, Images, Info, Layers, Link2, List, Monitor, Plus, Sparkles, Trash2, TriangleAlert, Upload, UserRound, WandSparkles, X } from "lucide-react";
+import { Activity, Bell, Box, Check, ChevronDown, Copy, Gift, Grid2X2, Heart, Images, Info, KeyRound, Layers, Link2, List, Monitor, Plus, Sparkles, Trash2, TriangleAlert, Upload, UserRound, WandSparkles, X } from "lucide-react";
 import {
+  connectArtOAuth,
   createArtCategory,
   createArtProfile,
   deleteArtAsset,
   deleteArtCategory,
   deleteArtProfile,
+  disconnectArtOAuth,
   duplicateArtProfile,
   getArtLibrary,
   linkArtAsset,
@@ -51,6 +53,7 @@ export function AgentArtStudio({
   const [systemPromptDraft, setSystemPromptDraft] = useState("");
   const [linkName, setLinkName] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -235,6 +238,36 @@ export function AgentArtStudio({
     runAction("generate-art", () => requestArtGeneration(selectedProfile.id, selectedCategory.id), (response) => response.generation?.message ?? "Generation request checked.");
   };
 
+  const connectImageGeneration = () => {
+    const apiKey = apiKeyDraft.trim();
+    if (!apiKey) {
+      setNotice("Paste an OpenAI API key first, or use Codex auth from the local server.");
+      return;
+    }
+    setBusy("connect-art-auth");
+    setNotice(null);
+    connectArtOAuth({ apiKey })
+      .then((response) => {
+        if (library) applyLibrary({ ...library, oauth: response.oauth });
+        setApiKeyDraft("");
+        setNotice(response.message);
+      })
+      .catch((error) => setNotice(readableError(error, "Could not save image generation key.")))
+      .finally(() => setBusy(null));
+  };
+
+  const clearImageGenerationKey = () => {
+    setBusy("disconnect-art-auth");
+    setNotice(null);
+    disconnectArtOAuth()
+      .then((response) => {
+        if (library) applyLibrary({ ...library, oauth: response.oauth });
+        setNotice(response.message);
+      })
+      .catch((error) => setNotice(readableError(error, "Could not clear image generation key.")))
+      .finally(() => setBusy(null));
+  };
+
   return (
     <main className={pageMotionClass("page agent-art-page")}>
       <header className="art-header">
@@ -250,6 +283,27 @@ export function AgentArtStudio({
             <Info size={16} />
             How it works
           </button>
+          <div className={cx("art-auth-card", library?.oauth.connected && "connected")}>
+            <KeyRound size={18} />
+            <span>
+              <small>Image Auth</small>
+              <strong>{library?.oauth.connected ? authLabel(library.oauth.source) : "Not Set"}</strong>
+            </span>
+            <input
+              value={apiKeyDraft}
+              onChange={(event) => setApiKeyDraft(event.target.value)}
+              placeholder="OpenAI API key"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button className="secondary-action small" type="button" onClick={connectImageGeneration} disabled={busy !== null || !apiKeyDraft.trim()}>
+              Save
+            </button>
+            <button className="icon-button compact" type="button" onClick={clearImageGenerationKey} disabled={busy !== null} aria-label="Clear saved image key">
+              <X size={16} />
+            </button>
+          </div>
           <div className="art-credit-card">
             <Images size={20} />
             <span>
@@ -390,7 +444,7 @@ export function AgentArtStudio({
 
           <footer className="art-tip">
             <Sparkles size={16} />
-            Changes are saved automatically. Generated images will live in this library once OAuth generation is connected.
+            Changes are saved automatically. Generated images use the saved OpenAI API key, env key, or Codex auth when available.
           </footer>
         </section>
 
@@ -506,6 +560,14 @@ export function AgentArtStudio({
       </div>
     </main>
   );
+}
+
+function authLabel(source?: string) {
+  if (source === "stored") return "Saved Key";
+  if (source === "env") return "Env Key";
+  if (source === "codex-auth") return "Codex Key";
+  if (source === "codex-oauth") return "Codex OAuth";
+  return "Not Set";
 }
 
 function ArtCategoryCard({ category, active, onClick, motionIndex = 0 }: { category: ReikaArtCategory; active: boolean; onClick: () => void; motionIndex?: number }) {
