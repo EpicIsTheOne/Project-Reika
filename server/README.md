@@ -191,9 +191,12 @@ REIKA_RECONNECT_MAX_MS=30000
 REIKA_SESSION_STORE_PATH=~/.local/share/project-reika/sessions.json
 REIKA_PAIRING_UI=true
 REIKA_PAIRING_UI_OPEN=true
+REIKA_AUTO_PAIR_LOCAL_RELAY=true
 ```
 
 If `REIKA_DEVICE_ID` is empty, the server derives one from the detected platform and hostname.
+
+The local Windows agent also attempts a safe auto-pair on boot against the saved relay URL. It reconnects directly when the relay already knows the local device ID, or creates/claims/approves a short-lived pairing session for the local device when it does not. Set `REIKA_AUTO_PAIR_LOCAL_RELAY=false` to disable that local convenience behavior.
 
 ## Windows Agent
 
@@ -347,6 +350,8 @@ The seeded library uses the project-local AgentHub/Reika assets as production de
 3. `OPENAI_API_KEY` inside the local Codex auth file
 4. Codex/ChatGPT OAuth access token from `~/.codex/auth.json`
 
+API-key auth uses the public OpenAI Images API. Codex/ChatGPT OAuth uses the Codex backend `responses` route with the `image_generation` tool, matching the Hermes `openai-codex` provider shape instead of sending the OAuth bearer token to the public Images API.
+
 The saved local key is written to `~/.local/share/project-reika/image-auth.json` by default. Override that path for tests or alternate packaging with:
 
 ```env
@@ -367,13 +372,13 @@ Useful image-generation overrides:
 
 ```env
 REIKA_CODEX_AUTH_PATH=C:\Users\Epic\.codex\auth.json
+REIKA_CODEX_BASE_URL=https://chatgpt.com/backend-api/codex
+REIKA_CODEX_IMAGE_CHAT_MODEL=gpt-5.5
 REIKA_ART_IMAGE_MODEL=gpt-image-2
 REIKA_ART_IMAGE_SIZE=1024x1024
 REIKA_ART_IMAGE_QUALITY=high
 REIKA_OPENAI_IMAGES_URL=https://api.openai.com/v1/images/generations
 ```
-
-If the OpenAI API rejects the ChatGPT OAuth bearer token, save an API key through Agent Art Studio/Settings or set `OPENAI_API_KEY` / `REIKA_OPENAI_API_KEY`. The server returns the upstream error clearly instead of pretending the image was generated.
 
 ## Provider History Import
 

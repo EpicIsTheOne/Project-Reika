@@ -109,7 +109,7 @@ Image generation auth can be managed from:
 - `Agent Art` header: paste an OpenAI API key into **Image Auth** and save it
 - `Settings > Providers`: use **Art Generation Key** to save or clear the same local key
 
-The key is stored by the local server and is never echoed back to the client. If ChatGPT OAuth is not accepted by the OpenAI image endpoint, the server reports that upstream error and can be switched to the saved key, `OPENAI_API_KEY`, or `REIKA_OPENAI_API_KEY`.
+The key is stored by the local server and is never echoed back to the client. Saved/env API keys use the public OpenAI Images API. Codex/ChatGPT OAuth uses the Codex backend `image_generation` tool path, so signed-in Codex users can generate without adding a separate API key.
 
 ## Main Folders
 

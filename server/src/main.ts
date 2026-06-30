@@ -237,6 +237,8 @@ async function boot() {
       pairingToken: cli.code,
       deviceId: cli.deviceId
     });
+  } else {
+    void autoPairLocalRelay();
   }
   events.emit('server.ready', fullSnapshot());
   void runConfiguredUpdateCheck();
@@ -253,6 +255,94 @@ function fullSnapshot() {
     artStore: art.snapshot(),
     uplink: relayClient.snapshot()
   };
+}
+
+async function autoPairLocalRelay() {
+  if (String(process.env.REIKA_AUTO_PAIR_LOCAL_RELAY || 'true').toLowerCase() === 'false') return;
+  const relayUrl = settings.get().relayUrl || serverConfig.uplink.relayUrl;
+  if (!isRelayDeviceUrl(relayUrl)) return;
+  const current = relayClient.snapshot();
+  if (current.status === 'connected' && current.relayUrl === relayUrl) return;
+
+  const snapshot = state.snapshot();
+  const deviceId = snapshot.device.id;
+  const baseUrl = relayApiBaseUrl(relayUrl);
+  if (!baseUrl) return;
+
+  try {
+    const deviceState = await relayFetch<{ ok: boolean; devices?: Array<{ device?: { id?: string } }> }>(baseUrl, '/devices');
+    if (deviceState.devices?.some((record) => record.device?.id === deviceId)) {
+      relayClient.connectWith({ relayUrl, deviceId });
+      addNotification({
+        kind: 'device',
+        title: 'Relay uplink restored',
+        body: `${snapshot.device.name} reconnected to ${relayUrl}.`,
+        source: 'uplink',
+        tone: 'green',
+        data: { relayUrl, deviceId }
+      });
+      return;
+    }
+
+    const created = await relayFetch<{ ok: boolean; pairing?: { code?: string } }>(baseUrl, '/pairing/create', 'POST', {});
+    const code = created.pairing?.code;
+    if (!code) throw new Error('Relay did not return a pairing code.');
+    await relayFetch(baseUrl, '/pairing/claim', 'POST', {
+      code,
+      device: {
+        name: snapshot.device.name,
+        platform: snapshot.device.platform,
+        type: snapshot.device.platform === 'linux' ? 'server' : 'pc',
+        location: 'local',
+        agentVersion: serverConfig.serviceName,
+        fingerprint: deviceId
+      }
+    });
+    await relayFetch(baseUrl, '/pairing/approve', 'POST', { code });
+    relayClient.connectWith({ relayUrl, pairingToken: code, deviceId });
+    addNotification({
+      kind: 'device',
+      title: 'Local device auto-paired',
+      body: `${snapshot.device.name} was paired with ${relayUrl}.`,
+      source: 'uplink',
+      tone: 'green',
+      data: { relayUrl, deviceId }
+    });
+  } catch (error) {
+    addNotification({
+      kind: 'warning',
+      title: 'Relay auto-pair failed',
+      body: error instanceof Error ? error.message : String(error),
+      source: 'uplink',
+      tone: 'orange',
+      data: { relayUrl, deviceId }
+    });
+  }
+}
+
+function relayApiBaseUrl(relayDeviceUrl: string) {
+  try {
+    const url = new URL(relayDeviceUrl);
+    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') return undefined;
+    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+    url.pathname = url.pathname.replace(/\/device\/?$/u, '').replace(/\/+$/u, '') || '/';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/$/u, '');
+  } catch {
+    return undefined;
+  }
+}
+
+async function relayFetch<T = unknown>(baseUrl: string, path: string, method = 'GET', body?: unknown): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const payload = await response.json().catch(() => undefined) as T & { error?: string; ok?: boolean };
+  if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `Relay request failed (${response.status}).`);
+  return payload as T;
 }
 
 function summarizeUpdateFiles(files: { path: string }[]) {

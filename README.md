@@ -181,7 +181,9 @@ npm run desktop:shortcut
 
 The desktop shell packages the React client in a normal app window while keeping the browser/Vite path available for fast testing.
 
-To connect the device server through the relay, open AgentHub, choose **Add Device** or **Connect Agent** on the Devices page, and follow the Agent Connection Wizard. The wizard creates the pairing code, shows Windows/Linux instructions, approves claimed devices, then verifies state, providers, and agent roster with safe relay requests only.
+To connect another device server through the relay, open AgentHub, choose **Add Device** or **Connect Agent** on the Devices page, and follow the Agent Connection Wizard. The wizard creates the pairing code, shows Windows/Linux instructions, approves claimed devices, then verifies state, providers, and agent roster with safe relay requests only.
+
+The local Windows agent server auto-pairs itself to the saved relay URL on boot when the relay is reachable and the device is not already registered. Set `REIKA_AUTO_PAIR_LOCAL_RELAY=false` to disable that local convenience behavior.
 
 Manual relay environment for development:
 

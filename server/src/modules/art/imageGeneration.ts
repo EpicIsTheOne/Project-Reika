@@ -48,6 +48,14 @@ function imageQuality() {
   return process.env.REIKA_ART_IMAGE_QUALITY || 'high';
 }
 
+function codexChatModel() {
+  return process.env.REIKA_CODEX_IMAGE_CHAT_MODEL || 'gpt-5.5';
+}
+
+function codexBaseUrl() {
+  return (process.env.REIKA_CODEX_BASE_URL || 'https://chatgpt.com/backend-api/codex').replace(/\/+$/u, '');
+}
+
 function cleanToken(value: unknown) {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
@@ -105,7 +113,7 @@ export async function getImageAuthStatus(): Promise<ImageAuthStatus> {
       source: 'codex-oauth',
       imageGenerationAvailable: true,
       quotaLabel: 'ChatGPT OAuth',
-      message: `Codex/ChatGPT OAuth token found. AgentHub will try ${imageModel()} through the OpenAI image API.`
+      message: `Codex/ChatGPT OAuth token found. AgentHub will use ${imageModel()} through the Codex image_generation tool.`
     };
   }
 
@@ -169,6 +177,10 @@ export async function generateImageWithOpenAI(input: { prompt: string; systemPro
 
   const model = imageModel();
   const prompt = [input.systemPrompt, input.prompt].filter(Boolean).join('\n\n');
+  if (auth.provider === 'codex-oauth') {
+    return generateImageWithCodexOAuth({ prompt, token: auth.value, model });
+  }
+
   const response = await fetch(process.env.REIKA_OPENAI_IMAGES_URL || 'https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: {
@@ -194,10 +206,7 @@ export async function generateImageWithOpenAI(input: { prompt: string; systemPro
   }
 
   if (!response.ok) {
-    const hint = auth.provider === 'codex-oauth'
-      ? ' The ChatGPT OAuth token may not be accepted by this OpenAI API endpoint; set OPENAI_API_KEY or REIKA_OPENAI_API_KEY if this keeps failing.'
-      : '';
-    throw new Error(`OpenAI image generation failed (${response.status}): ${upstreamMessage(payload, response.statusText)}.${hint}`);
+    throw new Error(`OpenAI image generation failed (${response.status}): ${upstreamMessage(payload, response.statusText)}. Check that the saved API key has access to ${model} and image generation scopes.`);
   }
 
   const image = extractImageBase64(payload);
@@ -209,4 +218,142 @@ export async function generateImageWithOpenAI(input: { prompt: string; systemPro
     model,
     provider: auth.provider
   };
+}
+
+async function generateImageWithCodexOAuth(input: { prompt: string; token: string; model: string }): Promise<GeneratedImageResult> {
+  const response = await fetch(`${codexBaseUrl()}/responses`, {
+    method: 'POST',
+    headers: {
+      ...codexHeaders(input.token),
+      Accept: 'text/event-stream',
+      Authorization: `Bearer ${input.token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: codexChatModel(),
+      store: false,
+      instructions: 'You are an assistant that must fulfill image generation requests by using the image_generation tool when provided.',
+      input: [{
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: input.prompt }]
+      }],
+      tools: [{
+        type: 'image_generation',
+        model: input.model,
+        size: imageSize(),
+        quality: imageQuality(),
+        output_format: 'png',
+        background: 'opaque',
+        partial_images: 1
+      }],
+      tool_choice: {
+        type: 'allowed_tools',
+        mode: 'required',
+        tools: [{ type: 'image_generation' }]
+      },
+      stream: true
+    })
+  });
+
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(`Codex OAuth image generation failed (${response.status}): ${raw.slice(0, 800) || response.statusText}`);
+  }
+
+  const base64 = extractCodexImageBase64(raw);
+  if (!base64) throw new Error('Codex OAuth image generation completed but returned no image_generation result.');
+  return {
+    base64,
+    mimeType: 'image/png',
+    model: input.model,
+    provider: 'codex-oauth'
+  };
+}
+
+function codexHeaders(accessToken: string) {
+  const headers: Record<string, string> = {
+    'User-Agent': 'codex_cli_rs/0.0.0 (Project Reika)',
+    originator: 'codex_cli_rs'
+  };
+  const accountId = chatGptAccountId(accessToken);
+  if (accountId) headers['ChatGPT-Account-ID'] = accountId;
+  return headers;
+}
+
+function chatGptAccountId(accessToken: string) {
+  try {
+    const [, payload] = accessToken.split('.');
+    if (!payload) return undefined;
+    const padded = payload.padEnd(payload.length + ((4 - payload.length % 4) % 4), '=');
+    const decoded = JSON.parse(Buffer.from(padded, 'base64url').toString('utf8')) as {
+      'https://api.openai.com/auth'?: { chatgpt_account_id?: unknown };
+    };
+    const accountId = decoded['https://api.openai.com/auth']?.chatgpt_account_id;
+    return typeof accountId === 'string' && accountId ? accountId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function extractCodexImageBase64(rawSse: string) {
+  let latest: string | undefined;
+  for (const event of parseSseJson(rawSse)) {
+    const found = findCodexImageBase64(event);
+    if (found) latest = found;
+  }
+  return latest;
+}
+
+function parseSseJson(rawSse: string) {
+  const payloads: unknown[] = [];
+  let eventName = '';
+  let dataLines: string[] = [];
+  const flush = () => {
+    const raw = dataLines.join('\n').trim();
+    dataLines = [];
+    if (!raw || raw === '[DONE]') {
+      eventName = '';
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (eventName && typeof parsed.type !== 'string') parsed.type = eventName;
+      payloads.push(parsed);
+    } catch {
+      // Ignore non-JSON SSE records.
+    }
+    eventName = '';
+  };
+
+  for (const line of rawSse.split(/\r?\n/u)) {
+    if (line === '') {
+      flush();
+    } else if (line.startsWith('event:')) {
+      eventName = line.slice('event:'.length).trim();
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice('data:'.length).trimStart());
+    }
+  }
+  flush();
+  return payloads;
+}
+
+function findCodexImageBase64(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findCodexImageBase64(item);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  if (record.type === 'image_generation_call' && typeof record.result === 'string' && record.result) return record.result;
+  if (typeof record.partial_image_b64 === 'string' && record.partial_image_b64) return record.partial_image_b64;
+  for (const child of Object.values(record)) {
+    const found = findCodexImageBase64(child);
+    if (found) return found;
+  }
+  return undefined;
 }

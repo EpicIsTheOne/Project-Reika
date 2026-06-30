@@ -718,7 +718,7 @@ export class ArtStore {
         metadata: {
           provider: generated.provider,
           revisedPrompt: generated.revisedPrompt,
-          source: 'openai-images'
+          source: generated.provider === 'codex-oauth' ? 'codex-image-generation' : 'openai-images'
         }
       };
       categoryRecord.assets.unshift(record);
