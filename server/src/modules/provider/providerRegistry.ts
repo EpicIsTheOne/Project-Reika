@@ -15,7 +15,8 @@ const mockProvider: ProviderRecord = {
   ],
   capabilities: [
     { id: 'state', label: 'Local state' },
-    { id: 'events', label: 'In-memory events' }
+    { id: 'events', label: 'In-memory events' },
+    { id: 'chat', label: 'Mock chat transport' }
   ]
 };
 

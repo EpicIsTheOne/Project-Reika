@@ -21,6 +21,10 @@ export type AgentHubEnvelopeType = (typeof agentHubEnvelopeTypes)[number];
 
 export interface DeviceHelloPayload extends DeviceRegistrationRequest {
   deviceId?: string;
+  deviceName?: string;
+  platform?: string;
+  service?: string;
+  capabilities?: string[];
 }
 
 export interface DeviceStateSnapshotPayload {
@@ -32,6 +36,23 @@ export interface DeviceStateSnapshotPayload {
 export interface AgentRosterSnapshotPayload {
   deviceId: string;
   agents: AgentHubAgent[];
+}
+
+export interface AgentChatRequestPayload {
+  providerId?: string;
+  agent?: string;
+  sessionId?: string;
+  message: string;
+  model?: string;
+  fileIds?: string[];
+}
+
+export interface AgentChatResponsePayload {
+  providerId: string;
+  agent: string;
+  sessionId: string;
+  text: string;
+  runtime: string;
 }
 
 export interface CommandStatusPayload {

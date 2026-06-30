@@ -38,6 +38,23 @@ export interface AgentRosterSnapshotPayload {
   agents: AgentHubAgent[];
 }
 
+export interface AgentChatRequestPayload {
+  providerId?: string;
+  agent?: string;
+  sessionId?: string;
+  message: string;
+  model?: string;
+  fileIds?: string[];
+}
+
+export interface AgentChatResponsePayload {
+  providerId: string;
+  agent: string;
+  sessionId: string;
+  text: string;
+  runtime: string;
+}
+
 export interface CommandStatusPayload {
   ok: boolean;
   message: string;

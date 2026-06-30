@@ -224,12 +224,12 @@ function notifyUpdateAvailable(status: Awaited<ReturnType<typeof getUpdateStatus
   if (!status.available) return;
   const alreadyUnread = notifications.list({ unreadOnly: true, limit: 200 }).some((item) => {
     const update = typeof item.data?.update === 'object' && item.data.update ? item.data.update as { remoteSha?: unknown } : undefined;
-    return item.source === 'github' && item.title === 'AgentHub update available' && update?.remoteSha === status.remoteSha;
+    return item.source === 'github' && (item.title === 'Project Reika update available' || item.title === 'AgentHub update available') && update?.remoteSha === status.remoteSha;
   });
   if (alreadyUnread) return;
   notifications.add({
     kind: 'system',
-    title: 'AgentHub update available',
+    title: 'Project Reika update available',
     body: `${status.message} Changed files: ${summarizeUpdateFiles(status.files)}. ${updateDescriptionText(status.descriptions)}`,
     source: 'github',
     tone: 'blue',
@@ -240,7 +240,7 @@ function notifyUpdateAvailable(status: Awaited<ReturnType<typeof getUpdateStatus
 function notifyUpdateApplied(result: Awaited<ReturnType<typeof applyGitHubUpdate>>) {
   notifications.add({
     kind: 'system',
-    title: result.applied ? 'AgentHub updated from GitHub' : 'AgentHub update checked',
+    title: result.applied ? 'Project Reika updated from GitHub' : 'Project Reika update checked',
     body: `${result.message} Changed files: ${summarizeUpdateFiles(result.files)}. ${updateDescriptionText(result.descriptions)}`,
     source: 'github',
     tone: result.applied ? 'green' : 'blue',
@@ -266,7 +266,7 @@ async function runConfiguredUpdateCheck() {
     events.emit('updates.error', { error: message });
     notifications.add({
       kind: 'warning',
-      title: 'AgentHub update check failed',
+      title: 'Project Reika update check failed',
       body: message,
       source: 'github',
       tone: 'orange'
