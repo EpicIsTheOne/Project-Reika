@@ -487,19 +487,24 @@ function resolveHelloDevice(envelope: AgentHubEnvelope, pairingToken?: string | 
     accountId?: string;
   };
   const candidateDeviceId = payload.deviceId ?? queryDeviceId ?? envelope.source?.id;
-  const explicitDevice = candidateDeviceId ? devices.get(candidateDeviceId)?.device : null;
-  if (explicitDevice) return { ...explicitDevice, ...makeDevice(payload, explicitDevice.accountId), id: explicitDevice.id };
-
   const token = payload.pairingCode ?? pairingToken;
   if (token) {
     const normalized = normalizeCode(token);
     const session = pairingSessions.get(normalized);
-    if (session && session.status !== "approved" && !session.device) {
-      const device = makeDevice(payload, session.accountId, candidateDeviceId);
+    if (session && session.status !== "approved") {
+      const existingDevice = candidateDeviceId ? devices.get(candidateDeviceId)?.device : null;
+      const device = {
+        ...makeDevice(payload, session.accountId, candidateDeviceId),
+        publicKey: session.device?.publicKey ?? existingDevice?.publicKey,
+        keyVersion: session.device?.keyVersion ?? existingDevice?.keyVersion,
+        revokedAt: undefined
+      };
       session.status = "claimed";
       session.claimedAt = new Date().toISOString();
       session.deviceId = device.id;
       session.device = device;
+      session.publicKey = device.publicKey;
+      saveRelayStore();
       broadcastRelayState();
       return device;
     }
@@ -515,6 +520,9 @@ function resolveHelloDevice(envelope: AgentHubEnvelope, pairingToken?: string | 
     }
     return null;
   }
+
+  const explicitDevice = candidateDeviceId ? devices.get(candidateDeviceId)?.device : null;
+  if (explicitDevice) return { ...explicitDevice, ...makeDevice(payload, explicitDevice.accountId), id: explicitDevice.id };
 
   const requestDevice = makeDevice(payload, payload.accountId ?? relayConfig.accountId, candidateDeviceId);
   const existing = devices.get(requestDevice.id);

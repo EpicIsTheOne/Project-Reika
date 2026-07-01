@@ -120,11 +120,13 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
     });
 
     socket.addEventListener("close", () => {
+      if (closed) return;
       onStatus("offline");
-      if (!closed) reconnectTimer = window.setTimeout(connect, 3000);
+      reconnectTimer = window.setTimeout(connect, 3000);
     });
 
     socket.addEventListener("error", () => {
+      if (closed) return;
       onStatus("offline");
     });
   };
