@@ -7,6 +7,7 @@ export interface DeviceHelloPayload {
   platform: string;
   service: string;
   capabilities: string[];
+  pairingCode?: string;
 }
 
 export interface DeviceHeartbeatPayload {

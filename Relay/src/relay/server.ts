@@ -168,6 +168,18 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const pairingStatusMatch = url.pathname.match(/^\/v1\/pairing\/([^/]+)$/);
+    if (request.method === "GET" && pairingStatusMatch) {
+      const code = decodeURIComponent(pairingStatusMatch[1] || "");
+      const session = findValidPairingSession(code);
+      if (!session) {
+        sendJson(response, 404, { ok: false, error: "Pairing code is invalid or expired." });
+        return;
+      }
+      sendJson(response, 200, { ok: true, pairing: publicPairing(session), device: session.device });
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/v1/pairing/claim") {
       const body = await readJsonBody<{ code: string; device: DeviceRegistrationRequest & { publicKey?: string } }>(request);
       const session = claimPairingSession(body.code, body.device);

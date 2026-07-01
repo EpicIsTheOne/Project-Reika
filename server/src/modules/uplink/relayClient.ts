@@ -177,11 +177,12 @@ export class RelayClient {
       source: this.deviceEndpoint,
       target: { kind: 'relay', id: 'relay' },
       payload: {
-        deviceId: snapshot.device.id,
+        deviceId: this.deviceId,
         deviceName: snapshot.device.name,
         platform: snapshot.device.platform,
         service: serverConfig.serviceName,
-        capabilities: [...deviceAgentCapabilities]
+        capabilities: [...deviceAgentCapabilities],
+        pairingCode: this.pairingToken || undefined
       }
     }));
   }
@@ -193,7 +194,7 @@ export class RelayClient {
       source: this.deviceEndpoint,
       target: { kind: 'relay', id: 'relay' },
       payload: {
-        deviceId: snapshot.device.id,
+        deviceId: this.deviceId,
         status: snapshot.device.status === 'ready' ? 'ready' : 'degraded',
         activeProviderId: snapshot.activeProviderId,
         uptimeSeconds: Math.round((Date.now() - this.startedAt) / 1000)

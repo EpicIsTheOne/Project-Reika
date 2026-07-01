@@ -44,6 +44,13 @@ export async function createRelayPairingCode(relayUrl?: string) {
   return payload.pairing;
 }
 
+export async function getRelayPairingCode(code: string, relayUrl?: string) {
+  const response = await fetch(relayApiUrl(`/pairing/${encodeURIComponent(code)}`, relayUrl));
+  const payload = (await response.json()) as PairingResponse;
+  if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Relay pairing status failed.");
+  return payload;
+}
+
 export async function claimRelayPairingCode(code: string, device: Partial<AgentHubDevice>, relayUrl?: string) {
   const response = await fetch(relayApiUrl("/pairing/claim", relayUrl), {
     method: "POST",
@@ -53,6 +60,30 @@ export async function claimRelayPairingCode(code: string, device: Partial<AgentH
   const payload = (await response.json()) as PairingResponse;
   if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Relay pairing claim failed.");
   return payload;
+}
+
+export async function listRelayDevices(relayUrl?: string) {
+  const response = await fetch(relayApiUrl("/devices", relayUrl));
+  const payload = (await response.json()) as {
+    ok: boolean;
+    devices?: Array<{
+      device: AgentHubDevice;
+      activeProviderId?: string;
+      lastHeartbeatAt?: string;
+      socketConnected?: boolean;
+    }>;
+    error?: string;
+  };
+  if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Relay device list failed.");
+  return (payload.devices ?? []).map((record): RelayDeviceRecord => ({
+    device: {
+      ...record.device,
+      status: record.socketConnected ? "online" : record.device.status
+    },
+    activeProviderId: record.activeProviderId,
+    agents: record.device.providers?.flatMap((provider) => provider.agents) ?? [],
+    lastEnvelopeAt: record.lastHeartbeatAt ?? record.device.lastSeenAt ?? new Date().toISOString()
+  }));
 }
 
 export async function approveRelayPairingCode(code: string, relayUrl?: string) {

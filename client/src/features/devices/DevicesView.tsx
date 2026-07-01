@@ -5,7 +5,7 @@ import { DetailRow } from "../../components/DetailRow";
 import { StatusDot, StatusPill, Toggle } from "../../components/status";
 import { normalizeRelayDeviceUrl } from "../../config/relay";
 import { assets } from "../../data/assets";
-import { applyRelayEnvelope, approveRelayPairingCode, claimRelayPairingCode, connectRelayApp, createRelayPairingCode, type RelayDeviceRecord, type RelayPairing } from "../../data/relay";
+import { applyRelayEnvelope, approveRelayPairingCode, claimRelayPairingCode, connectRelayApp, createRelayPairingCode, getRelayPairingCode, listRelayDevices, type RelayDeviceRecord, type RelayPairing } from "../../data/relay";
 import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "../../data/startup";
 import { filterDeviceRows, formatMetric, formatRelativeTime, getAgentAvatar, mapLocalDeviceRecord, mapRelayDeviceRecord, nextDeviceFilter, startupMatchesDevice, titleCase, type DevicePageRow } from "../../domain/reikaMappers";
 import { AgentConnectionWizard } from "../connection/AgentConnectionWizard";
@@ -72,6 +72,17 @@ export function DevicesView({
     setWizardOpen(true);
   };
 
+  const refreshRelayDevices = () => {
+    listRelayDevices(activeRelayUrl)
+      .then((records) => {
+        setRelayDevices(records);
+        if (records.length > 0) setSelectedId((currentId) => (records.some((record) => record.device.id === currentId) ? currentId : records[0].device.id));
+      })
+      .catch((error) => {
+        setRelayError(error instanceof Error ? error.message : String(error));
+      });
+  };
+
   useEffect(() => {
     setRelayStatus("connecting");
     setRelayDevices([]);
@@ -89,8 +100,33 @@ export function DevicesView({
       activeRelayUrl
     );
     setRelaySend(() => relay.send);
+    refreshRelayDevices();
     return () => relay.close();
   }, [activeRelayUrl]);
+
+  useEffect(() => {
+    if (!wizardOpen || !relayPairing || relayPairing.status === "approved") return;
+    let cancelled = false;
+    const poll = () => {
+      getRelayPairingCode(relayPairing.code, activeRelayUrl)
+        .then(({ pairing, device }) => {
+          if (cancelled) return;
+          setRelayPairing(pairing);
+          setClaimedDeviceName(device?.name ?? pairing.deviceId ?? null);
+          setRelayError(null);
+          refreshRelayDevices();
+        })
+        .catch((error) => {
+          if (!cancelled) setRelayError(error instanceof Error ? error.message : String(error));
+        });
+    };
+    poll();
+    const timer = window.setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeRelayUrl, relayPairing?.code, relayPairing?.status, wizardOpen]);
 
   const handleCreatePairing = () => {
     setWizardOpen(true);
