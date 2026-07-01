@@ -5,7 +5,7 @@ import { DetailRow } from "../../components/DetailRow";
 import { StatusDot, StatusPill, Toggle } from "../../components/status";
 import { normalizeRelayDeviceUrl } from "../../config/relay";
 import { assets } from "../../data/assets";
-import { applyRelayEnvelope, approveRelayPairingCode, claimRelayPairingCode, connectRelayApp, createRelayPairingCode, getRelayPairingCode, listRelayDevices, type RelayDeviceRecord, type RelayPairing } from "../../data/relay";
+import { approveRelayPairingCode, claimRelayPairingCode, createRelayPairingCode, getRelayPairingCode, listRelayDevices, requestRelayDevice, type RelayDeviceRecord, type RelayPairing } from "../../data/relay";
 import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "../../data/startup";
 import { filterDeviceRows, formatMetric, formatRelativeTime, getAgentAvatar, mapLocalDeviceRecord, mapRelayDeviceRecord, nextDeviceFilter, startupMatchesDevice, titleCase, type DevicePageRow } from "../../domain/reikaMappers";
 import { AgentConnectionWizard } from "../connection/AgentConnectionWizard";
@@ -18,6 +18,10 @@ export function DevicesView({
   pairingOpenRequest,
   developerDiagnostics,
   relayUrl,
+  relayDevices,
+  relayStatus,
+  onRelayDevicesChange,
+  onRelayStatusChange,
   artRuntime,
   onScanProviders,
   onOpenChat
@@ -26,6 +30,10 @@ export function DevicesView({
   pairingOpenRequest: number;
   developerDiagnostics: boolean;
   relayUrl: string;
+  relayDevices: RelayDeviceRecord[];
+  relayStatus: "connecting" | "online" | "offline";
+  onRelayDevicesChange: (records: RelayDeviceRecord[] | ((current: RelayDeviceRecord[]) => RelayDeviceRecord[])) => void;
+  onRelayStatusChange: (status: "connecting" | "online" | "offline") => void;
   artRuntime: ArtRuntime;
   onScanProviders: () => void;
   onOpenChat: (agentId: string) => void;
@@ -33,12 +41,9 @@ export function DevicesView({
   const [selectedId, setSelectedId] = useState("epic-pc");
   const [deviceSearch, setDeviceSearch] = useState("");
   const [deviceFilter, setDeviceFilter] = useState<"all" | "online" | "offline" | "issues">("all");
-  const [relayStatus, setRelayStatus] = useState<"connecting" | "online" | "offline">("connecting");
-  const [relayDevices, setRelayDevices] = useState<RelayDeviceRecord[]>([]);
   const [relayPairing, setRelayPairing] = useState<RelayPairing | null>(null);
   const [claimedDeviceName, setClaimedDeviceName] = useState<string | null>(null);
   const [relayError, setRelayError] = useState<string | null>(null);
-  const [relaySend, setRelaySend] = useState<ReturnType<typeof connectRelayApp>["send"] | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const activeRelayUrl = normalizeRelayDeviceUrl(relayUrl);
   const relayRows = useMemo(() => relayDevices.map((record) => mapRelayDeviceRecord(record, activeRelayUrl)), [relayDevices, activeRelayUrl]);
@@ -75,7 +80,8 @@ export function DevicesView({
   const refreshRelayDevices = () => {
     listRelayDevices(activeRelayUrl)
       .then((records) => {
-        setRelayDevices(records);
+        onRelayDevicesChange(records);
+        if (records.length > 0) onRelayStatusChange("online");
         if (records.length > 0) setSelectedId((currentId) => (records.some((record) => record.device.id === currentId) ? currentId : records[0].device.id));
       })
       .catch((error) => {
@@ -84,24 +90,11 @@ export function DevicesView({
   };
 
   useEffect(() => {
-    setRelayStatus("connecting");
-    setRelayDevices([]);
+    onRelayStatusChange("connecting");
+    onRelayDevicesChange([]);
     setRelayPairing(null);
     setRelayError(null);
-    const relay = connectRelayApp(
-      (envelope) => {
-        setRelayDevices((current) => {
-          const next = applyRelayEnvelope(current, envelope);
-          if (next.length > 0) setSelectedId((currentId) => (next.some((record) => record.device.id === currentId) ? currentId : next[0].device.id));
-          return next;
-        });
-      },
-      (status) => setRelayStatus(status),
-      activeRelayUrl
-    );
-    setRelaySend(() => relay.send);
     refreshRelayDevices();
-    return () => relay.close();
   }, [activeRelayUrl]);
 
   useEffect(() => {
@@ -180,11 +173,16 @@ export function DevicesView({
   };
 
   const handleRelayRequest = (type: "device.state.request" | "provider.refresh.request" | "agent.roster.request", deviceId = selectedDevice?.id) => {
-    if (!deviceId || !relaySend) return false;
-    const sent = relaySend(type, deviceId);
-    if (!sent) setRelayError("Relay app socket is not connected.");
-    else setRelayError(null);
-    return sent;
+    if (!deviceId) return false;
+    requestRelayDevice(type, deviceId, {}, activeRelayUrl)
+      .then(() => {
+        setRelayError(null);
+        window.setTimeout(refreshRelayDevices, 700);
+      })
+      .catch((error) => {
+        setRelayError(error instanceof Error ? error.message : String(error));
+      });
+    return true;
   };
 
   return (

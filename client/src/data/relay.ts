@@ -97,6 +97,22 @@ export async function approveRelayPairingCode(code: string, relayUrl?: string) {
   return payload;
 }
 
+export async function requestRelayDevice(
+  type: Extract<AgentHubEnvelopeType, "device.state.request" | "provider.refresh.request" | "agent.roster.request">,
+  deviceId: string,
+  payload: Record<string, unknown> = {},
+  relayUrl?: string
+) {
+  const response = await fetch(relayApiUrl(`/devices/${encodeURIComponent(deviceId)}/request`, relayUrl), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, payload })
+  });
+  const result = (await response.json()) as { ok: boolean; envelope?: AgentHubEnvelope; error?: string };
+  if (!response.ok || !result.ok) throw new Error(result.error ?? "Relay request failed.");
+  return result.envelope;
+}
+
 export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void, onStatus: (status: "connecting" | "online" | "offline") => void, relayUrl?: string) {
   let closed = false;
   let socket: WebSocket | null = null;

@@ -4,7 +4,7 @@ import { devices as demoDevices } from "../data/mockData";
 import type { RelayDeviceRecord } from "../data/relay";
 import type { LocalAgentStartupStatus } from "../data/startup";
 import type { ArtRuntime } from "../lib/artRuntime";
-import type { ReikaChatMessage, ReikaProviderRecord, ReikaStateResponse } from "../lib/reikaApi";
+import type { ReikaChatMessage, ReikaProviderKind, ReikaProviderRecord, ReikaProviderStatus, ReikaStateResponse } from "../lib/reikaApi";
 import type { Agent, ChatMessage, Device, Provider, Status } from "../types";
 
 export type DevicePageRow = {
@@ -205,6 +205,49 @@ export function mapRelayDeviceRecord(record: RelayDeviceRecord, relayUrl: string
   };
 }
 
+export function mapRelayRecordToDevice(record: RelayDeviceRecord): Device {
+  const device = mapDevice(record.device);
+  const agents = record.agents.length > 0 ? record.agents.map(mapRelayAgent) : device.providers.flatMap((provider) => provider.agents);
+  const providers = device.providers.map((provider) => ({
+    ...provider,
+    agents: agents.filter((agent) => agent.providerId === provider.id)
+  }));
+  return {
+    ...device,
+    status: record.device.status === "online" ? "online" : device.status,
+    activeProviderId: record.activeProviderId ?? device.activeProviderId,
+    providers: providers.length > 0 ? providers : device.providers
+  };
+}
+
+export function mapRelayRecordsToProviderState(records: RelayDeviceRecord[]): ReikaProviderRecord[] {
+  return records.flatMap((record, recordIndex) => {
+    const device = mapDevice(record.device);
+    return device.providers.map((provider, providerIndex): ReikaProviderRecord => ({
+      id: provider.id,
+      kind: providerNameToKind(provider.name),
+      name: `${provider.name} (${device.name})`,
+      status: providerStatusToReika(provider.status),
+      priority: recordIndex * 10 + providerIndex,
+      endpointLabel: `Relay ${device.name}`,
+      capabilities: [
+        { id: "roster", label: "Roster" },
+        { id: "relay", label: "Relay" },
+        ...(provider.agents.some((agent) => agent.status === "online") ? [{ id: "chat", label: "Chat", planned: true }] : [])
+      ],
+      agents: provider.agents.map((agent) => ({
+        id: agent.id,
+        name: agent.name,
+        role: agent.role,
+        characterId: agent.characterId,
+        status: agent.status,
+        source: device.name
+      })),
+      notes: "Discovered through relay. Relay chat transport is not enabled yet."
+    }));
+  });
+}
+
 export function mapRelayAgent(agent: RelayDeviceRecord["agents"][number]): Agent {
   return {
     id: agent.id,
@@ -216,6 +259,19 @@ export function mapRelayAgent(agent: RelayDeviceRecord["agents"][number]): Agent
     lastActivity: agent.lastActivity ?? "Relay roster",
     characterId: agent.characterId
   };
+}
+
+function providerNameToKind(name: Provider["name"]): ReikaProviderKind {
+  if (name === "CommandCenter") return "commandcenter";
+  if (name === "OpenClaw") return "openclaw";
+  if (name === "Hermes") return "hermes";
+  return "mock";
+}
+
+function providerStatusToReika(status: Status): ReikaProviderStatus {
+  if (status === "online" || status === "busy" || status === "thinking") return "available";
+  if (status === "error") return "error";
+  return "offline";
 }
 
 export function startupMatchesDevice(status: LocalAgentStartupStatus, device: DevicePageRow) {

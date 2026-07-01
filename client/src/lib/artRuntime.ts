@@ -26,10 +26,22 @@ export interface ArtRuntime {
 }
 
 const fallbackProfileOrder = ["reika", "astra", "miyabi", "nyxie"];
+const rerollSeparator = "::reroll:";
+const rerollMemoryPrefix = "agenthub-art-reroll:";
+const rerollMemory = new Map<string, RerollMemoryEntry>();
+
+type RerollMemoryEntry = {
+  nonce: string;
+  assetId: string;
+};
 
 export function makeArtRuntimeSeed() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function artRerollSlot(slot: string, nonce: string | number) {
+  return `${slot}${rerollSeparator}${String(nonce)}`;
 }
 
 export function createArtRuntime(library: ReikaArtLibraryResponse | null, sessionSeed: string): ArtRuntime {
@@ -49,7 +61,12 @@ export function createArtRuntime(library: ReikaArtLibraryResponse | null, sessio
 
   const pickFromCategory = (profile: ReikaArtProfile | null | undefined, categoryId: string, fallback: string, slot = "default") => {
     const category = findCategory(profile, categoryId);
-    const assetRecord = pickAsset(category, `${sessionSeed}:${versionKey}:${profile?.id ?? "none"}:${categoryId}:${slot}`);
+    const parsedSlot = parseRerollSlot(slot);
+    const assetRecord = pickAsset(category, {
+      hashKey: `${sessionSeed}:${versionKey}:${profile?.id ?? "none"}:${categoryId}:${slot}`,
+      memoryKey: `${versionKey}:${profile?.id ?? "none"}:${categoryId}:${parsedSlot.baseSlot}`,
+      rerollNonce: parsedSlot.rerollNonce
+    });
     return resolveAssetUrl(assetRecord, fallback);
   };
 
@@ -181,17 +198,27 @@ function cleanCategoryKey(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-function pickAsset(category: ReikaArtCategory | undefined, key: string) {
+function pickAsset(category: ReikaArtCategory | undefined, context: { hashKey: string; memoryKey: string; rerollNonce?: string }) {
   if (!category || category.assets.length === 0) return undefined;
   if (category.selectionMode === "single") {
     return category.assets.find((assetRecord) => assetRecord.id === category.selectedAssetId) ?? category.assets[0];
   }
-  const randomPool = category.assets.length > 1
-    ? category.assets.filter((assetRecord) => assetRecord.id !== category.selectedAssetId)
-    : category.assets;
-  const pool = randomPool.length > 0 ? randomPool : category.assets;
-  const index = positiveHash(key) % pool.length;
-  return pool[index];
+  const pool = category.assets;
+  let index = positiveHash(context.hashKey) % pool.length;
+
+  if (!context.rerollNonce) return pool[index];
+
+  const previous = readRerollMemory(context.memoryKey);
+  const previousInPool = previous ? pool.find((assetRecord) => assetRecord.id === previous.assetId) : undefined;
+  if (previous?.nonce === context.rerollNonce && previousInPool) return previousInPool;
+
+  if (pool.length > 1 && previous?.assetId && pool[index]?.id === previous.assetId) {
+    index = (index + 1) % pool.length;
+  }
+
+  const picked = pool[index];
+  writeRerollMemory(context.memoryKey, { nonce: context.rerollNonce, assetId: picked.id });
+  return picked;
 }
 
 function positiveHash(value: string) {
@@ -201,6 +228,40 @@ function positiveHash(value: string) {
     hash = Math.imul(hash, 16777619);
   }
   return hash >>> 0;
+}
+
+function parseRerollSlot(slot: string) {
+  const [baseSlot, rerollNonce] = slot.split(rerollSeparator);
+  return { baseSlot: baseSlot || "default", rerollNonce };
+}
+
+function readRerollMemory(memoryKey: string): RerollMemoryEntry | undefined {
+  const cached = rerollMemory.get(memoryKey);
+  if (cached) return cached;
+
+  try {
+    if (typeof sessionStorage === "undefined") return undefined;
+    const raw = sessionStorage.getItem(`${rerollMemoryPrefix}${memoryKey}`);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as Partial<RerollMemoryEntry>;
+    if (typeof parsed.nonce !== "string" || typeof parsed.assetId !== "string") return undefined;
+    const entry = { nonce: parsed.nonce, assetId: parsed.assetId };
+    rerollMemory.set(memoryKey, entry);
+    return entry;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeRerollMemory(memoryKey: string, entry: RerollMemoryEntry) {
+  rerollMemory.set(memoryKey, entry);
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(`${rerollMemoryPrefix}${memoryKey}`, JSON.stringify(entry));
+    }
+  } catch {
+    // Private browsing or storage pressure should never break art selection.
+  }
 }
 
 function artVersionKey(library: ReikaArtLibraryResponse | null) {

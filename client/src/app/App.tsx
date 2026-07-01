@@ -27,10 +27,14 @@ import { NotificationsView } from "../features/notifications/NotificationsView";
 import { DevicesView } from "../features/devices/DevicesView";
 import { ChatView } from "../features/chat/ChatView";
 import { AgentArtStudio } from "../features/art/AgentArtStudio";
+import { applyRelayEnvelope, connectRelayApp, listRelayDevices, type RelayDeviceRecord } from "../data/relay";
+import { normalizeRelayDeviceUrl } from "../config/relay";
 import {
   buildPresentationDevices,
   getFallbackAgent,
-  mapReikaStateToDevice
+  mapReikaStateToDevice,
+  mapRelayRecordToDevice,
+  mapRelayRecordsToProviderState
 } from "../domain/reikaMappers";
 
 export function App() {
@@ -41,6 +45,8 @@ export function App() {
   const [settings, setSettings] = useState<ReikaSettings>(defaultSettings);
   const [notifications, setNotifications] = useState<ReikaNotification[]>([]);
   const [artLibrary, setArtLibrary] = useState<ReikaArtLibraryResponse | null>(null);
+  const [relayDevices, setRelayDevices] = useState<RelayDeviceRecord[]>([]);
+  const [relayStatus, setRelayStatus] = useState<"connecting" | "online" | "offline">("connecting");
   const [bootSteps, setBootSteps] = useState<BootStep[]>(() => createBootSteps());
   const [bootReady, setBootReady] = useState(false);
   const [backendMode, setBackendMode] = useState<BackendMode>("loading");
@@ -52,6 +58,40 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.agenthubTheme = settings.theme ?? "dark";
   }, [settings.theme]);
+
+  useEffect(() => {
+    const activeRelayUrl = normalizeRelayDeviceUrl(settings.relayUrl);
+    let cancelled = false;
+    const refreshRelayDevices = () => {
+      listRelayDevices(activeRelayUrl)
+        .then((records) => {
+          if (cancelled) return;
+          setRelayDevices(records);
+          if (records.length > 0) setRelayStatus("online");
+        })
+        .catch(() => {
+          if (!cancelled) setRelayStatus("offline");
+        });
+    };
+
+    setRelayStatus("connecting");
+    refreshRelayDevices();
+    const relay = connectRelayApp(
+      (envelope) => {
+        setRelayDevices((current) => applyRelayEnvelope(current, envelope));
+      },
+      (status) => {
+        if (!cancelled) setRelayStatus((current) => (status === "offline" && current === "online" ? "online" : status));
+      },
+      activeRelayUrl
+    );
+    const timer = window.setInterval(refreshRelayDevices, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      relay.close();
+    };
+  }, [settings.relayUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,7 +191,11 @@ export function App() {
     window.scrollTo({ top: 0, left: 0 });
   }, [view]);
 
-  const presentationDevices = useMemo(() => buildPresentationDevices(appDevices), [appDevices]);
+  const presentationDevices = useMemo(() => {
+    const relayMapped = relayDevices.map(mapRelayRecordToDevice);
+    return buildPresentationDevices(relayMapped.length > 0 ? relayMapped : appDevices);
+  }, [appDevices, relayDevices]);
+  const relayProviderState = useMemo(() => mapRelayRecordsToProviderState(relayDevices), [relayDevices]);
 
   const selectedAgent = useMemo(() => {
     for (const device of presentationDevices) {
@@ -214,13 +258,17 @@ export function App() {
             }}
           />
         )}
-        {view === "chat" && <ChatView agent={selectedAgent} initialState={reikaState} artRuntime={artRuntime} onBack={() => setView("home")} />}
+        {view === "chat" && <ChatView agent={selectedAgent} initialState={reikaState} relayProviders={relayProviderState} artRuntime={artRuntime} onBack={() => setView("home")} />}
         {view === "devices" && (
           <DevicesView
             localDevices={appDevices}
             pairingOpenRequest={pairingOpenRequest}
             developerDiagnostics={settings.developerDiagnostics}
             relayUrl={settings.relayUrl}
+            relayDevices={relayDevices}
+            relayStatus={relayStatus}
+            onRelayDevicesChange={setRelayDevices}
+            onRelayStatusChange={setRelayStatus}
             artRuntime={artRuntime}
             onScanProviders={handleScanProviders}
             onOpenChat={(agentId) => {
@@ -241,7 +289,7 @@ export function App() {
             }}
           />
         )}
-        {view === "agentArt" && <AgentArtStudio initialLibrary={artLibrary} artRuntime={artRuntime} onLibraryChange={setArtLibrary} />}
+        {view === "agentArt" && <AgentArtStudio initialLibrary={artLibrary} devices={presentationDevices} artRuntime={artRuntime} onLibraryChange={setArtLibrary} />}
         {view === "settings" && (
           <SettingsView
             settings={settings}

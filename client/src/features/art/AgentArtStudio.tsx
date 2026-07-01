@@ -22,17 +22,20 @@ import {
   type ReikaArtProfile,
   type ReikaArtScope
 } from "../../lib/reikaApi";
-import { resolveArtAssetUrl, type ArtRuntime } from "../../lib/artRuntime";
+import { artRerollSlot, makeArtRuntimeSeed, resolveArtAssetUrl, type ArtRuntime } from "../../lib/artRuntime";
 import { StatusDot } from "../../components/status";
 import { statusLabels } from "../../app/constants";
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
+import type { Agent, Device } from "../../types";
 
 export function AgentArtStudio({
   initialLibrary,
+  devices = [],
   artRuntime,
   onLibraryChange
 }: {
   initialLibrary: ReikaArtLibraryResponse | null;
+  devices?: Device[];
   artRuntime: ArtRuntime;
   onLibraryChange: (library: ReikaArtLibraryResponse) => void;
 }) {
@@ -56,6 +59,8 @@ export function AgentArtStudio({
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [previewNonce, setPreviewNonce] = useState(() => makeArtRuntimeSeed());
+  const [generationState, setGenerationState] = useState<Record<string, ReikaArtGenerationStatus | { status: "waiting" | "running"; message: string; profileId: string; categoryId: string }>>({});
 
   const applyLibrary = (response: ReikaArtLibraryResponse) => {
     setLibrary(response);
@@ -80,6 +85,7 @@ export function AgentArtStudio({
   }, [initialLibrary]);
 
   const profiles = useMemo(() => library?.profiles.filter((profile) => profile.scope === activeScope) ?? [], [activeScope, library]);
+  const discoveredAgents = useMemo(() => uniqueAgents(devices), [devices]);
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0] ?? null;
   const categories = selectedProfile?.categories ?? [];
   const visibleCategories = categoryFilter === "selected"
@@ -88,7 +94,7 @@ export function AgentArtStudio({
   const selectedCategory = categories.find((category) => category.id === selectedCategoryId) ?? categories[0] ?? null;
   const selectedAsset = selectedCategory?.assets.find((item) => item.id === selectedCategory.selectedAssetId) ?? selectedCategory?.assets[0] ?? null;
   const selectedPreviewUrl = selectedCategory && selectedCategory.selectionMode === "random"
-    ? artRuntime.profileArt(selectedProfile, selectedCategory.id, selectedAsset ? resolveArtAssetUrl(selectedAsset) : "", "studio-detail-preview")
+    ? artRuntime.profileArt(selectedProfile, selectedCategory.id, selectedAsset ? resolveArtAssetUrl(selectedAsset) : "", artRerollSlot("studio-detail-preview", previewNonce))
     : selectedAsset
       ? resolveArtAssetUrl(selectedAsset)
       : "";
@@ -114,9 +120,28 @@ export function AgentArtStudio({
   }, [categories, selectedCategory, selectedCategoryId]);
 
   useEffect(() => {
+    if (selectedCategory?.selectionMode === "random") setPreviewNonce(makeArtRuntimeSeed());
+  }, [artRuntime.versionKey, selectedCategory?.assets.length, selectedCategory?.id, selectedCategory?.selectionMode, selectedProfile?.id]);
+
+  useEffect(() => {
     setPromptDraft(selectedCategory?.prompt ?? "");
     setSystemPromptDraft(selectedCategory?.systemPrompt ?? "");
   }, [selectedCategory?.id, selectedCategory?.prompt, selectedCategory?.systemPrompt]);
+
+  useEffect(() => {
+    if (!library || activeScope !== "agent" || discoveredAgents.length === 0 || busy) return;
+    const existing = new Set(library.profiles.filter((profile) => profile.scope === "agent").flatMap((profile) => [profile.id.toLowerCase(), profile.name.toLowerCase()]));
+    const missing = discoveredAgents.find((agent) => !existing.has(String(agent.characterId ?? "").toLowerCase()) && !existing.has(agent.id.toLowerCase()) && !existing.has(agent.name.toLowerCase()));
+    if (!missing) return;
+    runAction(
+      "sync-agent-profile",
+      () => createArtProfile({ name: missing.name, subtitle: `${missing.role || "Agent"} • ${missing.deviceId}`, scope: "agent" }),
+      (response) => {
+        if (response.profile) setSelectedProfileId(response.profile.id);
+        return `Created art profile for ${missing.name}.`;
+      }
+    );
+  }, [activeScope, busy, discoveredAgents, library]);
 
   const runAction = (label: string, action: () => Promise<ArtActionResponse>, success?: (response: ArtActionResponse) => string | void) => {
     setBusy(label);
@@ -235,7 +260,74 @@ export function AgentArtStudio({
 
   const generateMore = () => {
     if (!selectedProfile || !selectedCategory) return;
-    runAction("generate-art", () => requestArtGeneration(selectedProfile.id, selectedCategory.id), (response) => response.generation?.message ?? "Generation request checked.");
+    setGenerationState((current) => ({
+      ...current,
+      [selectedCategory.id]: { status: "running", message: `Generating ${selectedCategory.name}...`, profileId: selectedProfile.id, categoryId: selectedCategory.id }
+    }));
+    runAction("generate-art", () => requestArtGeneration(selectedProfile.id, selectedCategory.id), (response) => {
+      if (response.generation) {
+        setGenerationState((current) => ({
+          ...current,
+          [selectedCategory.id]: response.generation!
+        }));
+      }
+      return response.generation?.message ?? "Generation request checked.";
+    });
+  };
+
+  const clearProfileDefaults = async () => {
+    if (!selectedProfile || selectedProfile.defaultProfile) return;
+    setBusy("clear-default-art");
+    setNotice(null);
+    try {
+      let latest: ReikaArtLibraryResponse | null = library;
+      for (const category of selectedProfile.categories) {
+        for (const asset of category.assets) {
+          if (asset.kind !== "seed") continue;
+          latest = await deleteArtAsset(selectedProfile.id, category.id, asset.id);
+        }
+      }
+      if (latest) applyLibrary(latest);
+      setNotice("Default seed art cleared for this custom agent profile.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not clear default art."));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const generateAllCategories = async () => {
+    if (!selectedProfile) return;
+    setBusy("generate-all-art");
+    setNotice(null);
+    const pending = Object.fromEntries(selectedProfile.categories.map((category) => [
+      category.id,
+      { status: "waiting" as const, message: `Waiting to generate ${category.name}.`, profileId: selectedProfile.id, categoryId: category.id }
+    ]));
+    setGenerationState((current) => ({ ...current, ...pending }));
+    try {
+      let latest: ReikaArtLibraryResponse | null = library;
+      for (const category of selectedProfile.categories) {
+        setGenerationState((current) => ({
+          ...current,
+          [category.id]: { status: "running", message: `Generating ${category.name}...`, profileId: selectedProfile.id, categoryId: category.id }
+        }));
+        const response = await requestArtGeneration(selectedProfile.id, category.id);
+        latest = response;
+        setGenerationState((current) => ({
+          ...current,
+          [category.id]: response.generation
+        }));
+        applyLibrary(response);
+        if (response.generation.status === "blocked" || response.generation.status === "failed") break;
+      }
+      if (latest) applyLibrary(latest);
+      setNotice("Generate-all pass finished. Check the status list for any blocked or failed category.");
+    } catch (error) {
+      setNotice(readableError(error, "Generate-all failed."));
+    } finally {
+      setBusy(null);
+    }
   };
 
   const connectImageGeneration = () => {
@@ -355,6 +447,14 @@ export function AgentArtStudio({
                   <Trash2 size={15} />
                   Delete
                 </button>
+                <button className="secondary-action small danger-inline" type="button" onClick={clearProfileDefaults} disabled={!selectedProfile || selectedProfile.defaultProfile || busy !== null}>
+                  <Trash2 size={15} />
+                  Clear Defaults
+                </button>
+                <button className="primary-action small" type="button" onClick={generateAllCategories} disabled={!selectedProfile || busy !== null}>
+                  <WandSparkles size={15} />
+                  Generate All
+                </button>
               </div>
             </div>
 
@@ -473,6 +573,7 @@ export function AgentArtStudio({
                   <button className={selectedCategory.selectionMode === "random" ? "active" : ""} type="button" onClick={() => setSelectionMode("random")}>Random</button>
                 </div>
                 <p>{selectedCategory.selectionMode === "random" ? "Shows a random image from the selected pool." : "Always uses the selected image."}</p>
+                {selectedCategory ? <GenerationStatusLine status={generationState[selectedCategory.id]} /> : null}
               </section>
 
               <section className="art-detail-section">
@@ -537,6 +638,18 @@ export function AgentArtStudio({
                 </div>
               </section>
 
+              <section className="art-detail-section">
+                <div className="art-detail-title">
+                  <h3>Generation Queue</h3>
+                  <span>{Object.keys(generationState).length} tracked</span>
+                </div>
+                <div className="art-generation-list">
+                  {selectedProfile.categories.map((category) => (
+                    <GenerationStatusLine key={category.id} label={category.name} status={generationState[category.id]} />
+                  ))}
+                </div>
+              </section>
+
               <button className="danger-action" type="button" onClick={removeAsset} disabled={!selectedAsset || selectedAsset.kind === "seed"}>
                 <Trash2 size={18} />
                 Delete Selected Asset
@@ -587,6 +700,36 @@ function ArtCategoryCard({ category, active, onClick, motionIndex = 0 }: { categ
       </footer>
     </button>
   );
+}
+
+function GenerationStatusLine({ status, label }: { status?: ReikaArtGenerationStatus | { status: "waiting" | "running"; message: string; profileId: string; categoryId: string }; label?: string }) {
+  const state = status?.status ?? "queued";
+  const tone = state === "completed" ? "online" : state === "failed" || state === "blocked" ? "error" : state === "running" ? "thinking" : "connecting";
+  return (
+    <div className={cx("art-generation-status", state)}>
+      <StatusDot status={tone} />
+      <span>
+        {label ? <strong>{label}</strong> : null}
+        <small>{status?.message ?? "Waiting to be generated."}</small>
+      </span>
+    </div>
+  );
+}
+
+function uniqueAgents(devices: Device[]): Agent[] {
+  const seen = new Set<string>();
+  const agents: Agent[] = [];
+  for (const device of devices) {
+    for (const provider of device.providers) {
+      for (const agent of provider.agents) {
+        const key = `${agent.characterId || agent.id || agent.name}`.toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        agents.push(agent);
+      }
+    }
+  }
+  return agents;
 }
 
 function artCategoryIcon(icon: string): ElementType {

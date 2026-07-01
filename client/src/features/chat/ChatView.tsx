@@ -18,14 +18,14 @@ import {
   type ReikaSessionSummary,
   type ReikaStateResponse
 } from "../../lib/reikaApi";
-import type { ArtAgentLike, ArtRuntime } from "../../lib/artRuntime";
+import { artRerollSlot, makeArtRuntimeSeed, type ArtAgentLike, type ArtRuntime } from "../../lib/artRuntime";
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
 import { StatusDot } from "../../components/status";
 import { statusLabels } from "../../app/constants";
 import { formatClock, getReikaDeviceName, mapProviderStatus, mapReikaMessage, providerCanChat } from "../../domain/reikaMappers";
 import type { Agent, ChatMessage } from "../../types";
 
-export function ChatView({ agent, initialState, artRuntime, onBack }: { agent: Agent; initialState: ReikaStateResponse | null; artRuntime: ArtRuntime; onBack: () => void }) {
+export function ChatView({ agent, initialState, relayProviders = [], artRuntime, onBack }: { agent: Agent; initialState: ReikaStateResponse | null; relayProviders?: ReikaProviderRecord[]; artRuntime: ArtRuntime; onBack: () => void }) {
   const [serverState, setServerState] = useState<ReikaStateResponse | null>(initialState);
   const [providers, setProviders] = useState<ReikaProviderRecord[]>(initialState?.providers ?? []);
   const [selectedProviderId, setSelectedProviderId] = useState(initialState?.activeProviderId ?? "");
@@ -45,10 +45,22 @@ export function ChatView({ agent, initialState, artRuntime, onBack }: { agent: A
   const [sessionListError, setSessionListError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const artInstanceKey = useMemo(() => makeArtRuntimeSeed(), []);
 
+  const availableProviders = useMemo(() => {
+    const merged = [...providers];
+    for (const provider of relayProviders) {
+      if (!merged.some((item) => item.id === provider.id)) merged.push(provider);
+    }
+    return merged;
+  }, [providers, relayProviders]);
   const selectedProvider = useMemo(
-    () => providers.find((provider) => provider.id === selectedProviderId) ?? providers.find((provider) => provider.status === "preferred") ?? providers[0],
-    [providers, selectedProviderId]
+    () =>
+      availableProviders.find((provider) => provider.id === selectedProviderId) ??
+      availableProviders.find((provider) => provider.agents.some((item) => item.id === agent.id || item.name === agent.name)) ??
+      availableProviders.find((provider) => provider.status === "preferred") ??
+      availableProviders[0],
+    [agent.id, agent.name, availableProviders, selectedProviderId]
   );
   const providerAgents = selectedProvider?.agents ?? [];
   const selectedProviderStatus = mapProviderStatus(selectedProvider?.status);
@@ -63,8 +75,8 @@ export function ChatView({ agent, initialState, artRuntime, onBack }: { agent: A
     name: headerAgentName,
     characterId: selectedLiveAgent?.characterId ?? agent.characterId
   };
-  const chatAvatar = artRuntime.agentPortrait(artAgent, "chat-portrait");
-  const chatSplash = artRuntime.agentArt(artAgent, "splash-full-body", assets.reika.splash, "chat-profile-splash");
+  const chatAvatar = artRuntime.agentPortrait(artAgent, artRerollSlot("chat-portrait", artInstanceKey));
+  const chatPortraitArt = artRuntime.agentArt(artAgent, "portrait-chat", assets.reika.halfBody, artRerollSlot("chat-profile-portrait", artInstanceKey));
 
   const normalizeChatError = (value: unknown, fallback = "Something went wrong.") => {
     const raw = value instanceof Error ? value.message : String(value || fallback);
@@ -77,7 +89,7 @@ export function ChatView({ agent, initialState, artRuntime, onBack }: { agent: A
       const state = await getState();
       setServerState(state);
       setProviders(state.providers);
-      setSelectedProviderId((current) => current || state.activeProviderId || state.providers[0]?.id || "");
+      setSelectedProviderId((current) => current || state.activeProviderId || state.providers[0]?.id || relayProviders[0]?.id || "");
       setStatus(`${state.providers.length} providers detected`);
       setStateError(null);
     } catch (loadError) {
@@ -109,8 +121,13 @@ export function ChatView({ agent, initialState, artRuntime, onBack }: { agent: A
     if (!initialState) return;
     setServerState(initialState);
     setProviders(initialState.providers);
-    setSelectedProviderId((current) => current || initialState.activeProviderId || initialState.providers[0]?.id || "");
-  }, [initialState]);
+    setSelectedProviderId((current) => current || initialState.activeProviderId || initialState.providers[0]?.id || relayProviders[0]?.id || "");
+  }, [initialState, relayProviders]);
+
+  useEffect(() => {
+    if (selectedProviderId || availableProviders.length === 0) return;
+    setSelectedProviderId(availableProviders.find((provider) => provider.agents.some((item) => item.id === agent.id || item.name === agent.name))?.id ?? availableProviders[0].id);
+  }, [agent.id, agent.name, availableProviders, selectedProviderId]);
 
   useEffect(() => {
     if (!selectedProvider) return;
@@ -266,7 +283,7 @@ export function ChatView({ agent, initialState, artRuntime, onBack }: { agent: A
           <ArrowLeft size={20} />
           Back
         </button>
-        <img className="chat-profile-art" src={chatSplash} alt="" />
+        <img className="chat-profile-art" src={chatPortraitArt} alt="" />
         <div className="chat-profile-card live-chat-profile-card">
           <h2>
             {headerAgentName}
@@ -282,8 +299,8 @@ export function ChatView({ agent, initialState, artRuntime, onBack }: { agent: A
             <label>
               <span>Provider</span>
               <select value={selectedProvider?.id ?? ""} onChange={(event) => setSelectedProviderId(event.target.value)}>
-                {providers.length > 0 ? (
-                  providers.map((provider) => (
+                {availableProviders.length > 0 ? (
+                  availableProviders.map((provider) => (
                     <option value={provider.id} key={provider.id}>
                       {provider.name} ({provider.status})
                     </option>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Bell, Box, Brush, ChevronDown, ChevronRight, Code2, Globe2, Info, KeyRound, Monitor, Palette, Shield } from "lucide-react";
 import { defaultReikaRelayDeviceUrl } from "../../config/relay";
 import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "../../data/startup";
@@ -22,7 +22,7 @@ import {
   type ReikaStateResponse,
   type ReikaUpdateStatus
 } from "../../lib/reikaApi";
-import type { ArtRuntime } from "../../lib/artRuntime";
+import { artRerollSlot, makeArtRuntimeSeed, type ArtRuntime } from "../../lib/artRuntime";
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
 import type { BackendMode } from "../../app/types";
 import { StatusDot, StatusPill, Toggle } from "../../components/status";
@@ -54,6 +54,7 @@ export function SettingsView({
   const [relayUrlDraft, setRelayUrlDraft] = useState(settings.relayUrl);
   const [artOauth, setArtOauth] = useState<ReikaArtOAuthStatus | null>(null);
   const [artApiKeyDraft, setArtApiKeyDraft] = useState("");
+  const artInstanceKey = useMemo(() => makeArtRuntimeSeed(), []);
   const settingsTabs = [
     { title: "General", detail: "Basic preferences", icon: Brush },
     { title: "Devices", detail: "Manage your devices", icon: Monitor },
@@ -215,10 +216,12 @@ export function SettingsView({
       .finally(() => setBusySetting(null));
   };
 
+  const settingsScene = artRuntime.agentArt("reika", "portrait-chat", assets.reika.halfBody, artRerollSlot("settings-portrait", artInstanceKey));
+
   return (
     <main className={pageMotionClass("settings-screen")}>
       <aside className="settings-scene">
-        <img src={artRuntime.agentArt("reika", "splash-full-body", artRuntime.agentArt("reika", "room-background", assets.reika.splash, "settings-room-fallback"), "settings-scene")} alt="" />
+        <img src={settingsScene} alt="" />
         <div className="settings-scene-card">
           <h2>Settings</h2>
           <p>Make AgentHub truly yours.</p>

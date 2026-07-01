@@ -161,6 +161,20 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const deviceRequestMatch = url.pathname.match(/^\/v1\/devices\/([^/]+)\/request$/);
+    if (request.method === "POST" && deviceRequestMatch) {
+      const deviceId = decodeURIComponent(deviceRequestMatch[1] || "");
+      const body = await readJsonBody<{ type?: AgentHubEnvelopeType; payload?: Record<string, unknown> }>(request);
+      if (!body.type || !isRelayRequestType(body.type)) {
+        sendJson(response, 400, { ok: false, error: "Unsupported relay request type." });
+        return;
+      }
+      const envelope = createEnvelope(body.type, body.payload ?? {}, { accountId: relayConfig.accountId, deviceId });
+      const status = routeAppRequest(envelope);
+      sendJson(response, status.type === "command.rejected" ? 409 : 202, { ok: status.type !== "command.rejected", envelope: status, error: (status.payload as { message?: string }).message });
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/v1/pairing/create") {
       const body = await readJsonBody<{ accountId?: string; ttlMs?: number }>(request);
       const session = createPairingSession(body.accountId, body.ttlMs);
@@ -412,26 +426,29 @@ appSocketServer.on("connection", (socket) => {
       return;
     }
 
-    const record = devices.get(envelope.deviceId);
-    if (!record?.socket || record.socket.readyState !== WebSocket.OPEN) {
-      if (record) {
-        queueOfflineEnvelope(record, envelope);
-        sendEnvelope(socket, createCommandStatus("command.accepted", "Device is offline; request queued according to relay offline policy.", envelope.id, envelope.deviceId));
-        saveRelayStore();
-        return;
-      }
-      sendEnvelope(socket, createCommandStatus("command.rejected", "Device is offline.", envelope.id, envelope.deviceId));
-      return;
-    }
-
-    sendEnvelope(socket, createCommandStatus("command.accepted", "Request routed to device.", envelope.id, envelope.deviceId));
-    record.socket.send(JSON.stringify(toDeviceEnvelope(envelope, record.device.id)));
+    sendEnvelope(socket, routeAppRequest(envelope));
   });
 
   socket.on("close", () => {
     appSockets.delete(socket);
   });
 });
+
+function routeAppRequest(envelope: AgentHubEnvelope) {
+  if (!envelope.deviceId) return createCommandStatus("command.rejected", "Safe request requires deviceId.", envelope.id);
+  const record = devices.get(envelope.deviceId);
+  if (!record?.socket || record.socket.readyState !== WebSocket.OPEN) {
+    if (record) {
+      queueOfflineEnvelope(record, envelope);
+      saveRelayStore();
+      return createCommandStatus("command.accepted", "Device is offline; request queued according to relay offline policy.", envelope.id, envelope.deviceId);
+    }
+    return createCommandStatus("command.rejected", "Device is offline.", envelope.id, envelope.deviceId);
+  }
+
+  record.socket.send(JSON.stringify(toDeviceEnvelope(envelope, record.device.id)));
+  return createCommandStatus("command.accepted", "Request routed to device.", envelope.id, envelope.deviceId);
+}
 
 server.listen(relayConfig.port, relayConfig.host, () => {
   console.log(`[agenthub-relay] Relay listening at http://${relayConfig.host}:${relayConfig.port}`);
