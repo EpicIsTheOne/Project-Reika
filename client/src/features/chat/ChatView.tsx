@@ -56,13 +56,18 @@ export function ChatView({ agent, initialState, relayProviders = [], relayUrl, a
     }
     return merged;
   }, [providers, relayProviders]);
+  const requestedAgentProvider = useMemo(
+    () => availableProviders.find((provider) => provider.agents.some((item) => agentMatches(item, agent.id, agent.name))),
+    [agent.id, agent.name, availableProviders]
+  );
   const selectedProvider = useMemo(
-    () =>
-      availableProviders.find((provider) => provider.id === selectedProviderId) ??
-      availableProviders.find((provider) => provider.agents.some((item) => item.id === agent.id || item.name === agent.name)) ??
-      availableProviders.find((provider) => provider.status === "preferred") ??
-      availableProviders[0],
-    [agent.id, agent.name, availableProviders, selectedProviderId]
+    () => {
+      const selectedById = availableProviders.find((provider) => provider.id === selectedProviderId);
+      const selectedOwnsRequestedAgent = selectedById?.agents.some((item) => agentMatches(item, selectedAgentKey, agent.name) || agentMatches(item, agent.id, agent.name));
+      if (selectedById && (selectedOwnsRequestedAgent || !requestedAgentProvider)) return selectedById;
+      return requestedAgentProvider ?? selectedById ?? availableProviders.find((provider) => provider.status === "preferred") ?? availableProviders[0];
+    },
+    [agent.id, agent.name, availableProviders, requestedAgentProvider, selectedAgentKey, selectedProviderId]
   );
   const providerAgents = selectedProvider?.agents ?? [];
   const selectedProviderStatus = mapProviderStatus(selectedProvider?.status);
@@ -127,6 +132,21 @@ export function ChatView({ agent, initialState, relayProviders = [], relayUrl, a
     setProviders(initialState.providers);
     setSelectedProviderId((current) => current || initialState.activeProviderId || initialState.providers[0]?.id || relayProviders[0]?.id || "");
   }, [initialState, relayProviders]);
+
+  useEffect(() => {
+    setSelectedAgentKey(agent.id);
+    setSelectedSessionId(null);
+    setRelaySessionId(null);
+    setMessages([]);
+    setSendError(null);
+  }, [agent.id]);
+
+  useEffect(() => {
+    if (!requestedAgentProvider) return;
+    setSelectedProviderId((current) => (current === requestedAgentProvider.id ? current : requestedAgentProvider.id));
+    const requestedAgent = requestedAgentProvider.agents.find((item) => agentMatches(item, agent.id, agent.name));
+    if (requestedAgent) setSelectedAgentKey(requestedAgent.id);
+  }, [agent.id, agent.name, requestedAgentProvider]);
 
   useEffect(() => {
     if (selectedProviderId || availableProviders.length === 0) return;
@@ -302,6 +322,16 @@ export function ChatView({ agent, initialState, relayProviders = [], relayUrl, a
     setFiles((current) => current.filter((file) => file.id !== fileId));
   };
 
+  const handleProviderChange = (providerId: string) => {
+    const nextProvider = availableProviders.find((provider) => provider.id === providerId);
+    setSelectedProviderId(providerId);
+    setSelectedAgentKey(nextProvider?.agents[0]?.id ?? agent.id);
+    setSelectedSessionId(null);
+    setRelaySessionId(null);
+    setMessages([]);
+    setSendError(null);
+  };
+
   const visibleMessages = messages;
   const canSend = Boolean(draft.trim()) && !busy && Boolean(selectedProvider) && selectedProviderCanChat && selectedProviderStatus === "online" && (selectedIsRelayProvider || !stateError);
 
@@ -327,7 +357,7 @@ export function ChatView({ agent, initialState, relayProviders = [], relayUrl, a
           <div className="live-chat-card">
             <label>
               <span>Provider</span>
-              <select value={selectedProvider?.id ?? ""} onChange={(event) => setSelectedProviderId(event.target.value)}>
+              <select value={selectedProvider?.id ?? ""} onChange={(event) => handleProviderChange(event.target.value)}>
                 {availableProviders.length > 0 ? (
                   availableProviders.map((provider) => (
                     <option value={provider.id} key={provider.id}>
@@ -525,6 +555,13 @@ function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex 
       </div>
     </article>
   );
+}
+
+function agentMatches(agent: { id?: string; name?: string; label?: string }, id?: string, name?: string) {
+  const idText = String(id ?? "").trim().toLowerCase();
+  const nameText = String(name ?? "").trim().toLowerCase();
+  const values = [agent.id, agent.name, agent.label].map((value) => String(value ?? "").trim().toLowerCase()).filter(Boolean);
+  return Boolean((idText && values.includes(idText)) || (nameText && values.includes(nameText)));
 }
 
 function getRelayDeviceId(provider: ReikaProviderRecord | undefined, agent: ReikaProviderRecord["agents"][number] | undefined) {
