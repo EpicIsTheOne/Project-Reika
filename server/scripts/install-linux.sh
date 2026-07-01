@@ -135,6 +135,7 @@ if [[ -n "$PAIRING_CODE" ]]; then
   args=(pair --code "$PAIRING_CODE")
   if [[ -n "$RELAY_URL" ]]; then args+=(--relay "$RELAY_URL"); fi
   if [[ -n "$DEVICE_ID" ]]; then args+=(--device-id "$DEVICE_ID"); fi
+  args+=(--no-ui)
   exec "$BIN_DIR/reika-agent-server" "${args[@]}"
 fi
 

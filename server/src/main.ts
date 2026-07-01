@@ -1462,6 +1462,23 @@ const server = http.createServer(async (req, res) => {
 async function startServer() {
   await boot();
 
+  if (cli.mode === 'pair' && cli.noUi) {
+    console.log(`Headless pairing requested for relay ${cli.relayUrl || serverConfig.uplink.relayUrl}. Approve this device in AgentHub.`);
+    console.log('Local API/UI server disabled for this terminal pairing run.');
+    return;
+  }
+
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`${serverConfig.displayName} could not bind http://${serverConfig.host}:${serverConfig.port} because another agent server is already running there.`);
+      console.error('For Linux terminal pairing, rerun with `--no-ui` or use the one-line installer again after updating.');
+    } else {
+      console.error(error instanceof Error ? error.message : String(error));
+    }
+    relayClient.stop();
+    process.exit(1);
+  });
+
   server.listen(serverConfig.port, serverConfig.host, () => {
     console.log(`${serverConfig.displayName} listening on http://${serverConfig.host}:${serverConfig.port}`);
     console.log(`Local provider detection enabled. External uplink ${serverConfig.uplink.enabled ? 'enabled' : 'disabled'}. Direct provider chat enabled for CommandCenter, OpenClaw, Hermes, and mock.`);
