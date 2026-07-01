@@ -233,7 +233,7 @@ export function mapRelayRecordsToProviderState(records: RelayDeviceRecord[]): Re
       capabilities: [
         { id: "roster", label: "Roster" },
         { id: "relay", label: "Relay" },
-        ...(provider.agents.some((agent) => agent.status === "online") ? [{ id: "chat", label: "Chat", planned: true }] : [])
+        ...(provider.agents.some((agent) => agent.status === "online") ? [{ id: "chat", label: "Relay Chat" }] : [])
       ],
       agents: provider.agents.map((agent) => ({
         id: agent.id,
@@ -241,9 +241,12 @@ export function mapRelayRecordsToProviderState(records: RelayDeviceRecord[]): Re
         role: agent.role,
         characterId: agent.characterId,
         status: agent.status,
-        source: device.name
+        source: device.name,
+        deviceId: agent.deviceId || device.id,
+        providerId: provider.id
       })),
-      notes: "Discovered through relay. Relay chat transport is not enabled yet."
+      notes: "Discovered through relay chat transport.",
+      relayDeviceId: device.id
     }));
   });
 }

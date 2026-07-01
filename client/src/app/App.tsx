@@ -258,7 +258,7 @@ export function App() {
             }}
           />
         )}
-        {view === "chat" && <ChatView agent={selectedAgent} initialState={reikaState} relayProviders={relayProviderState} artRuntime={artRuntime} onBack={() => setView("home")} />}
+        {view === "chat" && <ChatView agent={selectedAgent} initialState={reikaState} relayProviders={relayProviderState} relayUrl={settings.relayUrl} artRuntime={artRuntime} onBack={() => setView("home")} />}
         {view === "devices" && (
           <DevicesView
             localDevices={appDevices}

@@ -31,6 +31,7 @@ export interface ReikaProviderRecord {
   agents: ReikaAgentSummary[];
   notes: string;
   error?: string;
+  relayDeviceId?: string;
 }
 
 export interface ReikaDeviceSnapshot {

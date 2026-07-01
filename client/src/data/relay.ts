@@ -3,6 +3,8 @@ import { relayApiUrl, relayAppWebSocketUrl, relayDeviceWebSocketUrl } from "../c
 import {
   createEnvelope,
   isAgentHubEnvelope,
+  type AgentChatRequestPayload,
+  type AgentChatResponsePayload,
   type AgentHubEnvelope,
   type AgentHubEnvelopeType,
   type DeviceStateSnapshotPayload
@@ -111,6 +113,61 @@ export async function requestRelayDevice(
   const result = (await response.json()) as { ok: boolean; envelope?: AgentHubEnvelope; error?: string };
   if (!response.ok || !result.ok) throw new Error(result.error ?? "Relay request failed.");
   return result.envelope;
+}
+
+export async function sendRelayChat(
+  deviceId: string,
+  payload: AgentChatRequestPayload,
+  relayUrl?: string,
+  timeoutMs = 120000
+): Promise<AgentChatResponsePayload> {
+  const request = createEnvelope("agent.chat.request", payload, { deviceId });
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(getRelayAppWebSocketUrl(relayUrl));
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      socket.close();
+      callback();
+    };
+    const timer = window.setTimeout(() => {
+      finish(() => reject(new Error("Relay chat timed out waiting for the device response.")));
+    }, timeoutMs);
+
+    socket.addEventListener("open", () => {
+      socket.send(JSON.stringify(request));
+    });
+
+    socket.addEventListener("message", (event) => {
+      try {
+        const envelope = JSON.parse(String(event.data)) as unknown;
+        if (!isAgentHubEnvelope(envelope)) return;
+        const matchesRequest = envelope.replyTo === request.id || envelope.correlationId === request.id;
+        if (!matchesRequest) return;
+        if (envelope.type === "command.accepted") return;
+        if (envelope.type === "agent.chat.response") {
+          finish(() => resolve(envelope.payload as AgentChatResponsePayload));
+          return;
+        }
+        if (envelope.type === "command.rejected" || envelope.type === "command.failed") {
+          const message = (envelope.payload as { message?: string; reason?: string }).message ?? (envelope.payload as { reason?: string }).reason ?? "Relay chat request failed.";
+          finish(() => reject(new Error(message)));
+        }
+      } catch {
+        // Ignore malformed relay messages while waiting for the correlated response.
+      }
+    });
+
+    socket.addEventListener("error", () => {
+      finish(() => reject(new Error("Relay app socket could not connect for chat.")));
+    });
+
+    socket.addEventListener("close", () => {
+      if (!settled) finish(() => reject(new Error("Relay app socket closed before chat completed.")));
+    });
+  });
 }
 
 export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void, onStatus: (status: "connecting" | "online" | "offline") => void, relayUrl?: string) {

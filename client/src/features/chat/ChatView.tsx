@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Activity, ArrowLeft, Heart, Link2, MessageCircle, Plus, Search, Send, Trash2 } from "lucide-react";
 import { assets } from "../../data/assets";
+import { sendRelayChat } from "../../data/relay";
 import {
   chat,
   createSession,
@@ -25,7 +26,7 @@ import { statusLabels } from "../../app/constants";
 import { formatClock, getReikaDeviceName, mapProviderStatus, mapReikaMessage, providerCanChat } from "../../domain/reikaMappers";
 import type { Agent, ChatMessage } from "../../types";
 
-export function ChatView({ agent, initialState, relayProviders = [], artRuntime, onBack }: { agent: Agent; initialState: ReikaStateResponse | null; relayProviders?: ReikaProviderRecord[]; artRuntime: ArtRuntime; onBack: () => void }) {
+export function ChatView({ agent, initialState, relayProviders = [], relayUrl, artRuntime, onBack }: { agent: Agent; initialState: ReikaStateResponse | null; relayProviders?: ReikaProviderRecord[]; relayUrl: string; artRuntime: ArtRuntime; onBack: () => void }) {
   const [serverState, setServerState] = useState<ReikaStateResponse | null>(initialState);
   const [providers, setProviders] = useState<ReikaProviderRecord[]>(initialState?.providers ?? []);
   const [selectedProviderId, setSelectedProviderId] = useState(initialState?.activeProviderId ?? "");
@@ -33,6 +34,7 @@ export function ChatView({ agent, initialState, relayProviders = [], artRuntime,
   const [sessions, setSessions] = useState<ReikaSessionSummary[]>([]);
   const [sessionSearch, setSessionSearch] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [relaySessionId, setRelaySessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [files, setFiles] = useState<ReikaFileItem[]>([]);
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
@@ -66,9 +68,11 @@ export function ChatView({ agent, initialState, relayProviders = [], artRuntime,
   const selectedProviderStatus = mapProviderStatus(selectedProvider?.status);
   const selectedProviderCanChat = providerCanChat(selectedProvider);
   const selectedLiveAgent = providerAgents.find((item) => item.id === selectedAgentKey || item.name === selectedAgentKey) ?? providerAgents[0];
+  const selectedRelayDeviceId = getRelayDeviceId(selectedProvider, selectedLiveAgent);
+  const selectedIsRelayProvider = Boolean(selectedRelayDeviceId);
   const headerAgentName = selectedLiveAgent?.name ?? agent.name;
   const providerLabel = selectedProvider?.name ?? "Reika Server";
-  const deviceName = getReikaDeviceName(serverState) || "Epic PC";
+  const deviceName = selectedIsRelayProvider ? String(selectedLiveAgent?.source ?? selectedRelayDeviceId ?? "Relay Device") : getReikaDeviceName(serverState) || "Epic PC";
   const selectedAttachments = files.filter((file) => selectedFileIds.includes(file.id));
   const artAgent: ArtAgentLike = {
     id: selectedLiveAgent?.id ?? selectedAgentKey ?? agent.id,
@@ -211,6 +215,31 @@ export function ChatView({ agent, initialState, relayProviders = [], artRuntime,
       }
     ]);
     try {
+      if (selectedIsRelayProvider && selectedProvider && selectedRelayDeviceId) {
+        const result = await sendRelayChat(selectedRelayDeviceId, {
+          providerId: selectedProvider.id,
+          agent: selectedLiveAgent?.id ?? selectedAgentKey,
+          sessionId: relaySessionId ?? undefined,
+          message,
+          fileIds: selectedFileIds
+        }, relayUrl);
+        setRelaySessionId(result.sessionId);
+        setMessages((current) => [
+          ...current,
+          {
+            id: `relay-${Date.now()}`,
+            sender: "agent",
+            body: result.text,
+            time: formatClock(new Date().toISOString())
+          }
+        ]);
+        setStatus(`Routed through relay ${result.runtime}`);
+        setFiles((current) => current.filter((file) => !selectedFileIds.includes(file.id)));
+        setSelectedFileIds([]);
+        setSendError(null);
+        return;
+      }
+
       const result = selectedSessionId
         ? await postSessionMessage(selectedSessionId, { message, fileIds: selectedFileIds })
         : await chat({
@@ -274,7 +303,7 @@ export function ChatView({ agent, initialState, relayProviders = [], artRuntime,
   };
 
   const visibleMessages = messages;
-  const canSend = Boolean(draft.trim()) && !busy && Boolean(selectedProvider) && selectedProviderCanChat && selectedProviderStatus === "online" && !stateError;
+  const canSend = Boolean(draft.trim()) && !busy && Boolean(selectedProvider) && selectedProviderCanChat && selectedProviderStatus === "online" && (selectedIsRelayProvider || !stateError);
 
   return (
     <main className={pageMotionClass("chat-screen")}>
@@ -391,15 +420,16 @@ export function ChatView({ agent, initialState, relayProviders = [], artRuntime,
             {status}
             <span />
           </div>
-          {stateError ? <div className="chat-error-banner">Reika server offline. {stateError}</div> : null}
+          {stateError && !selectedIsRelayProvider ? <div className="chat-error-banner">Reika server offline. {stateError}</div> : null}
           {!stateError && selectedProvider && !selectedProviderCanChat ? <div className="chat-error-banner">{selectedProvider.name} is not chat-capable yet.</div> : null}
           {!stateError && selectedProvider && selectedProviderStatus !== "online" ? <div className="chat-error-banner">{selectedProvider.name} is {statusLabels[selectedProviderStatus].toLowerCase()}.</div> : null}
+          {selectedIsRelayProvider ? <div className="chat-inline-note">Relay chat active for {deviceName}.</div> : null}
           {sendError ? <div className="chat-error-banner">{sendError}</div> : null}
           <div className="message-list">
             {visibleMessages.map((message, index) => (
               <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={headerAgentName} motionIndex={index} />
             ))}
-            {!busy && visibleMessages.length === 0 && !sendError && !stateError ? (
+            {!busy && visibleMessages.length === 0 && !sendError && (!stateError || selectedIsRelayProvider) ? (
               <div className="chat-empty-state">
                 <MessageCircle size={22} />
                 <span>No messages yet. Start a new conversation when you are ready.</span>
@@ -436,7 +466,7 @@ export function ChatView({ agent, initialState, relayProviders = [], artRuntime,
                   type="button"
                   aria-label="Attach file or link"
                   onClick={() => setAttachmentMenuOpen((current) => !current)}
-                  disabled={busy || Boolean(stateError)}
+                  disabled={busy || (Boolean(stateError) && !selectedIsRelayProvider)}
                 >
                   <Link2 size={21} />
                 </button>
@@ -495,4 +525,12 @@ function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex 
       </div>
     </article>
   );
+}
+
+function getRelayDeviceId(provider: ReikaProviderRecord | undefined, agent: ReikaProviderRecord["agents"][number] | undefined) {
+  const providerRecord = provider as (ReikaProviderRecord & { relayDeviceId?: unknown }) | undefined;
+  if (typeof providerRecord?.relayDeviceId === "string" && providerRecord.relayDeviceId) return providerRecord.relayDeviceId;
+  const agentRecord = agent as (ReikaProviderRecord["agents"][number] & { deviceId?: unknown }) | undefined;
+  if (typeof agentRecord?.deviceId === "string" && agentRecord.deviceId) return agentRecord.deviceId;
+  return undefined;
 }
