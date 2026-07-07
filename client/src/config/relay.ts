@@ -23,6 +23,13 @@ export function relayAppWebSocketUrl(relayDeviceUrl?: string) {
   return deriveRelayUrl(normalizeRelayDeviceUrl(relayDeviceUrl), "ws", "app");
 }
 
+export function sameOriginRelayAppWebSocketUrl() {
+  if (typeof window === "undefined") return undefined;
+  const url = new URL("/v1/app", window.location.origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString().replace(/\/$/u, "");
+}
+
 export function relayDeviceWebSocketUrl(relayDeviceUrl?: string) {
   return deriveRelayUrl(normalizeRelayDeviceUrl(relayDeviceUrl), "ws", "device");
 }

@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { WebSocket, WebSocketServer } from "ws";
+import { WebSocket, WebSocketServer, type RawData } from "ws";
 
 export interface DesktopServerOptions {
   distDir: string;
@@ -39,7 +39,7 @@ export async function startDesktopServer(options: DesktopServerOptions): Promise
   const port = options.port ?? 0;
   const distDir = resolve(options.distDir);
   const agentTarget = options.agentTarget ?? "http://127.0.0.1:47840";
-  const relayTarget = options.relayTarget ?? "http://127.0.0.1:8790";
+  const relayTarget = options.relayTarget ?? "https://relay.techexplore.us";
   const apiTarget = options.apiTarget ?? "http://127.0.0.1:8787";
 
   const server = createServer(async (req, res) => {
@@ -74,10 +74,20 @@ export async function startDesktopServer(options: DesktopServerOptions): Promise
       const target = new URL(`${url.pathname}${url.search}`, relayTarget);
       target.protocol = target.protocol === "https:" ? "wss:" : "ws:";
       const upstream = new WebSocket(target);
+      const queuedMessages: RawData[] = [];
+      let upstreamOpen = false;
+
+      client.on("message", (message) => {
+        if (upstreamOpen && upstream.readyState === WebSocket.OPEN) {
+          upstream.send(message);
+          return;
+        }
+        queuedMessages.push(message);
+      });
+
       upstream.on("open", () => {
-        client.on("message", (message) => {
-          if (upstream.readyState === WebSocket.OPEN) upstream.send(message);
-        });
+        upstreamOpen = true;
+        for (const message of queuedMessages.splice(0)) upstream.send(message);
         upstream.on("message", (message) => {
           if (client.readyState === WebSocket.OPEN) client.send(message);
         });

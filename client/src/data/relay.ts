@@ -1,5 +1,5 @@
 import type { AgentHubAgent, AgentHubDevice } from "../shared/agenthub";
-import { relayApiUrl, relayAppWebSocketUrl, relayDeviceWebSocketUrl } from "../config/relay";
+import { relayApiUrl, relayAppWebSocketUrl, relayDeviceWebSocketUrl, sameOriginRelayAppWebSocketUrl } from "../config/relay";
 import {
   createEnvelope,
   isAgentHubEnvelope,
@@ -126,8 +126,27 @@ export async function sendRelayChat(
     source: { kind: "app", id: "agenthub-client" },
     target: { kind: "device", id: deviceId }
   });
+  const directUrl = getRelayAppWebSocketUrl(relayUrl);
+  const sameOriginUrl = sameOriginRelayAppWebSocketUrl();
+  const urls = [...new Set([sameOriginUrl, directUrl].filter((url): url is string => Boolean(url)))];
+  let lastError: Error | undefined;
+  for (const url of urls) {
+    try {
+      return await sendRelayChatOverSocket(url, request, timeoutMs);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  throw lastError ?? new Error("Relay app socket could not connect for chat.");
+}
+
+function sendRelayChatOverSocket(
+  socketUrl: string,
+  request: AgentHubEnvelope<AgentChatRequestPayload>,
+  timeoutMs: number
+): Promise<AgentChatResponsePayload> {
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(getRelayAppWebSocketUrl(relayUrl));
+    const socket = new WebSocket(socketUrl);
     let settled = false;
     const finish = (callback: () => void) => {
       if (settled) return;
