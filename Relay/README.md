@@ -28,6 +28,52 @@ npm run build
 
 This compiles the relay TypeScript package into `dist/`.
 
+## Relay CLI
+
+After building, the relay package includes a small operator CLI:
+
+```bash
+npm run relay -- status
+npm run relay -- update
+npm run relay -- start
+npm run relay -- stop
+npm run relay -- restart
+```
+
+If the package is linked or installed globally, the same commands are available as:
+
+```bash
+reika-relay status
+reika-relay update
+reika-relay start
+reika-relay stop
+reika-relay restart
+```
+
+The CLI assumes a systemd service named `reika-relay` by default. Override it when needed:
+
+```bash
+reika-relay status --service project-reika-relay
+reika-relay restart --user --service reika-relay
+reika-relay status --url https://relay.example.com/v1/health
+```
+
+`reika-relay update` runs a conservative update flow from the git checkout:
+
+1. `git fetch origin`
+2. `git pull --ff-only origin <current-branch>`
+3. `npm install`
+4. `npm run build --workspace project-reika-relay`
+5. restart the service if it was active before the update
+
+Useful environment defaults:
+
+```text
+REIKA_RELAY_SERVICE=reika-relay
+REIKA_RELAY_SYSTEMD_MODE=system
+REIKA_RELAY_HEALTH_URL=http://127.0.0.1:8790/v1/health
+```
+
 ## Production Container
 
 ```bash

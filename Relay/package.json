@@ -4,7 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Project Reika dev relay for pairing, presence, and safe AgentHub envelope routing.",
+  "bin": {
+    "reika-relay": "./dist/relay/cli.js"
+  },
   "scripts": {
+    "relay": "node dist/relay/cli.js",
+    "relay:dev": "tsx src/relay/cli.ts",
     "dev": "tsx src/relay/server.ts",
     "start": "node dist/relay/server.js",
     "build": "tsc -p tsconfig.json",
