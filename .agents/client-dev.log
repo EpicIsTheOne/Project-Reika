@@ -1,0 +1,68 @@
+
+> agenthub-phase1-ui@0.1.0 dev:ui
+> vite --host 127.0.0.1
+
+
+  [32m[1mVITE[22m v6.4.3[39m  [2mready in [0m[1m378[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5173[22m/[39m
+[2m12:11:57 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/devices/DevicesView.tsx[22m
+[2m12:12:49 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/devices/DevicesView.tsx[22m
+[2m12:13:22 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/devices/DevicesView.tsx[22m
+[2m12:13:45 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx[22m
+[2m12:15:08 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m12:16:17 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m12:16:56 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/devices/DevicesView.tsx[22m
+[2m12:17:46 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/connection/AgentConnectionWizard.tsx[22m
+[2m12:18:01 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/connection/AgentConnectionWizard.tsx[22m
+[2m12:22:39 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/devices/DevicesView.tsx[22m
+[2m12:49:30 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/connection/AgentConnectionWizard.tsx[22m
+[2m12:51:25 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m12:52:00 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m12:58:27 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m1:02:43 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m1:03:07 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m1:24:24 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/devices/DevicesView.tsx[22m
+[2m1:28:13 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/devices/DevicesView.tsx[22m
+[2m1:30:14 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx, /src/features/art/AgentArtStudio.tsx, /src/features/notifications/NotificationsView.tsx, /src/features/settings/SettingsView.tsx, /src/features/chat/ChatView.tsx[22m
+[2m1:30:30 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx, /src/components/AppShell.tsx, /src/features/home/HomePage.tsx, /src/features/chat/ChatView.tsx, /src/features/devices/DevicesView.tsx, /src/features/art/AgentArtStudio.tsx, /src/components/status.tsx, /src/features/connection/AgentConnectionWizard.tsx[22m
+[2m1:30:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx[22m
+[2m1:31:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m1:31:50 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx, /src/features/art/AgentArtStudio.tsx, /src/features/notifications/NotificationsView.tsx, /src/features/settings/SettingsView.tsx, /src/features/chat/ChatView.tsx[22m
+[2m1:33:54 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/settings/SettingsView.tsx[22m
+[2m1:34:15 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx, /src/features/art/AgentArtStudio.tsx, /src/features/notifications/NotificationsView.tsx, /src/features/settings/SettingsView.tsx, /src/features/chat/ChatView.tsx[22m
+[2m1:36:18 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m1:38:59 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx, /src/features/art/AgentArtStudio.tsx, /src/features/notifications/NotificationsView.tsx, /src/features/settings/SettingsView.tsx, /src/features/chat/ChatView.tsx[22m
+[2m1:45:32 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx[22m
+[2m1:55:27 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:27 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/resources/client-dist/index.html[22m
+[2m1:55:27 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:27 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:27 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m1:55:36 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/resources/client-dist/index.html[22m
+[2m5:16:22 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/notifications/NotificationsView.tsx[22m
+[2m5:21:39 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx, /src/features/art/AgentArtStudio.tsx, /src/features/notifications/NotificationsView.tsx, /src/features/settings/SettingsView.tsx, /src/features/chat/ChatView.tsx[22m
+[2m5:40:28 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx, /src/features/art/AgentArtStudio.tsx, /src/features/notifications/NotificationsView.tsx, /src/features/settings/SettingsView.tsx, /src/features/chat/ChatView.tsx[22m
+[2m5:41:05 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/art/AgentArtStudio.tsx[22m
+[2m5:41:41 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/settings/SettingsView.tsx[22m
+[2m5:42:44 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m5:46:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m5:46:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/resources/client-dist/index.html[22m
+[2m5:46:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m5:46:58 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/LICENSES.chromium.html[22m
+[2m5:47:12 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mrelease/win-unpacked/resources/client-dist/index.html[22m
+[2m6:39:40 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx, /src/features/art/AgentArtStudio.tsx[22m
+[2m6:40:01 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/chat/ChatView.tsx[22m
+[2m6:40:22 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/settings/SettingsView.tsx[22m
+[2m6:40:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/features/art/AgentArtStudio.tsx[22m
+[2m6:41:16 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/app/App.tsx, /src/features/art/AgentArtStudio.tsx, /src/features/chat/ChatView.tsx, /src/features/settings/SettingsView.tsx[22m

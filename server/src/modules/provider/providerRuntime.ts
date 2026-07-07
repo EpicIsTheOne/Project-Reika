@@ -107,6 +107,19 @@ function parseHermesOutput(stdout = '', stderr = '') {
   return { text: kept.join('\n').trim(), hermesSessionId, raw };
 }
 
+function cleanProviderSessionSegment(value = '') {
+  return String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 96);
+}
+
+function providerSessionId(prefix: string, sessionId?: string) {
+  const base = cleanProviderSessionSegment(sessionId || '');
+  return `${prefix}_${base || Date.now().toString(36)}`;
+}
+
 async function renameHermesSession(sessionId: string, title: string) {
   if (!sessionId) return;
   try {
@@ -151,23 +164,40 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
     const body = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
     const text = String(body.text || body.reply || body.message || body.response || '').trim();
+    const commandCenterSessionId = String(body.sessionId || sessionId).trim();
     onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text } });
-    onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId } });
-    return { providerId: provider.id, agentId, sessionId, runtime: 'commandcenter', text, metadata: body };
+    onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: commandCenterSessionId } });
+    return {
+      providerId: provider.id,
+      agentId,
+      sessionId: commandCenterSessionId,
+      runtime: 'commandcenter',
+      text,
+      metadata: { ...body, providerSessionId: commandCenterSessionId, commandCenterSessionId }
+    };
   }
 
   if (provider.kind === 'openclaw') {
+    const openClawSessionId = request.providerSessionId || providerSessionId('project_reika', sessionId);
     const args = [
       'agent', '--agent', agentId,
-      '--session-id', `project_reika_${sessionId}`,
+      '--session-id', openClawSessionId,
       '--thinking', agentId === 'orchestrator' || agentId === 'main' ? 'low' : 'off',
       '--message', request.message
     ];
     const { stdout, stderr } = await runCommand(openClawBin, args);
     const text = String(stdout || stderr || '').trim();
     onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text } });
-    onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId } });
-    return { providerId: provider.id, agentId, sessionId, runtime: 'openclaw', text, raw: `${stdout || ''}\n${stderr || ''}`.trim() };
+    onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: openClawSessionId } });
+    return {
+      providerId: provider.id,
+      agentId,
+      sessionId: openClawSessionId,
+      runtime: 'openclaw',
+      text,
+      raw: `${stdout || ''}\n${stderr || ''}`.trim(),
+      metadata: { providerSessionId: openClawSessionId, openClawSessionId, localSessionId: sessionId }
+    };
   }
 
   if (provider.kind === 'hermes') {
@@ -184,20 +214,25 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
     const { stdout, stderr } = await runCommand(hermesBin, args);
     const parsed = parseHermesOutput(stdout, stderr);
     if (!parsed.text) throw new Error('Hermes returned no chat response.');
-    const hermesSessionId = parsed.hermesSessionId || request.providerSessionId || sessionId;
+    const hermesSessionId = parsed.hermesSessionId || request.providerSessionId || '';
     if (!request.providerSessionId && parsed.hermesSessionId) {
       await renameHermesSession(parsed.hermesSessionId, `AgentHub - ${String(agent.name || agentId || 'Reika').trim()}`);
     }
     onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text: parsed.text } });
-    onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: hermesSessionId } });
+    onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: hermesSessionId || sessionId } });
     return {
       providerId: provider.id,
       agentId,
-      sessionId: hermesSessionId,
+      sessionId: hermesSessionId || sessionId,
       runtime: 'hermes',
       text: parsed.text,
       raw: parsed.raw,
-      metadata: { hermesProfile: profile, hermesSource: hermesSessionSource, hermesSessionId }
+      metadata: {
+        hermesProfile: profile,
+        hermesSource: hermesSessionSource,
+        ...(hermesSessionId ? { providerSessionId: hermesSessionId, hermesSessionId } : {}),
+        localSessionId: sessionId
+      }
     };
   }
 

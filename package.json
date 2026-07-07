@@ -16,6 +16,7 @@
     "dev:server": "npm run dev --workspace project-reika-agent-server",
     "dev:relay": "npm run dev --workspace project-reika-relay",
     "sync:protocol": "node shared/scripts/sync-protocol.mjs",
-    "check:protocol": "node shared/scripts/check-protocol-sync.mjs"
+    "check:protocol": "node shared/scripts/check-protocol-sync.mjs",
+    "test:chat-relay": "node scripts/test_chat_relay_contracts.mjs"
   }
 }

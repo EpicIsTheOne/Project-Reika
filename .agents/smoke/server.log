@@ -1,0 +1,80 @@
+
+> project-reika-agent-server@0.1.0 dev
+> tsx watch src/main.ts
+
+Project Reika Agent Server listening on http://127.0.0.1:47840
+Local provider detection enabled. External uplink disabled. Direct provider chat enabled for CommandCenter, OpenClaw, Hermes, and mock.
+Opening Windows pairing UI at http://127.0.0.1:47840/
+6:35:28 PM [tsx] change in ./src\modules\provider\providerRuntime.ts Restarting...
+cProject Reika Agent Server listening on http://127.0.0.1:47840
+Local provider detection enabled. External uplink disabled. Direct provider chat enabled for CommandCenter, OpenClaw, Hermes, and mock.
+Opening Windows pairing UI at http://127.0.0.1:47840/
+6:35:52 PM [tsx] change in ./src\modules\provider\providerRuntime.ts Restarting...
+c
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+Error [TransformError]: Transform failed with 1 error:
+C:\Users\Epic\Documents\Project Reika\server\src\modules\provider\providerRuntime.ts:111:27: ERROR: Unterminated regular expression
+    at failureErrorWithLog (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:1748:15)
+    at C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:1017:50
+    at responseCallbacks.<computed> (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:884:9)
+    at handleIncomingPacket (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:939:12)
+    at Socket.readFromStdout (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:862:7)
+    at Socket.emit (node:events:518:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+
+Node.js v22.16.0
+6:36:37 PM [tsx] change in ./src\modules\provider\providerRuntime.ts Rerunning...
+c
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+Error [TransformError]: Transform failed with 1 error:
+C:\Users\Epic\Documents\Project Reika\server\src\modules\provider\providerRuntime.ts:111:27: ERROR: Unterminated regular expression
+    at failureErrorWithLog (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:1748:15)
+    at C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:1017:50
+    at responseCallbacks.<computed> (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:884:9)
+    at handleIncomingPacket (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:939:12)
+    at Socket.readFromStdout (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:862:7)
+    at Socket.emit (node:events:518:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+
+Node.js v22.16.0
+6:38:17 PM [tsx] change in ./src\modules\provider\providerRuntime.ts Rerunning...
+c
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+Error [TransformError]: Transform failed with 1 error:
+C:\Users\Epic\Documents\Project Reika\server\src\modules\provider\providerRuntime.ts:156:34: ERROR: Expected ";" but found "Provider"
+    at failureErrorWithLog (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:1748:15)
+    at C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:1017:50
+    at responseCallbacks.<computed> (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:884:9)
+    at handleIncomingPacket (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:939:12)
+    at Socket.readFromStdout (C:\Users\Epic\Documents\Project Reika\server\node_modules\esbuild\lib\main.js:862:7)
+    at Socket.emit (node:events:518:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+
+Node.js v22.16.0
+6:39:03 PM [tsx] change in ./src\modules\provider\providerRuntime.ts Rerunning...
+cProject Reika Agent Server listening on http://127.0.0.1:47840
+Local provider detection enabled. External uplink disabled. Direct provider chat enabled for CommandCenter, OpenClaw, Hermes, and mock.
+Opening Windows pairing UI at http://127.0.0.1:47840/
+6:39:23 PM [tsx] change in ./src\modules\provider\providerRuntime.ts Restarting...
+cProject Reika Agent Server listening on http://127.0.0.1:47840
+Local provider detection enabled. External uplink disabled. Direct provider chat enabled for CommandCenter, OpenClaw, Hermes, and mock.
+Opening Windows pairing UI at http://127.0.0.1:47840/
+6:40:07 PM [tsx] change in ./src\modules\provider\providerRuntime.ts Restarting...
+cProject Reika Agent Server listening on http://127.0.0.1:47840
+Local provider detection enabled. External uplink disabled. Direct provider chat enabled for CommandCenter, OpenClaw, Hermes, and mock.
+Opening Windows pairing UI at http://127.0.0.1:47840/

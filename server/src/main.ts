@@ -614,9 +614,12 @@ async function runChatTurn(input: { sessionId?: string; providerId?: string; age
     const providerSessionIds = typeof session.metadata.providerSessionIds === 'object' && session.metadata.providerSessionIds
       ? session.metadata.providerSessionIds as Record<string, string>
       : {};
-    providerSessionIds[result.providerId] = result.sessionId;
+    const realProviderSessionId = typeof result.metadata?.providerSessionId === 'string' ? result.metadata.providerSessionId.trim() : '';
+    if (realProviderSessionId) providerSessionIds[result.providerId] = realProviderSessionId;
     session.metadata.providerSessionIds = providerSessionIds;
-    if (result.runtime === 'hermes') session.metadata.hermesSessionId = typeof result.metadata?.hermesSessionId === 'string' ? result.metadata.hermesSessionId : result.sessionId;
+    if (result.runtime === 'hermes' && typeof result.metadata?.hermesSessionId === 'string' && result.metadata.hermesSessionId.trim()) {
+      session.metadata.hermesSessionId = result.metadata.hermesSessionId.trim();
+    }
     const assistantMessage = appendMessage(session, 'assistant', result.text, { providerId: result.providerId, agent: result.agentId, runtime: result.runtime, files: [] });
     addNotification({
       kind: 'chat',

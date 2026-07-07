@@ -1,0 +1,5 @@
+
+> project-reika-relay@0.1.0 dev
+> tsx src/relay/server.ts
+
+[agenthub-relay] Relay listening at http://127.0.0.1:8790
