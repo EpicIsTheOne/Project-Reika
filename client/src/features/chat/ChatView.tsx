@@ -86,8 +86,13 @@ export function ChatView({
     return merged;
   }, [providers, relayProviders, serverState?.device.deviceId, serverState?.device.id, serverState?.settings?.mockEnabled]);
   const requestedAgentProvider = useMemo(
-    () => availableProviders.find((provider) => provider.agents.some((item) => agentMatches(item, agent.id, agent.name))),
-    [agent.id, agent.name, availableProviders]
+    () => {
+      const relayProvider = availableProviders.find((provider) => providerMatchesRequestedRelayAgent(provider, agent));
+      if (relayProvider) return relayProvider;
+      return availableProviders.find((provider) => provider.agents.some((item) => agentMatches(item, agent.id, undefined)))
+        ?? availableProviders.find((provider) => provider.agents.some((item) => agentMatches(item, undefined, agent.name)));
+    },
+    [agent.deviceId, agent.id, agent.name, agent.relayAgentId, agent.relayProviderId, availableProviders]
   );
   const selectedProvider = useMemo(
     () => {
@@ -719,6 +724,25 @@ function getRelayProviderId(provider: ReikaProviderRecord) {
 function getRelayAgentId(agent: ReikaProviderRecord["agents"][number] | undefined) {
   if (!agent) return undefined;
   return typeof agent.relayAgentId === "string" && agent.relayAgentId ? agent.relayAgentId : agent.id;
+}
+
+function providerMatchesRequestedRelayAgent(provider: ReikaProviderRecord, agent: Agent) {
+  const requestedProviderId = typeof agent.relayProviderId === "string" && agent.relayProviderId ? agent.relayProviderId : "";
+  const requestedAgentId = typeof agent.relayAgentId === "string" && agent.relayAgentId ? agent.relayAgentId : "";
+  if (!requestedProviderId && !requestedAgentId) return false;
+  if (requestedProviderId && getRelayProviderId(provider) !== requestedProviderId) return false;
+
+  const providerRelayDeviceId = getRelayDeviceId(provider, undefined);
+  if (providerRelayDeviceId && agent.deviceId && providerRelayDeviceId !== agent.deviceId) return false;
+
+  return provider.agents.some((item) => {
+    const relayAgentId = getRelayAgentId(item);
+    return Boolean(
+      (requestedAgentId && relayAgentId === requestedAgentId) ||
+      item.id === agent.id ||
+      agentMatches(item, requestedAgentId || agent.id, undefined)
+    );
+  });
 }
 
 function makeAgentOptionKey(providerId: string, agentId: string) {
