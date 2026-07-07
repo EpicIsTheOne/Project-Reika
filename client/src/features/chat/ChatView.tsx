@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Activity, ArrowLeft, Heart, Link2, MessageCircle, Plus, Search, Send, Trash2 } from "lucide-react";
 import { assets } from "../../data/assets";
@@ -71,6 +71,7 @@ export function ChatView({
   const [sessionListError, setSessionListError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const suppressedRelaySessionLoadRef = useRef<string | null>(null);
   const artInstanceKey = useMemo(() => makeArtRuntimeSeed(), []);
 
   const availableProviders = useMemo(() => {
@@ -257,6 +258,7 @@ export function ChatView({
       return;
     }
     if (selectedIsRelayProvider) {
+      if (suppressedRelaySessionLoadRef.current === selectedSessionId) return;
       getRelayChatMessages(selectedSessionId, relayUrl)
         .then((result) => {
           setMessages(result.map(mapReikaMessage));
@@ -372,6 +374,13 @@ export function ChatView({
             relayUrl
             )
           ).id;
+        suppressedRelaySessionLoadRef.current = relaySessionId;
+        const userTimestamp = new Date().toISOString();
+        await appendRelayChatMessages(
+          relaySessionId,
+          [{ id: userMessage.id, role: "user", text: message, timestamp: userTimestamp, meta: { fileIds: selectedFileIds } }],
+          relayUrl
+        );
         if (!selectedSessionId) setSelectedSessionId(relaySessionId);
         const result = await onRelayChat(selectedRelayDeviceId, {
           providerId: relayProviderId,
@@ -393,10 +402,7 @@ export function ChatView({
         });
         await appendRelayChatMessages(
           relaySessionId,
-          [
-            { id: userMessage.id, role: "user", text: message, timestamp: now, meta: { fileIds: selectedFileIds } },
-            { id: agentMessage.id, role: "assistant", text: result.text, timestamp: now, meta: { runtime: result.runtime, providerSessionId: result.sessionId } }
-          ],
+          [{ id: agentMessage.id, role: "assistant", text: result.text, timestamp: now, meta: { runtime: result.runtime, providerSessionId: result.sessionId } }],
           relayUrl
         );
         await loadSessionRows("", relayProviderId, relayAgentId);
@@ -426,6 +432,7 @@ export function ChatView({
     } catch (sendError) {
       setSendError(normalizeChatError(sendError, "Message failed."));
     } finally {
+      suppressedRelaySessionLoadRef.current = null;
       setBusy(false);
     }
   };
