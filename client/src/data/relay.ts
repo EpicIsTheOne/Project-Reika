@@ -121,7 +121,11 @@ export async function sendRelayChat(
   relayUrl?: string,
   timeoutMs = 120000
 ): Promise<AgentChatResponsePayload> {
-  const request = createEnvelope("agent.chat.request", payload, { deviceId });
+  const request = createEnvelope("agent.chat.request", payload, {
+    deviceId,
+    source: { kind: "app", id: "agenthub-client" },
+    target: { kind: "device", id: deviceId }
+  });
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(getRelayAppWebSocketUrl(relayUrl));
     let settled = false;

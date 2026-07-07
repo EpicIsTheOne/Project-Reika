@@ -111,6 +111,10 @@ export function ChatView({
   const selectedAgentOptionKey = selectedProvider && selectedLiveAgent ? makeAgentOptionKey(selectedProvider.id, selectedLiveAgent.id) : "";
   const selectedRelayDeviceId = getRelayDeviceId(selectedProvider, selectedLiveAgent);
   const selectedIsRelayProvider = Boolean(selectedRelayDeviceId);
+  const relayConversationKey =
+    selectedIsRelayProvider && selectedRelayDeviceId && selectedProvider && selectedLiveAgent
+      ? makeRelayConversationKey(selectedRelayDeviceId, getRelayProviderId(selectedProvider), getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent.id)
+      : null;
   const headerAgentName = selectedLiveAgent?.name ?? agent.name;
   const providerLabel = selectedProvider?.name ?? "Reika Server";
   const deviceName = selectedIsRelayProvider ? String(selectedLiveAgent?.source ?? selectedRelayDeviceId ?? "Relay Device") : getReikaDeviceName(serverState) || "Epic PC";
@@ -144,6 +148,11 @@ export function ChatView({
   };
 
   const loadSessionRows = async (query = sessionSearch, providerId = selectedProvider?.id, agentId = selectedLiveAgent?.id) => {
+    if (selectedIsRelayProvider) {
+      setSessions([]);
+      setSessionListError(null);
+      return;
+    }
     try {
       if (query.trim()) {
         const result = await searchSessions({ q: query.trim(), limit: 30, providerId, agent: agentId });
@@ -218,6 +227,7 @@ export function ChatView({
 
   useEffect(() => {
     if (!selectedSessionId) {
+      if (selectedIsRelayProvider) return;
       setMessages([]);
       return;
     }
@@ -229,7 +239,15 @@ export function ChatView({
       .catch((loadError) => {
         setSendError(normalizeChatError(loadError, "Could not load that conversation."));
       });
-  }, [selectedSessionId]);
+  }, [selectedIsRelayProvider, selectedSessionId]);
+
+  useEffect(() => {
+    if (!relayConversationKey) return;
+    const stored = readRelayConversation(relayConversationKey);
+    setRelaySessionId(stored.sessionId);
+    setMessages(stored.messages);
+    setSendError(null);
+  }, [relayConversationKey]);
 
   const handleRefreshProviders = async () => {
     setBusy(true);
@@ -250,6 +268,13 @@ export function ChatView({
 
   const handleNewSession = async () => {
     if (!selectedProvider) return;
+    if (selectedIsRelayProvider) {
+      setRelaySessionId(null);
+      setMessages([]);
+      setSendError(null);
+      if (relayConversationKey) writeRelayConversation(relayConversationKey, null, []);
+      return;
+    }
     setBusy(true);
     try {
       const created = await createSession({
@@ -274,15 +299,17 @@ export function ChatView({
     if (!message || busy) return;
     setBusy(true);
     setDraft("");
-    setMessages((current) => [
-      ...current,
-      {
-        id: `local-${Date.now()}`,
-        sender: "user",
-        body: message,
-        time: formatClock(new Date().toISOString())
-      }
-    ]);
+    const userMessage: ChatMessage = {
+      id: `local-${Date.now()}`,
+      sender: "user",
+      body: message,
+      time: formatClock(new Date().toISOString())
+    };
+    setMessages((current) => {
+      const next = [...current, userMessage];
+      if (relayConversationKey) writeRelayConversation(relayConversationKey, relaySessionId, next);
+      return next;
+    });
     try {
       if (selectedIsRelayProvider && selectedProvider && selectedRelayDeviceId) {
         const result = await onRelayChat(selectedRelayDeviceId, {
@@ -292,16 +319,18 @@ export function ChatView({
           message,
           fileIds: selectedFileIds
         });
+        const agentMessage: ChatMessage = {
+          id: `relay-${Date.now()}`,
+          sender: "agent",
+          body: result.text,
+          time: formatClock(new Date().toISOString())
+        };
         setRelaySessionId(result.sessionId);
-        setMessages((current) => [
-          ...current,
-          {
-            id: `relay-${Date.now()}`,
-            sender: "agent",
-            body: result.text,
-            time: formatClock(new Date().toISOString())
-          }
-        ]);
+        setMessages((current) => {
+          const next = [...current, agentMessage];
+          if (relayConversationKey) writeRelayConversation(relayConversationKey, result.sessionId, next);
+          return next;
+        });
         setStatus(`Routed through relay ${result.runtime}`);
         setFiles((current) => current.filter((file) => !selectedFileIds.includes(file.id)));
         setSelectedFileIds([]);
@@ -619,6 +648,46 @@ function getRelayAgentId(agent: ReikaProviderRecord["agents"][number] | undefine
 
 function makeAgentOptionKey(providerId: string, agentId: string) {
   return `${providerId}::${agentId}`;
+}
+
+function makeRelayConversationKey(deviceId: string, providerId: string, agentId: string) {
+  return `agenthub:relay-chat:${deviceId}:${providerId}:${agentId}`;
+}
+
+function readRelayConversation(key: string): { sessionId: string | null; messages: ChatMessage[] } {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return { sessionId: null, messages: [] };
+    const parsed = JSON.parse(raw) as { sessionId?: unknown; messages?: unknown };
+    const messages = Array.isArray(parsed.messages)
+      ? parsed.messages
+          .filter((message): message is ChatMessage => {
+            const candidate = message as Partial<ChatMessage>;
+            return typeof candidate.id === "string" && (candidate.sender === "user" || candidate.sender === "agent") && typeof candidate.body === "string" && typeof candidate.time === "string";
+          })
+          .slice(-200)
+      : [];
+    return {
+      sessionId: typeof parsed.sessionId === "string" && parsed.sessionId ? parsed.sessionId : null,
+      messages
+    };
+  } catch {
+    return { sessionId: null, messages: [] };
+  }
+}
+
+function writeRelayConversation(key: string, sessionId: string | null, messages: ChatMessage[]) {
+  try {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({
+        sessionId,
+        messages: messages.slice(-200)
+      })
+    );
+  } catch {
+    // Local persistence is best-effort; chat should keep working in memory.
+  }
 }
 
 type SelectableAgentOption = {
