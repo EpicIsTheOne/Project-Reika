@@ -71,6 +71,7 @@ export function ChatView({
   const [sessionListError, setSessionListError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [agentSelectionDirty, setAgentSelectionDirty] = useState(false);
   const suppressedRelaySessionLoadRef = useRef<string | null>(null);
   const artInstanceKey = useMemo(() => makeArtRuntimeSeed(), []);
 
@@ -95,21 +96,22 @@ export function ChatView({
     [agent.deviceId, agent.id, agent.name, agent.relayAgentId, agent.relayProviderId, availableProviders]
   );
   const requestedHasRelayIdentity = hasRequestedRelayIdentity(agent);
+  const shouldUseRequestedAgentRoute = !agentSelectionDirty;
   const selectedProvider = useMemo(
     () => {
-      if (requestedHasRelayIdentity && requestedAgentProvider) return requestedAgentProvider;
+      if (shouldUseRequestedAgentRoute && requestedHasRelayIdentity && requestedAgentProvider) return requestedAgentProvider;
       const selectedById = availableProviders.find((provider) => provider.id === selectedProviderId);
       const selectedOwnsRequestedAgent = selectedById?.agents.some((item) => agentMatches(item, selectedAgentKey, agent.name) || agentMatches(item, agent.id, agent.name));
-      if (selectedById && (selectedOwnsRequestedAgent || !requestedAgentProvider)) return selectedById;
+      if (selectedById && (!shouldUseRequestedAgentRoute || selectedOwnsRequestedAgent || !requestedAgentProvider)) return selectedById;
       return requestedAgentProvider ?? selectedById ?? availableProviders.find((provider) => provider.status === "preferred") ?? availableProviders[0];
     },
-    [agent.id, agent.name, availableProviders, requestedAgentProvider, requestedHasRelayIdentity, selectedAgentKey, selectedProviderId]
+    [agent.id, agent.name, availableProviders, requestedAgentProvider, requestedHasRelayIdentity, selectedAgentKey, selectedProviderId, shouldUseRequestedAgentRoute]
   );
   const providerAgents = selectedProvider?.agents ?? [];
   const selectedProviderStatus = mapProviderStatus(selectedProvider?.status);
   const selectedProviderCanChat = providerCanChat(selectedProvider);
   const selectedLiveAgent =
-    findRequestedRelayAgent(providerAgents, agent) ??
+    (shouldUseRequestedAgentRoute ? findRequestedRelayAgent(providerAgents, agent) : undefined) ??
     providerAgents.find((item) => item.id === selectedAgentKey || item.name === selectedAgentKey) ??
     providerAgents[0];
   const selectableAgents = useMemo(
@@ -127,19 +129,19 @@ export function ChatView({
     [availableProviders, selectorSettings]
   );
   const selectedAgentOptionKey = selectedProvider && selectedLiveAgent ? makeAgentOptionKey(selectedProvider.id, selectedLiveAgent.id) : "";
-  const selectedRelayDeviceId = getRelayDeviceId(selectedProvider, selectedLiveAgent) ?? (requestedHasRelayIdentity ? agent.deviceId : undefined);
+  const selectedRelayDeviceId = getRelayDeviceId(selectedProvider, selectedLiveAgent) ?? (shouldUseRequestedAgentRoute && requestedHasRelayIdentity ? agent.deviceId : undefined);
   const selectedIsRelayProvider = Boolean(selectedRelayDeviceId);
   const relayConversationKey =
     selectedIsRelayProvider && selectedRelayDeviceId && selectedProvider && selectedLiveAgent
       ? makeRelayConversationKey(
           selectedRelayDeviceId,
-          agent.relayProviderId ?? getRelayProviderId(selectedProvider),
-          agent.relayAgentId ?? getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent.id
+          (shouldUseRequestedAgentRoute ? agent.relayProviderId : undefined) ?? getRelayProviderId(selectedProvider),
+          (shouldUseRequestedAgentRoute ? agent.relayAgentId : undefined) ?? getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent.id
         )
       : null;
-  const relayProviderId = (requestedHasRelayIdentity ? agent.relayProviderId : undefined) ?? (selectedProvider ? getRelayProviderId(selectedProvider) : "");
+  const relayProviderId = (shouldUseRequestedAgentRoute && requestedHasRelayIdentity ? agent.relayProviderId : undefined) ?? (selectedProvider ? getRelayProviderId(selectedProvider) : "");
   const relayAgentId =
-    (requestedHasRelayIdentity ? agent.relayAgentId : undefined) ?? getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent?.id ?? selectedAgentKey;
+    (shouldUseRequestedAgentRoute && requestedHasRelayIdentity ? agent.relayAgentId : undefined) ?? getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent?.id ?? selectedAgentKey;
   const relayRouteSummary =
     selectedIsRelayProvider && selectedRelayDeviceId
       ? `${selectedRelayDeviceId} / ${relayProviderId || "provider?"} / ${relayAgentId || "agent?"}${selectedSessionId ? ` / ${selectedSessionId}` : ""}`
@@ -228,6 +230,7 @@ export function ChatView({
   }, [initialState, relayProviders]);
 
   useEffect(() => {
+    setAgentSelectionDirty(false);
     setSelectedAgentKey(agent.id);
     setSelectedSessionId(null);
     setMessages([]);
@@ -235,13 +238,14 @@ export function ChatView({
   }, [agent.id]);
 
   useEffect(() => {
+    if (agentSelectionDirty) return;
     if (!requestedAgentProvider) return;
     setSelectedProviderId((current) => (current === requestedAgentProvider.id ? current : requestedAgentProvider.id));
     const requestedAgent =
       findRequestedRelayAgent(requestedAgentProvider.agents, agent) ??
       requestedAgentProvider.agents.find((item) => agentMatches(item, agent.id, agent.name));
     if (requestedAgent) setSelectedAgentKey(requestedAgent.id);
-  }, [agent.id, agent.name, agent.relayAgentId, requestedAgentProvider]);
+  }, [agent.id, agent.name, agent.relayAgentId, agentSelectionDirty, requestedAgentProvider]);
 
   useEffect(() => {
     if (selectedProviderId || availableProviders.length === 0) return;
@@ -501,6 +505,7 @@ export function ChatView({
   const handleAgentChange = (optionKey: string) => {
     const selected = selectableAgents.find((item) => item.key === optionKey);
     if (!selected) return;
+    setAgentSelectionDirty(true);
     setSelectedProviderId(selected.provider.id);
     setSelectedAgentKey(selected.agent.id);
     setSelectedSessionId(null);
