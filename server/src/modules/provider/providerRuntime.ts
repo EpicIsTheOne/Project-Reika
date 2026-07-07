@@ -67,27 +67,6 @@ function envWithLocalBin() {
   return { ...process.env, PATH: `${process.env.HOME || ''}/.local/bin:${process.env.PATH || ''}` };
 }
 
-function compactHistory(history: ProviderChatMessage[] = []) {
-  return history.slice(-30).map((message) => {
-    const role = message.role === 'assistant' ? 'Assistant' : message.role === 'system' ? 'System' : 'User';
-    return `${role}: ${String(message.text || '').replace(/\s+/g, ' ').trim()}`;
-  }).filter(Boolean).join('\n');
-}
-
-export function buildDirectPrompt(request: ProviderChatRequest) {
-  const history = compactHistory(request.history || []);
-  return [
-    'You are replying inside Project Reika Agent Server direct-provider chat.',
-    `Provider: ${request.providerId}`,
-    `Agent: ${request.agentId}`,
-    request.sessionId ? `Project Reika session id: ${request.sessionId}` : '',
-    history ? `Conversation so far:\n${history}` : '',
-    `Latest user message:\n${request.message}`,
-    'Reply naturally and directly to the latest user message.',
-    'Do not assume unrelated external session history unless it appears above.'
-  ].filter(Boolean).join('\n\n');
-}
-
 async function runCommand(command: string, args: string[], timeout = 120000) {
   try {
     return await execFileAsync(command, args, {
@@ -178,12 +157,11 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
   }
 
   if (provider.kind === 'openclaw') {
-    const prompt = buildDirectPrompt(request);
     const args = [
       'agent', '--agent', agentId,
       '--session-id', `project_reika_${sessionId}`,
       '--thinking', agentId === 'orchestrator' || agentId === 'main' ? 'low' : 'off',
-      '--message', prompt
+      '--message', request.message
     ];
     const { stdout, stderr } = await runCommand(openClawBin, args);
     const text = String(stdout || stderr || '').trim();

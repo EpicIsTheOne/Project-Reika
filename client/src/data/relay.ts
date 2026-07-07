@@ -198,6 +198,8 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
   let currentStatus: "connecting" | "online" | "offline" = "connecting";
+  const socketUrls = [...new Set([sameOriginRelayAppWebSocketUrl(), getRelayAppWebSocketUrl(relayUrl)].filter((url): url is string => Boolean(url)))];
+  let socketUrlIndex = 0;
   const openWaiters = new Set<{
     resolve: () => void;
     reject: (error: Error) => void;
@@ -227,9 +229,12 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
 
   const connect = () => {
     setStatus("connecting");
-    socket = new WebSocket(getRelayAppWebSocketUrl(relayUrl));
+    const socketUrl = socketUrls[socketUrlIndex] ?? getRelayAppWebSocketUrl(relayUrl);
+    let opened = false;
+    socket = new WebSocket(socketUrl);
 
     socket.addEventListener("open", () => {
+      opened = true;
       setStatus("online");
       resolveOpenWaiters();
     });
@@ -246,6 +251,12 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
     socket.addEventListener("close", () => {
       if (closed) return;
       setStatus("offline");
+      if (!opened && socketUrlIndex < socketUrls.length - 1) {
+        socketUrlIndex += 1;
+        reconnectTimer = window.setTimeout(connect, 250);
+        return;
+      }
+      socketUrlIndex = 0;
       reconnectTimer = window.setTimeout(connect, 3000);
     });
 
