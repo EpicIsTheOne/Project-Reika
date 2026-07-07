@@ -29,7 +29,7 @@ import { ChatView } from "../features/chat/ChatView";
 import { AgentArtStudio } from "../features/art/AgentArtStudio";
 import { applyRelayEnvelope, connectRelayApp, listRelayDevices, sendRelayChat, type RelayDeviceRecord } from "../data/relay";
 import { normalizeRelayDeviceUrl } from "../config/relay";
-import { createEnvelope, type AgentChatRequestPayload, type AgentChatResponsePayload, type AgentHubEnvelope } from "../shared/protocol";
+import { type AgentChatRequestPayload, type AgentHubEnvelope } from "../shared/protocol";
 import {
   buildPresentationDevices,
   getFallbackAgent,
@@ -54,64 +54,15 @@ export function App() {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [pairingOpenRequest, setPairingOpenRequest] = useState(0);
   const relayConnectionRef = useRef<ReturnType<typeof connectRelayApp> | null>(null);
-  const relayChatPendingRef = useRef(new Map<string, {
-    resolve: (payload: AgentChatResponsePayload) => void;
-    reject: (error: Error) => void;
-    timer: number;
-  }>());
   const artSeed = useMemo(() => makeArtRuntimeSeed(), []);
   const artRuntime = useMemo(() => createArtRuntime(artLibrary, artSeed), [artLibrary, artSeed]);
 
   const handleRelayEnvelope = useCallback((envelope: AgentHubEnvelope) => {
-    const pendingId = envelope.replyTo || envelope.correlationId;
-    const pending = pendingId ? relayChatPendingRef.current.get(pendingId) : undefined;
-    if (pending && pendingId) {
-      if (envelope.type === "agent.chat.response") {
-        window.clearTimeout(pending.timer);
-        relayChatPendingRef.current.delete(pendingId);
-        pending.resolve(envelope.payload as AgentChatResponsePayload);
-      } else if (envelope.type === "command.rejected" || envelope.type === "command.failed") {
-        const payload = envelope.payload as { message?: string; reason?: string };
-        window.clearTimeout(pending.timer);
-        relayChatPendingRef.current.delete(pendingId);
-        pending.reject(new Error(payload.message || payload.reason || "Relay chat request failed."));
-      }
-    }
     setRelayDevices((current) => applyRelayEnvelope(current, envelope));
   }, []);
 
   const sendRelayChatThroughApp = useCallback((deviceId: string, payload: AgentChatRequestPayload, timeoutMs = 120000) => {
-    const request = createEnvelope("agent.chat.request", payload, {
-      deviceId,
-      source: { kind: "app", id: "agenthub-client" },
-      target: { kind: "device", id: deviceId }
-    });
-    const relay = relayConnectionRef.current;
-    if (!relay) return sendRelayChat(deviceId, payload, settings.relayUrl, timeoutMs);
-
-    let sent = false;
-    const response = new Promise<AgentChatResponsePayload>((resolve, reject) => {
-      const timer = window.setTimeout(() => {
-        relayChatPendingRef.current.delete(request.id);
-        reject(new Error("Relay chat timed out waiting for the device response."));
-      }, timeoutMs);
-      relayChatPendingRef.current.set(request.id, { resolve, reject, timer });
-    });
-
-    return relay.sendEnvelopeWhenOpen(request, 15000)
-      .then(() => {
-        sent = true;
-        return response;
-      })
-      .catch((error) => {
-        const pending = relayChatPendingRef.current.get(request.id);
-        if (pending) {
-          window.clearTimeout(pending.timer);
-          relayChatPendingRef.current.delete(request.id);
-        }
-        if (sent) throw error;
-        return sendRelayChat(deviceId, payload, settings.relayUrl, timeoutMs);
-      });
+    return sendRelayChat(deviceId, payload, settings.relayUrl, timeoutMs);
   }, [settings.relayUrl]);
 
   useEffect(() => {
