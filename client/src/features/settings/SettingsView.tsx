@@ -100,7 +100,7 @@ export function SettingsView({
     setRelayUrlDraft(settings.relayUrl);
   }, [settings.relayUrl]);
 
-  const updateSetting = (key: keyof Omit<ReikaSettings, "version" | "updatedAt">, value: string | boolean | ReikaSettings["notificationPreferences"]) => {
+  const updateSetting = (key: keyof Omit<ReikaSettings, "version" | "updatedAt">, value: string | boolean | ReikaSettings["notificationPreferences"] | ReikaSettings["agentSelector"]) => {
     setBusySetting(key);
     setSettingsError(null);
     patchSettings({ [key]: value } as Partial<Omit<ReikaSettings, "version" | "updatedAt">>)
@@ -112,6 +112,13 @@ export function SettingsView({
   const updateNotificationPreference = (key: keyof ReikaSettings["notificationPreferences"], value: boolean) => {
     updateSetting("notificationPreferences", {
       ...settings.notificationPreferences,
+      [key]: value
+    });
+  };
+
+  const updateAgentSelectorSetting = <Key extends keyof ReikaSettings["agentSelector"]>(key: Key, value: ReikaSettings["agentSelector"][Key]) => {
+    updateSetting("agentSelector", {
+      ...settings.agentSelector,
       [key]: value
     });
   };
@@ -286,6 +293,29 @@ export function SettingsView({
             ) : null}
             {activeTab === "Providers" ? (
               <>
+                <SettingRow title="Agent Selector Labels" detail="Controls how agents are named in Chat without changing routing.">
+                  <button className="select-button" onClick={() => updateAgentSelectorSetting("labelMode", nextAgentSelectorLabelMode(settings.agentSelector.labelMode))} disabled={busySetting === "agentSelector"}>
+                    {agentSelectorLabel(settings.agentSelector.labelMode)}
+                    <ChevronDown size={18} />
+                  </button>
+                </SettingRow>
+                <SettingRow title="Hide CommandCenter Duplicates" detail={settings.agentSelector.hideCommandCenterDuplicates ? "Same-name CommandCenter/native pairs on the same server collapse into one agent." : "All same-name provider entries are shown."}>
+                  <Toggle
+                    checked={settings.agentSelector.hideCommandCenterDuplicates}
+                    disabled={busySetting === "agentSelector"}
+                    onClick={() => updateAgentSelectorSetting("hideCommandCenterDuplicates", !settings.agentSelector.hideCommandCenterDuplicates)}
+                  />
+                </SettingRow>
+                <SettingRow title="Duplicate Preference" detail={settings.agentSelector.hideCommandCenterDuplicates ? "Chooses which side wins when CommandCenter duplicates a native provider agent." : "Enable duplicate hiding to use this preference."}>
+                  <button
+                    className="select-button"
+                    onClick={() => updateAgentSelectorSetting("duplicatePreference", settings.agentSelector.duplicatePreference === "agent" ? "commandcenter" : "agent")}
+                    disabled={busySetting === "agentSelector" || !settings.agentSelector.hideCommandCenterDuplicates}
+                  >
+                    {settings.agentSelector.duplicatePreference === "agent" ? "Agent provider" : "CommandCenter"}
+                    <ChevronDown size={18} />
+                  </button>
+                </SettingRow>
                 <SettingRow title="Mock Provider" detail={settings.mockEnabled ? "Mock fallback is allowed across the app." : "Mock fallback is disabled across the app."}>
                   <Toggle checked={settings.mockEnabled} disabled={busySetting === "mockEnabled"} onClick={() => updateSetting("mockEnabled", !settings.mockEnabled)} />
                 </SettingRow>
@@ -540,6 +570,18 @@ function themeLabel(theme: ReikaSettings["theme"]) {
   if (theme === "blue") return "Electric Blue";
   if (theme === "contrast") return "High Contrast";
   return "Midnight";
+}
+
+function nextAgentSelectorLabelMode(mode: ReikaSettings["agentSelector"]["labelMode"]): ReikaSettings["agentSelector"]["labelMode"] {
+  if (mode === "agent-provider") return "agent-only";
+  if (mode === "agent-only") return "agent-device";
+  return "agent-provider";
+}
+
+function agentSelectorLabel(mode: ReikaSettings["agentSelector"]["labelMode"]) {
+  if (mode === "agent-only") return "Agent only";
+  if (mode === "agent-device") return "Agent + device";
+  return "Agent + provider";
 }
 
 function authLabel(source?: string) {

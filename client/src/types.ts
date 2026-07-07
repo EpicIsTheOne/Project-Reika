@@ -24,6 +24,7 @@ export interface Provider {
   status: Status;
   latency: string;
   agents: Agent[];
+  relayProviderId?: string;
 }
 
 export interface Agent {
@@ -35,6 +36,8 @@ export interface Agent {
   status: Status;
   lastActivity: string;
   characterId?: string;
+  relayAgentId?: string;
+  relayProviderId?: string;
 }
 
 export interface CharacterProfile {

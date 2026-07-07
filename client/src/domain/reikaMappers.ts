@@ -173,9 +173,10 @@ export function mapLocalDeviceRecord(device: Device): DevicePageRow {
 }
 
 export function mapRelayDeviceRecord(record: RelayDeviceRecord, relayUrl: string): DevicePageRow {
-  const device = mapDevice(record.device);
+  const device = namespaceRelayDevice(mapDevice(record.device), record.device.id);
   const activeProvider =
     device.providers.find((provider) => provider.id === record.activeProviderId) ??
+    device.providers.find((provider) => getRelayOriginalProviderId(provider) === record.activeProviderId) ??
     device.providers.find((provider) => provider.status === "online") ??
     device.providers[0];
   const statusLabel = device.status === "busy" ? "Idle" : undefined;
@@ -194,8 +195,8 @@ export function mapRelayDeviceRecord(record: RelayDeviceRecord, relayUrl: string
     metrics: device.metrics,
     provider: activeProvider?.name ?? "Custom",
     providers: device.providers,
-    agents: record.agents.length > 0 ? record.agents.map(mapRelayAgent) : device.providers.flatMap((provider) => provider.agents),
-    activeProviderId: record.activeProviderId ?? activeProvider?.id,
+    agents: record.agents.length > 0 ? record.agents.map((agent) => mapRelayAgent(agent, record.device.id)) : device.providers.flatMap((provider) => provider.agents),
+    activeProviderId: record.activeProviderId ? namespaceRelayProviderId(record.device.id, record.activeProviderId) : activeProvider?.id,
     lastCommand: record.lastCommand,
     lastConnected,
     localIp: device.localIp ?? (record.device.location === "local" ? "Local relay" : "Outbound WSS"),
@@ -206,23 +207,23 @@ export function mapRelayDeviceRecord(record: RelayDeviceRecord, relayUrl: string
 }
 
 export function mapRelayRecordToDevice(record: RelayDeviceRecord): Device {
-  const device = mapDevice(record.device);
-  const agents = record.agents.length > 0 ? record.agents.map(mapRelayAgent) : device.providers.flatMap((provider) => provider.agents);
+  const device = namespaceRelayDevice(mapDevice(record.device), record.device.id);
+  const agents = record.agents.length > 0 ? record.agents.map((agent) => mapRelayAgent(agent, record.device.id)) : device.providers.flatMap((provider) => provider.agents);
   const providers = device.providers.map((provider) => ({
     ...provider,
-    agents: agents.filter((agent) => agent.providerId === provider.id)
+    agents: agents.filter((agent) => agent.providerId === provider.id || getRelayOriginalProviderId(agent) === getRelayOriginalProviderId(provider))
   }));
   return {
     ...device,
     status: record.device.status === "online" ? "online" : device.status,
-    activeProviderId: record.activeProviderId ?? device.activeProviderId,
+    activeProviderId: record.activeProviderId ? namespaceRelayProviderId(record.device.id, record.activeProviderId) : device.activeProviderId,
     providers: providers.length > 0 ? providers : device.providers
   };
 }
 
 export function mapRelayRecordsToProviderState(records: RelayDeviceRecord[]): ReikaProviderRecord[] {
   return records.flatMap((record, recordIndex) => {
-    const device = mapDevice(record.device);
+    const device = namespaceRelayDevice(mapDevice(record.device), record.device.id);
     return device.providers.map((provider, providerIndex): ReikaProviderRecord => ({
       id: provider.id,
       kind: providerNameToKind(provider.name),
@@ -243,25 +244,71 @@ export function mapRelayRecordsToProviderState(records: RelayDeviceRecord[]): Re
         status: agent.status,
         source: device.name,
         deviceId: agent.deviceId || device.id,
-        providerId: provider.id
+        providerId: provider.id,
+        relayAgentId: getRelayOriginalAgentId(agent),
+        relayProviderId: getRelayOriginalProviderId(provider)
       })),
       notes: "Discovered through relay chat transport.",
-      relayDeviceId: device.id
+      relayDeviceId: device.id,
+      relayProviderId: getRelayOriginalProviderId(provider)
     }));
   });
 }
 
-export function mapRelayAgent(agent: RelayDeviceRecord["agents"][number]): Agent {
+export function mapRelayAgent(agent: RelayDeviceRecord["agents"][number], fallbackDeviceId?: string): Agent {
+  const deviceId = agent.deviceId || fallbackDeviceId || "relay-device";
   return {
-    id: agent.id,
+    id: namespaceRelayAgentId(deviceId, agent.providerId, agent.id),
     name: agent.name,
-    providerId: agent.providerId,
-    deviceId: agent.deviceId,
+    providerId: namespaceRelayProviderId(deviceId, agent.providerId),
+    deviceId,
     role: agent.role,
     status: agent.status,
     lastActivity: agent.lastActivity ?? "Relay roster",
-    characterId: agent.characterId
+    characterId: agent.characterId,
+    relayAgentId: agent.id,
+    relayProviderId: agent.providerId
   };
+}
+
+function namespaceRelayDevice(device: Device, deviceId: string): Device {
+  const providers = device.providers.map((provider) => {
+    const providerId = namespaceRelayProviderId(deviceId, provider.id);
+    return {
+      ...provider,
+      id: providerId,
+      relayProviderId: provider.id,
+      agents: provider.agents.map((agent) => ({
+        ...agent,
+        id: namespaceRelayAgentId(deviceId, provider.id, agent.id),
+        providerId,
+        deviceId,
+        relayAgentId: agent.id,
+        relayProviderId: provider.id
+      }))
+    };
+  });
+  return {
+    ...device,
+    activeProviderId: device.activeProviderId ? namespaceRelayProviderId(deviceId, device.activeProviderId) : device.activeProviderId,
+    providers
+  };
+}
+
+function namespaceRelayProviderId(deviceId: string, providerId: string) {
+  return `relay:${deviceId}:${providerId}`;
+}
+
+function namespaceRelayAgentId(deviceId: string, providerId: string, agentId: string) {
+  return `relay:${deviceId}:${providerId}:${agentId}`;
+}
+
+function getRelayOriginalProviderId(value: { providerId?: string; id?: string; relayProviderId?: unknown }) {
+  return typeof value.relayProviderId === "string" && value.relayProviderId ? value.relayProviderId : value.providerId ?? value.id ?? "";
+}
+
+function getRelayOriginalAgentId(value: { id?: string; relayAgentId?: unknown }) {
+  return typeof value.relayAgentId === "string" && value.relayAgentId ? value.relayAgentId : value.id ?? "";
 }
 
 function providerNameToKind(name: Provider["name"]): ReikaProviderKind {

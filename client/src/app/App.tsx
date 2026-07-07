@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { devices as demoDevices } from "../data/mockData";
 import { getLocalAgentStartup } from "../data/startup";
 import {
@@ -29,6 +29,7 @@ import { ChatView } from "../features/chat/ChatView";
 import { AgentArtStudio } from "../features/art/AgentArtStudio";
 import { applyRelayEnvelope, connectRelayApp, listRelayDevices, type RelayDeviceRecord } from "../data/relay";
 import { normalizeRelayDeviceUrl } from "../config/relay";
+import { createEnvelope, type AgentChatRequestPayload, type AgentChatResponsePayload, type AgentHubEnvelope } from "../shared/protocol";
 import {
   buildPresentationDevices,
   getFallbackAgent,
@@ -52,8 +53,74 @@ export function App() {
   const [backendMode, setBackendMode] = useState<BackendMode>("loading");
   const [backendError, setBackendError] = useState<string | null>(null);
   const [pairingOpenRequest, setPairingOpenRequest] = useState(0);
+  const relayConnectionRef = useRef<ReturnType<typeof connectRelayApp> | null>(null);
+  const pendingRelayChatsRef = useRef(
+    new Map<
+      string,
+      {
+        resolve: (payload: AgentChatResponsePayload) => void;
+        reject: (error: Error) => void;
+        timer: number;
+      }
+    >()
+  );
   const artSeed = useMemo(() => makeArtRuntimeSeed(), []);
   const artRuntime = useMemo(() => createArtRuntime(artLibrary, artSeed), [artLibrary, artSeed]);
+
+  const settleRelayChat = useCallback((requestId: string, callback: (pending: NonNullable<ReturnType<typeof pendingRelayChatsRef.current.get>>) => void) => {
+    const pending = pendingRelayChatsRef.current.get(requestId);
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingRelayChatsRef.current.delete(requestId);
+    callback(pending);
+  }, []);
+
+  const handleRelayEnvelope = useCallback(
+    (envelope: AgentHubEnvelope) => {
+      const requestId = envelope.replyTo ?? envelope.correlationId;
+      if (requestId && pendingRelayChatsRef.current.has(requestId)) {
+        if (envelope.type === "command.accepted") return;
+        if (envelope.type === "agent.chat.response") {
+          settleRelayChat(requestId, (pending) => pending.resolve(envelope.payload as AgentChatResponsePayload));
+          return;
+        }
+        if (envelope.type === "command.rejected" || envelope.type === "command.failed") {
+          const payload = envelope.payload as { message?: string; reason?: string };
+          settleRelayChat(requestId, (pending) => pending.reject(new Error(payload.message ?? payload.reason ?? "Relay chat request failed.")));
+          return;
+        }
+      }
+
+      setRelayDevices((current) => applyRelayEnvelope(current, envelope));
+    },
+    [settleRelayChat]
+  );
+
+  const sendRelayChatThroughApp = useCallback((deviceId: string, payload: AgentChatRequestPayload, timeoutMs = 120000) => {
+    const request = createEnvelope("agent.chat.request", payload, {
+      deviceId,
+      source: { kind: "app", id: "agenthub-client" },
+      target: { kind: "device", id: deviceId }
+    });
+
+    return new Promise<AgentChatResponsePayload>((resolve, reject) => {
+      const relay = relayConnectionRef.current;
+      if (!relay) {
+        reject(new Error("Relay app socket is not initialized yet. Wait a moment, then try again."));
+        return;
+      }
+
+      const timer = window.setTimeout(() => {
+        pendingRelayChatsRef.current.delete(request.id);
+        reject(new Error("Relay chat timed out waiting for the device response."));
+      }, timeoutMs);
+      pendingRelayChatsRef.current.set(request.id, { resolve, reject, timer });
+
+      relay.sendEnvelopeWhenOpen(request).catch((error) => {
+        settleRelayChat(request.id, (pending) => pending.reject(error instanceof Error ? error : new Error(String(error))));
+      });
+    });
+  }, [settleRelayChat]);
 
   useEffect(() => {
     document.documentElement.dataset.agenthubTheme = settings.theme ?? "dark";
@@ -77,21 +144,21 @@ export function App() {
     setRelayStatus("connecting");
     refreshRelayDevices();
     const relay = connectRelayApp(
-      (envelope) => {
-        setRelayDevices((current) => applyRelayEnvelope(current, envelope));
-      },
+      handleRelayEnvelope,
       (status) => {
-        if (!cancelled) setRelayStatus((current) => (status === "offline" && current === "online" ? "online" : status));
+        if (!cancelled) setRelayStatus(status);
       },
       activeRelayUrl
     );
+    relayConnectionRef.current = relay;
     const timer = window.setInterval(refreshRelayDevices, 8000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      if (relayConnectionRef.current === relay) relayConnectionRef.current = null;
       relay.close();
     };
-  }, [settings.relayUrl]);
+  }, [handleRelayEnvelope, settings.relayUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -258,7 +325,17 @@ export function App() {
             }}
           />
         )}
-        {view === "chat" && <ChatView agent={selectedAgent} initialState={reikaState} relayProviders={relayProviderState} relayUrl={settings.relayUrl} artRuntime={artRuntime} onBack={() => setView("home")} />}
+        {view === "chat" && (
+          <ChatView
+            agent={selectedAgent}
+            initialState={reikaState}
+            relayProviders={relayProviderState}
+            onRelayChat={sendRelayChatThroughApp}
+            selectorSettings={settings.agentSelector}
+            artRuntime={artRuntime}
+            onBack={() => setView("home")}
+          />
+        )}
         {view === "devices" && (
           <DevicesView
             localDevices={appDevices}

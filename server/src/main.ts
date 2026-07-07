@@ -906,6 +906,9 @@ const server = http.createServer(async (req, res) => {
         notificationPreferences: typeof body.notificationPreferences === 'object' && body.notificationPreferences
           ? body.notificationPreferences as typeof before.notificationPreferences
           : undefined,
+        agentSelector: typeof body.agentSelector === 'object' && body.agentSelector
+          ? body.agentSelector as typeof before.agentSelector
+          : undefined,
         autoUpdateServer: typeof body.autoUpdateServer === 'boolean' ? body.autoUpdateServer : undefined,
         autoUpdateClient: typeof body.autoUpdateClient === 'boolean' ? body.autoUpdateClient : undefined,
         developerDiagnostics: typeof body.developerDiagnostics === 'boolean' ? body.developerDiagnostics : undefined

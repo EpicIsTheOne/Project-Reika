@@ -17,6 +17,9 @@ export interface ReikaAgentSummary {
   role?: string;
   characterId?: string;
   status?: string;
+  relayAgentId?: string;
+  relayProviderId?: string;
+  deviceId?: string;
   [key: string]: unknown;
 }
 
@@ -32,6 +35,7 @@ export interface ReikaProviderRecord {
   notes: string;
   error?: string;
   relayDeviceId?: string;
+  relayProviderId?: string;
 }
 
 export interface ReikaDeviceSnapshot {
@@ -124,10 +128,17 @@ export interface ReikaSettings {
   minimizeToTray: boolean;
   mockEnabled: boolean;
   notificationPreferences: ReikaNotificationPreferences;
+  agentSelector: ReikaAgentSelectorSettings;
   autoUpdateServer: boolean;
   autoUpdateClient: boolean;
   developerDiagnostics: boolean;
   updatedAt: string;
+}
+
+export interface ReikaAgentSelectorSettings {
+  labelMode: "agent-provider" | "agent-only" | "agent-device";
+  hideCommandCenterDuplicates: boolean;
+  duplicatePreference: "agent" | "commandcenter";
 }
 
 export interface ReikaUpdateFileChange {

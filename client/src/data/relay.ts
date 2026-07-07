@@ -174,13 +174,41 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
   let closed = false;
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
+  let currentStatus: "connecting" | "online" | "offline" = "connecting";
+  const openWaiters = new Set<{
+    resolve: () => void;
+    reject: (error: Error) => void;
+    timer: number;
+  }>();
+
+  const setStatus = (status: "connecting" | "online" | "offline") => {
+    currentStatus = status;
+    onStatus(status);
+  };
+
+  const rejectOpenWaiters = (message: string) => {
+    for (const waiter of openWaiters) {
+      window.clearTimeout(waiter.timer);
+      waiter.reject(new Error(message));
+    }
+    openWaiters.clear();
+  };
+
+  const resolveOpenWaiters = () => {
+    for (const waiter of openWaiters) {
+      window.clearTimeout(waiter.timer);
+      waiter.resolve();
+    }
+    openWaiters.clear();
+  };
 
   const connect = () => {
-    onStatus("connecting");
+    setStatus("connecting");
     socket = new WebSocket(getRelayAppWebSocketUrl(relayUrl));
 
     socket.addEventListener("open", () => {
-      onStatus("online");
+      setStatus("online");
+      resolveOpenWaiters();
     });
 
     socket.addEventListener("message", (event) => {
@@ -194,13 +222,13 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
 
     socket.addEventListener("close", () => {
       if (closed) return;
-      onStatus("offline");
+      setStatus("offline");
       reconnectTimer = window.setTimeout(connect, 3000);
     });
 
     socket.addEventListener("error", () => {
       if (closed) return;
-      onStatus("offline");
+      setStatus("offline");
     });
   };
 
@@ -216,9 +244,34 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
       socket.send(JSON.stringify(createEnvelope(type, payload, { deviceId })));
       return true;
     },
+    sendEnvelope(envelope: AgentHubEnvelope) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+      socket.send(JSON.stringify(envelope));
+      return true;
+    },
+    async sendEnvelopeWhenOpen(envelope: AgentHubEnvelope, timeoutMs = 12000) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = window.setTimeout(() => {
+            openWaiters.delete(waiter);
+            reject(new Error(currentStatus === "offline" ? "Relay app socket is offline. Check the relay URL and try again." : "Relay app socket did not connect in time. Try again in a moment."));
+          }, timeoutMs);
+          const waiter = { resolve, reject, timer };
+          openWaiters.add(waiter);
+        });
+      }
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        throw new Error("Relay app socket is not open.");
+      }
+      socket.send(JSON.stringify(envelope));
+    },
+    status() {
+      return currentStatus;
+    },
     close() {
       closed = true;
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      rejectOpenWaiters("Relay app socket was closed.");
       socket?.close();
     }
   };

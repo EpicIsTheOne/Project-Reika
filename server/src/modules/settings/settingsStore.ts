@@ -11,6 +11,7 @@ export interface ReikaSettings {
   minimizeToTray: boolean;
   mockEnabled: boolean;
   notificationPreferences: NotificationPreferences;
+  agentSelector: AgentSelectorSettings;
   autoUpdateServer: boolean;
   autoUpdateClient: boolean;
   developerDiagnostics: boolean;
@@ -19,6 +20,13 @@ export interface ReikaSettings {
 
 export type NotificationPreferenceKey = 'agent' | 'device' | 'provider' | 'chat' | 'file' | 'system' | 'warning';
 export type NotificationPreferences = Record<NotificationPreferenceKey, boolean>;
+export type AgentSelectorLabelMode = 'agent-provider' | 'agent-only' | 'agent-device';
+export type AgentSelectorDuplicatePreference = 'agent' | 'commandcenter';
+export interface AgentSelectorSettings {
+  labelMode: AgentSelectorLabelMode;
+  hideCommandCenterDuplicates: boolean;
+  duplicatePreference: AgentSelectorDuplicatePreference;
+}
 
 export interface SettingsStoreSnapshot {
   path: string;
@@ -43,6 +51,11 @@ const defaultSettings: ReikaSettings = {
     file: true,
     system: true,
     warning: true
+  },
+  agentSelector: {
+    labelMode: 'agent-provider',
+    hideCommandCenterDuplicates: true,
+    duplicatePreference: 'agent'
   },
   autoUpdateServer: false,
   autoUpdateClient: false,
@@ -71,6 +84,7 @@ function normalizeSettings(input: Partial<ReikaSettings> = {}): ReikaSettings {
     minimizeToTray: typeof input.minimizeToTray === 'boolean' ? input.minimizeToTray : defaultSettings.minimizeToTray,
     mockEnabled: typeof input.mockEnabled === 'boolean' ? input.mockEnabled : defaultSettings.mockEnabled,
     notificationPreferences: normalizeNotificationPreferences(input.notificationPreferences),
+    agentSelector: normalizeAgentSelector(input.agentSelector),
     autoUpdateServer: typeof input.autoUpdateServer === 'boolean' ? input.autoUpdateServer : defaultSettings.autoUpdateServer,
     autoUpdateClient: typeof input.autoUpdateClient === 'boolean' ? input.autoUpdateClient : defaultSettings.autoUpdateClient,
     developerDiagnostics: typeof input.developerDiagnostics === 'boolean' ? input.developerDiagnostics : defaultSettings.developerDiagnostics,
@@ -92,6 +106,23 @@ function normalizeNotificationPreferences(value: unknown): NotificationPreferenc
     file: typeof input.file === 'boolean' ? input.file : defaultSettings.notificationPreferences.file,
     system: typeof input.system === 'boolean' ? input.system : defaultSettings.notificationPreferences.system,
     warning: typeof input.warning === 'boolean' ? input.warning : defaultSettings.notificationPreferences.warning
+  };
+}
+
+function normalizeAgentSelector(value: unknown): AgentSelectorSettings {
+  const input = typeof value === 'object' && value ? value as Partial<Record<keyof AgentSelectorSettings, unknown>> : {};
+  const labelMode = input.labelMode === 'agent-only' || input.labelMode === 'agent-device' || input.labelMode === 'agent-provider'
+    ? input.labelMode
+    : defaultSettings.agentSelector.labelMode;
+  const duplicatePreference = input.duplicatePreference === 'commandcenter' || input.duplicatePreference === 'agent'
+    ? input.duplicatePreference
+    : defaultSettings.agentSelector.duplicatePreference;
+  return {
+    labelMode,
+    hideCommandCenterDuplicates: typeof input.hideCommandCenterDuplicates === 'boolean'
+      ? input.hideCommandCenterDuplicates
+      : defaultSettings.agentSelector.hideCommandCenterDuplicates,
+    duplicatePreference
   };
 }
 

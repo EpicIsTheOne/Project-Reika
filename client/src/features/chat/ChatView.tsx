@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Activity, ArrowLeft, Heart, Link2, MessageCircle, Plus, Search, Send, Trash2 } from "lucide-react";
 import { assets } from "../../data/assets";
-import { sendRelayChat } from "../../data/relay";
 import {
   chat,
   createSession,
@@ -15,10 +14,12 @@ import {
   searchSessions,
   uploadFiles,
   type ReikaFileItem,
+  type ReikaAgentSelectorSettings,
   type ReikaProviderRecord,
   type ReikaSessionSummary,
   type ReikaStateResponse
 } from "../../lib/reikaApi";
+import type { AgentChatRequestPayload, AgentChatResponsePayload } from "../../shared/protocol";
 import { artRerollSlot, makeArtRuntimeSeed, type ArtAgentLike, type ArtRuntime } from "../../lib/artRuntime";
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
 import { StatusDot } from "../../components/status";
@@ -26,7 +27,23 @@ import { statusLabels } from "../../app/constants";
 import { formatClock, getReikaDeviceName, mapProviderStatus, mapReikaMessage, providerCanChat } from "../../domain/reikaMappers";
 import type { Agent, ChatMessage } from "../../types";
 
-export function ChatView({ agent, initialState, relayProviders = [], relayUrl, artRuntime, onBack }: { agent: Agent; initialState: ReikaStateResponse | null; relayProviders?: ReikaProviderRecord[]; relayUrl: string; artRuntime: ArtRuntime; onBack: () => void }) {
+export function ChatView({
+  agent,
+  initialState,
+  relayProviders = [],
+  onRelayChat,
+  selectorSettings,
+  artRuntime,
+  onBack
+}: {
+  agent: Agent;
+  initialState: ReikaStateResponse | null;
+  relayProviders?: ReikaProviderRecord[];
+  onRelayChat: (deviceId: string, payload: AgentChatRequestPayload) => Promise<AgentChatResponsePayload>;
+  selectorSettings: ReikaAgentSelectorSettings;
+  artRuntime: ArtRuntime;
+  onBack: () => void;
+}) {
   const [serverState, setServerState] = useState<ReikaStateResponse | null>(initialState);
   const [providers, setProviders] = useState<ReikaProviderRecord[]>(initialState?.providers ?? []);
   const [selectedProviderId, setSelectedProviderId] = useState(initialState?.activeProviderId ?? "");
@@ -50,12 +67,16 @@ export function ChatView({ agent, initialState, relayProviders = [], relayUrl, a
   const artInstanceKey = useMemo(() => makeArtRuntimeSeed(), []);
 
   const availableProviders = useMemo(() => {
+    const localDeviceId = String(serverState?.device.id ?? serverState?.device.deviceId ?? "").trim();
+    const localProviderIds = new Set(providers.map((provider) => provider.id));
     const merged = [...providers];
     for (const provider of relayProviders) {
+      if (provider.kind === "mock" && serverState?.settings?.mockEnabled === false) continue;
+      if (provider.relayDeviceId && localDeviceId && provider.relayDeviceId === localDeviceId && localProviderIds.has(getRelayProviderId(provider))) continue;
       if (!merged.some((item) => item.id === provider.id)) merged.push(provider);
     }
     return merged;
-  }, [providers, relayProviders]);
+  }, [providers, relayProviders, serverState?.device.deviceId, serverState?.device.id, serverState?.settings?.mockEnabled]);
   const requestedAgentProvider = useMemo(
     () => availableProviders.find((provider) => provider.agents.some((item) => agentMatches(item, agent.id, agent.name))),
     [agent.id, agent.name, availableProviders]
@@ -73,6 +94,21 @@ export function ChatView({ agent, initialState, relayProviders = [], relayUrl, a
   const selectedProviderStatus = mapProviderStatus(selectedProvider?.status);
   const selectedProviderCanChat = providerCanChat(selectedProvider);
   const selectedLiveAgent = providerAgents.find((item) => item.id === selectedAgentKey || item.name === selectedAgentKey) ?? providerAgents[0];
+  const selectableAgents = useMemo(
+    () => collapseDuplicateAgentOptions(
+      availableProviders.flatMap((provider) =>
+        provider.agents.map((item) => ({
+          key: makeAgentOptionKey(provider.id, item.id),
+          provider,
+          agent: item,
+          label: formatAgentOptionLabel(item, provider, selectorSettings.labelMode)
+        }))
+      ),
+      selectorSettings
+    ),
+    [availableProviders, selectorSettings]
+  );
+  const selectedAgentOptionKey = selectedProvider && selectedLiveAgent ? makeAgentOptionKey(selectedProvider.id, selectedLiveAgent.id) : "";
   const selectedRelayDeviceId = getRelayDeviceId(selectedProvider, selectedLiveAgent);
   const selectedIsRelayProvider = Boolean(selectedRelayDeviceId);
   const headerAgentName = selectedLiveAgent?.name ?? agent.name;
@@ -161,6 +197,19 @@ export function ChatView({ agent, initialState, relayProviders = [], relayUrl, a
   }, [providerAgents, selectedAgentKey, selectedProvider]);
 
   useEffect(() => {
+    if (selectableAgents.length === 0 || !selectedAgentOptionKey) return;
+    if (selectableAgents.some((item) => item.key === selectedAgentOptionKey)) return;
+    const next = selectableAgents.find((item) => agentNamesMatch(item.agent, selectedLiveAgent)) ?? selectableAgents[0];
+    if (!next) return;
+    setSelectedProviderId(next.provider.id);
+    setSelectedAgentKey(next.agent.id);
+    setSelectedSessionId(null);
+    setRelaySessionId(null);
+    setMessages([]);
+    setSendError(null);
+  }, [selectableAgents, selectedAgentOptionKey, selectedLiveAgent]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadSessionRows();
     }, 180);
@@ -236,13 +285,13 @@ export function ChatView({ agent, initialState, relayProviders = [], relayUrl, a
     ]);
     try {
       if (selectedIsRelayProvider && selectedProvider && selectedRelayDeviceId) {
-        const result = await sendRelayChat(selectedRelayDeviceId, {
-          providerId: selectedProvider.id,
-          agent: selectedLiveAgent?.id ?? selectedAgentKey,
+        const result = await onRelayChat(selectedRelayDeviceId, {
+          providerId: getRelayProviderId(selectedProvider),
+          agent: getRelayAgentId(selectedLiveAgent) ?? selectedAgentKey,
           sessionId: relaySessionId ?? undefined,
           message,
           fileIds: selectedFileIds
-        }, relayUrl);
+        });
         setRelaySessionId(result.sessionId);
         setMessages((current) => [
           ...current,
@@ -322,10 +371,11 @@ export function ChatView({ agent, initialState, relayProviders = [], relayUrl, a
     setFiles((current) => current.filter((file) => file.id !== fileId));
   };
 
-  const handleProviderChange = (providerId: string) => {
-    const nextProvider = availableProviders.find((provider) => provider.id === providerId);
-    setSelectedProviderId(providerId);
-    setSelectedAgentKey(nextProvider?.agents[0]?.id ?? agent.id);
+  const handleAgentChange = (optionKey: string) => {
+    const selected = selectableAgents.find((item) => item.key === optionKey);
+    if (!selected) return;
+    setSelectedProviderId(selected.provider.id);
+    setSelectedAgentKey(selected.agent.id);
     setSelectedSessionId(null);
     setRelaySessionId(null);
     setMessages([]);
@@ -356,26 +406,12 @@ export function ChatView({ agent, initialState, relayProviders = [], relayUrl, a
 
           <div className="live-chat-card">
             <label>
-              <span>Provider</span>
-              <select value={selectedProvider?.id ?? ""} onChange={(event) => handleProviderChange(event.target.value)}>
-                {availableProviders.length > 0 ? (
-                  availableProviders.map((provider) => (
-                    <option value={provider.id} key={provider.id}>
-                      {provider.name} ({provider.status})
-                    </option>
-                  ))
-                ) : (
-                  <option value="">Server offline</option>
-                )}
-              </select>
-            </label>
-            <label>
               <span>Agent</span>
-              <select value={selectedLiveAgent?.id ?? selectedAgentKey} onChange={(event) => setSelectedAgentKey(event.target.value)}>
-                {providerAgents.length > 0 ? (
-                  providerAgents.map((item) => (
-                    <option value={item.id} key={item.id}>
-                      {item.name || item.label || item.id}
+              <select value={selectedAgentOptionKey} onChange={(event) => handleAgentChange(event.target.value)}>
+                {selectableAgents.length > 0 ? (
+                  selectableAgents.map((item) => (
+                    <option value={item.key} key={item.key}>
+                      {item.label}
                     </option>
                   ))
                 ) : (
@@ -557,10 +593,10 @@ function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex 
   );
 }
 
-function agentMatches(agent: { id?: string; name?: string; label?: string }, id?: string, name?: string) {
+function agentMatches(agent: { id?: string; name?: string; label?: string; relayAgentId?: string }, id?: string, name?: string) {
   const idText = String(id ?? "").trim().toLowerCase();
   const nameText = String(name ?? "").trim().toLowerCase();
-  const values = [agent.id, agent.name, agent.label].map((value) => String(value ?? "").trim().toLowerCase()).filter(Boolean);
+  const values = [agent.id, agent.relayAgentId, agent.name, agent.label].map((value) => String(value ?? "").trim().toLowerCase()).filter(Boolean);
   return Boolean((idText && values.includes(idText)) || (nameText && values.includes(nameText)));
 }
 
@@ -570,4 +606,88 @@ function getRelayDeviceId(provider: ReikaProviderRecord | undefined, agent: Reik
   const agentRecord = agent as (ReikaProviderRecord["agents"][number] & { deviceId?: unknown }) | undefined;
   if (typeof agentRecord?.deviceId === "string" && agentRecord.deviceId) return agentRecord.deviceId;
   return undefined;
+}
+
+function getRelayProviderId(provider: ReikaProviderRecord) {
+  return typeof provider.relayProviderId === "string" && provider.relayProviderId ? provider.relayProviderId : provider.id;
+}
+
+function getRelayAgentId(agent: ReikaProviderRecord["agents"][number] | undefined) {
+  if (!agent) return undefined;
+  return typeof agent.relayAgentId === "string" && agent.relayAgentId ? agent.relayAgentId : agent.id;
+}
+
+function makeAgentOptionKey(providerId: string, agentId: string) {
+  return `${providerId}::${agentId}`;
+}
+
+type SelectableAgentOption = {
+  key: string;
+  provider: ReikaProviderRecord;
+  agent: ReikaProviderRecord["agents"][number];
+  label: string;
+};
+
+function collapseDuplicateAgentOptions(options: SelectableAgentOption[], settings: ReikaAgentSelectorSettings) {
+  if (!settings.hideCommandCenterDuplicates) return options;
+
+  const groups = new Map<string, SelectableAgentOption[]>();
+  for (const option of options) {
+    const key = `${normalizeAgentName(option.agent)}::${getOptionServerKey(option)}`;
+    groups.set(key, [...(groups.get(key) ?? []), option]);
+  }
+
+  const hidden = new Set<string>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const commandCenterOptions = group.filter((option) => isCommandCenterProvider(option.provider));
+    const agentProviderOptions = group.filter((option) => !isCommandCenterProvider(option.provider));
+    if (commandCenterOptions.length === 0 || agentProviderOptions.length === 0) continue;
+
+    const toHide = settings.duplicatePreference === "commandcenter" ? agentProviderOptions : commandCenterOptions;
+    for (const option of toHide) hidden.add(option.key);
+  }
+
+  return options.filter((option) => !hidden.has(option.key));
+}
+
+function formatAgentOptionLabel(agent: ReikaProviderRecord["agents"][number], provider: ReikaProviderRecord, mode: ReikaAgentSelectorSettings["labelMode"]) {
+  const agentName = String(agent.name || agent.label || agent.id || "Agent");
+  if (mode === "agent-only") return agentName;
+  if (mode === "agent-device") return `${agentName} - ${getProviderDeviceLabel(provider, agent)}`;
+  return `${agentName} - ${formatProviderLabel(provider.name)}`;
+}
+
+function formatProviderLabel(name: string) {
+  return name.replace(/\s+\((.+)\)$/u, " / $1");
+}
+
+function getProviderDeviceLabel(provider: ReikaProviderRecord, agent: ReikaProviderRecord["agents"][number]) {
+  const match = provider.name.match(/\((.+)\)$/u);
+  if (match?.[1]) return match[1];
+  const relayDeviceId = getRelayDeviceId(provider, agent);
+  if (relayDeviceId) return relayDeviceId;
+  if (typeof agent.source === "string" && agent.source.trim()) return agent.source.trim();
+  return "Local";
+}
+
+function getOptionServerKey(option: SelectableAgentOption) {
+  const relayDeviceId = getRelayDeviceId(option.provider, option.agent);
+  if (relayDeviceId) return relayDeviceId.toLowerCase();
+  const deviceLabel = getProviderDeviceLabel(option.provider, option.agent);
+  return deviceLabel.toLowerCase();
+}
+
+function normalizeAgentName(agent: ReikaProviderRecord["agents"][number] | undefined) {
+  return String(agent?.name || agent?.label || agent?.id || "").trim().toLowerCase();
+}
+
+function agentNamesMatch(left: ReikaProviderRecord["agents"][number] | undefined, right: ReikaProviderRecord["agents"][number] | undefined) {
+  const leftName = normalizeAgentName(left);
+  const rightName = normalizeAgentName(right);
+  return Boolean(leftName && rightName && leftName === rightName);
+}
+
+function isCommandCenterProvider(provider: ReikaProviderRecord) {
+  return provider.kind === "commandcenter" || /command\s*center/i.test(provider.name);
 }

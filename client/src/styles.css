@@ -1236,12 +1236,13 @@ img {
 .device-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  align-items: start;
   gap: 22px;
 }
 
 .device-card {
   display: grid;
-  min-height: 420px;
+  min-height: 260px;
   padding: 18px;
   border: 1px solid rgba(87, 148, 255, 0.24);
   border-radius: var(--radius);

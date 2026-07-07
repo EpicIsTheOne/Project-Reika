@@ -39,6 +39,11 @@ export const defaultSettings: ReikaSettings = {
     system: true,
     warning: true
   },
+  agentSelector: {
+    labelMode: "agent-provider",
+    hideCommandCenterDuplicates: true,
+    duplicatePreference: "agent"
+  },
   autoUpdateServer: false,
   autoUpdateClient: false,
   developerDiagnostics: false,
