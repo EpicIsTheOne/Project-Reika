@@ -229,8 +229,9 @@ function sendRelayChatOverSocket(
     });
 
     socket.addEventListener("message", (event) => {
+      void (async () => {
       try {
-        const envelope = JSON.parse(String(event.data)) as unknown;
+        const envelope = JSON.parse(await readWebSocketMessage(event.data)) as unknown;
         if (!isAgentHubEnvelope(envelope)) return;
         const matchesRequest = envelope.replyTo === request.id || envelope.correlationId === request.id;
         if (!matchesRequest) return;
@@ -246,6 +247,7 @@ function sendRelayChatOverSocket(
       } catch {
         // Ignore malformed relay messages while waiting for the correlated response.
       }
+      })();
     });
 
     socket.addEventListener("error", () => {
@@ -256,6 +258,14 @@ function sendRelayChatOverSocket(
       if (!settled) finish(() => reject(new Error("Relay app socket closed before chat completed.")));
     });
   });
+}
+
+async function readWebSocketMessage(data: MessageEvent["data"]) {
+  if (typeof data === "string") return data;
+  if (data instanceof Blob) return data.text();
+  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+  if (ArrayBuffer.isView(data)) return new TextDecoder().decode(data);
+  return String(data);
 }
 
 export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void, onStatus: (status: "connecting" | "online" | "offline") => void, relayUrl?: string) {
@@ -305,12 +315,14 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
     });
 
     socket.addEventListener("message", (event) => {
+      void (async () => {
       try {
-        const parsed = JSON.parse(String(event.data)) as unknown;
+        const parsed = JSON.parse(await readWebSocketMessage(event.data)) as unknown;
         if (isAgentHubEnvelope(parsed)) onEnvelope(parsed);
       } catch {
         // Ignore malformed dev relay messages; the relay should not send them.
       }
+      })();
     });
 
     socket.addEventListener("close", () => {
@@ -414,13 +426,7 @@ export function applyRelayEnvelope(current: RelayDeviceRecord[], envelope: Agent
     const deviceId = payload.deviceId ?? getEnvelopeDeviceId(envelope);
     if (!deviceId) return current;
     return current.map((record) =>
-      record.device.id === deviceId
-        ? {
-            ...record,
-            agents: normalizeRosterAgents(payload.agents ?? [], deviceId, payload.providerId ?? record.activeProviderId ?? "unknown"),
-            lastEnvelopeAt: envelope.timestamp
-          }
-        : record
+      record.device.id === deviceId ? mergeRosterSnapshot(record, payload, envelope.timestamp) : record
     );
   }
 
@@ -492,6 +498,28 @@ function unwrapStateSnapshot(payload: unknown): Partial<DeviceStateSnapshotPaylo
       providers: device.providers ?? []
     },
     activeProviderId: direct.snapshot.activeProviderId
+  };
+}
+
+function mergeRosterSnapshot(
+  record: RelayDeviceRecord,
+  payload: { providerId?: string; agents?: Array<Partial<AgentHubAgent> & { label?: string; source?: string }> },
+  timestamp: string
+): RelayDeviceRecord {
+  const agents = payload.agents ?? [];
+  const providerId = payload.providerId;
+  const hasProviderScopedAgents = agents.some((agent) => typeof agent.providerId === "string" && agent.providerId);
+  if (!providerId && !hasProviderScopedAgents) {
+    return {
+      ...record,
+      lastEnvelopeAt: timestamp
+    };
+  }
+
+  return {
+    ...record,
+    agents: normalizeRosterAgents(agents, record.device.id, providerId ?? "unknown"),
+    lastEnvelopeAt: timestamp
   };
 }
 

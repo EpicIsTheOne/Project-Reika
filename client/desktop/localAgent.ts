@@ -38,10 +38,14 @@ export async function ensureLocalAgent(options: LocalAgentOptions = {}): Promise
   mkdirSync(dirname(logPath), { recursive: true });
   const log = createWriteStream(logPath, { flags: "a" });
   log.write(`\n[${new Date().toISOString()}] starting ${exePath}\n`);
+  const userDataPath = app.getPath("userData");
 
   child = spawn(exePath, [], {
+    cwd: userDataPath,
     env: {
       ...process.env,
+      HOME: process.env.HOME || userDataPath,
+      XDG_DATA_HOME: process.env.XDG_DATA_HOME || join(userDataPath, "data"),
       REIKA_AGENT_HOST: host,
       REIKA_AGENT_PORT: String(port),
       REIKA_PAIRING_UI_OPEN: "false"

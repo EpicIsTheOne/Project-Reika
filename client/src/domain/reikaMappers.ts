@@ -208,7 +208,8 @@ export function mapRelayDeviceRecord(record: RelayDeviceRecord, relayUrl: string
 
 export function mapRelayRecordToDevice(record: RelayDeviceRecord): Device {
   const device = namespaceRelayDevice(mapDevice(record.device), record.device.id);
-  const agents = record.agents.length > 0 ? record.agents.map((agent) => mapRelayAgent(agent, record.device.id)) : device.providers.flatMap((provider) => provider.agents);
+  const hasProviderScopedRoster = record.agents.some((agent) => Boolean(agent.providerId));
+  const agents = hasProviderScopedRoster ? record.agents.map((agent) => mapRelayAgent(agent, record.device.id)) : device.providers.flatMap((provider) => provider.agents);
   const providers = device.providers.map((provider) => ({
     ...provider,
     agents: agents.filter((agent) => agent.providerId === provider.id || getRelayOriginalProviderId(agent) === getRelayOriginalProviderId(provider))
