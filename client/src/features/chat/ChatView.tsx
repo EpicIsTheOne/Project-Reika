@@ -412,6 +412,7 @@ export function ChatView({
           providerId: relayProviderId,
           agent: relayAgentId,
           sessionId: relaySessionId,
+          providerSessionId: makeProviderSessionId(relaySessionId),
           message,
           fileIds: selectedFileIds
         });
@@ -790,6 +791,17 @@ function makeAgentOptionKey(providerId: string, agentId: string) {
 
 function makeRelayConversationKey(deviceId: string, providerId: string, agentId: string) {
   return `agenthub:relay-chat:${deviceId}:${providerId}:${agentId}`;
+}
+
+function makeProviderSessionId(sessionId: string) {
+  const input = String(sessionId || "").trim();
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  const suffix = (hash >>> 0).toString(16).padStart(8, "0");
+  return `reika_${suffix}`;
 }
 
 type SelectableAgentOption = {

@@ -22,9 +22,12 @@ for (const forbidden of [
   "You are replying inside AgentHub",
   "You are replying inside an AgentHub",
   "AgentHub chat session",
+  "Project Reika Agent Server direct-provider chat",
+  "Project Reika session id:",
   "Latest user message:"
 ]) {
   assert(!providerRuntime.includes(forbidden), `Provider runtime must not inject prompt wrapper text: ${forbidden}`);
+  assert(!serverMain.includes(forbidden), `Server chat path must not inject prompt wrapper text: ${forbidden}`);
   assert(!dispatcher.includes(forbidden), `Relay dispatcher must not inject prompt wrapper text: ${forbidden}`);
   assert(!relayClient.includes(forbidden), `Relay client must not inject prompt wrapper text: ${forbidden}`);
 }
@@ -35,7 +38,14 @@ assert(
 );
 
 assert(
-  chatView.includes("message,") && chatView.includes("text: message"),
+  dispatcher.includes("providerSessionId: typeof payload.providerSessionId === 'string'") &&
+    serverMain.includes("providerSessionId: payload.providerSessionId") &&
+    serverMain.includes("providerSessionId: typeof input.providerSessionId === 'string' && input.providerSessionId.trim()"),
+  "Relay/direct chat should pass provider session ids as metadata, not prompt text."
+);
+
+assert(
+  chatView.includes("message,") && chatView.includes("text: message") && chatView.includes("providerSessionId: makeProviderSessionId(relaySessionId)"),
   "ChatView should send and persist the raw composer message."
 );
 
@@ -47,6 +57,7 @@ assert(
 assert(
   providerRuntime.includes("'agent', '--agent', agentId") &&
     providerRuntime.includes("'--session-id', openClawSessionId") &&
+    providerRuntime.includes("const openClawSessionId = request.providerSessionId || providerSessionId('project_reika', sessionId)") &&
     providerRuntime.includes("metadata: { providerSessionId: openClawSessionId"),
   "OpenClaw chat must target the selected agent and store a real OpenClaw session id."
 );

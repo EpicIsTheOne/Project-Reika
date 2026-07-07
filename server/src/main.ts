@@ -183,6 +183,7 @@ const appEndpoint = { kind: 'app' as const, id: 'local-simulator' };
 const dispatcher = new CommandDispatcher(state, deviceEndpoint, async (payload) => {
   const result = await runChatTurn({
     sessionId: payload.sessionId,
+    providerSessionId: payload.providerSessionId,
     providerId: payload.providerId,
     agent: payload.agent,
     message: payload.message,
@@ -192,7 +193,7 @@ const dispatcher = new CommandDispatcher(state, deviceEndpoint, async (payload) 
   return {
     providerId: result.result.providerId,
     agent: result.result.agentId,
-    sessionId: result.session.id,
+    sessionId: result.result.sessionId,
     text: result.result.text,
     runtime: result.result.runtime
   };
@@ -200,6 +201,7 @@ const dispatcher = new CommandDispatcher(state, deviceEndpoint, async (payload) 
 const relayClient = new RelayClient(state, events, async (payload) => {
   const result = await runChatTurn({
     sessionId: payload.sessionId,
+    providerSessionId: payload.providerSessionId,
     providerId: payload.providerId,
     agent: payload.agent,
     message: payload.message,
@@ -209,7 +211,7 @@ const relayClient = new RelayClient(state, events, async (payload) => {
   return {
     providerId: result.result.providerId,
     agent: result.result.agentId,
-    sessionId: result.session.id,
+    sessionId: result.result.sessionId,
     text: result.result.text,
     runtime: result.result.runtime
   };
@@ -582,7 +584,7 @@ function emitChatEvent(event: ProviderChatEvent, session?: ChatSession) {
   events.emit(`chat.${event.type}`, { sessionId: session?.id, ...event.data });
 }
 
-async function runChatTurn(input: { sessionId?: string; providerId?: string; agent?: string; message: string; model?: string; title?: string; metadata?: Record<string, unknown>; fileIds?: unknown }, onEvent?: (event: ProviderChatEvent) => void) {
+async function runChatTurn(input: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; model?: string; title?: string; metadata?: Record<string, unknown>; fileIds?: unknown }, onEvent?: (event: ProviderChatEvent) => void) {
   const session = getOrCreateSession(input);
   const attachedFiles = filesPayload(input.fileIds);
   const context = attachmentContext(input.fileIds);
@@ -601,11 +603,13 @@ async function runChatTurn(input: { sessionId?: string; providerId?: string; age
       message: context ? `${input.message}\n\nAttached files/links:\n${context}` : input.message,
       history: sessionHistory(session).slice(0, -1),
       model: input.model,
-      providerSessionId: typeof session.metadata.hermesSessionId === 'string'
-        ? session.metadata.hermesSessionId
-        : typeof session.metadata.providerSessionIds === 'object' && session.metadata.providerSessionIds
-          ? (session.metadata.providerSessionIds as Record<string, string>)[input.providerId || session.providerId]
-          : undefined
+      providerSessionId: typeof input.providerSessionId === 'string' && input.providerSessionId.trim()
+        ? input.providerSessionId.trim()
+        : typeof session.metadata.hermesSessionId === 'string'
+          ? session.metadata.hermesSessionId
+          : typeof session.metadata.providerSessionIds === 'object' && session.metadata.providerSessionIds
+            ? (session.metadata.providerSessionIds as Record<string, string>)[input.providerId || session.providerId]
+            : undefined
     }, providers, handler);
     session.providerId = result.providerId;
     session.agent = result.agentId;

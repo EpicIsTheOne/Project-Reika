@@ -80,6 +80,7 @@ export class CommandDispatcher {
         providerId: typeof payload.providerId === 'string' ? payload.providerId : undefined,
         agent: typeof payload.agent === 'string' ? payload.agent : undefined,
         sessionId: typeof payload.sessionId === 'string' ? payload.sessionId : undefined,
+        providerSessionId: typeof payload.providerSessionId === 'string' ? payload.providerSessionId : undefined,
         message: payload.message,
         model: typeof payload.model === 'string' ? payload.model : undefined,
         fileIds: Array.isArray(payload.fileIds) ? payload.fileIds.map(String) : undefined

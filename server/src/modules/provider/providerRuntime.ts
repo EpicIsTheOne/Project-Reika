@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import type { ProviderRecord } from './types.js';
@@ -117,7 +118,9 @@ function cleanProviderSessionSegment(value = '') {
 
 function providerSessionId(prefix: string, sessionId?: string) {
   const base = cleanProviderSessionSegment(sessionId || '');
-  return `${prefix}_${base || Date.now().toString(36)}`;
+  if (!base) return `${prefix}_${Date.now().toString(36)}`;
+  const digest = createHash('sha256').update(base).digest('hex').slice(0, 24);
+  return `${prefix}_${digest}`;
 }
 
 async function renameHermesSession(sessionId: string, title: string) {

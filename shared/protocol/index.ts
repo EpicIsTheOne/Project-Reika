@@ -44,6 +44,7 @@ export interface AgentChatRequestPayload {
   providerId?: string;
   agent?: string;
   sessionId?: string;
+  providerSessionId?: string;
   message: string;
   model?: string;
   fileIds?: string[];
