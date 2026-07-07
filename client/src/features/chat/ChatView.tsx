@@ -94,19 +94,24 @@ export function ChatView({
     },
     [agent.deviceId, agent.id, agent.name, agent.relayAgentId, agent.relayProviderId, availableProviders]
   );
+  const requestedHasRelayIdentity = hasRequestedRelayIdentity(agent);
   const selectedProvider = useMemo(
     () => {
+      if (requestedHasRelayIdentity && requestedAgentProvider) return requestedAgentProvider;
       const selectedById = availableProviders.find((provider) => provider.id === selectedProviderId);
       const selectedOwnsRequestedAgent = selectedById?.agents.some((item) => agentMatches(item, selectedAgentKey, agent.name) || agentMatches(item, agent.id, agent.name));
       if (selectedById && (selectedOwnsRequestedAgent || !requestedAgentProvider)) return selectedById;
       return requestedAgentProvider ?? selectedById ?? availableProviders.find((provider) => provider.status === "preferred") ?? availableProviders[0];
     },
-    [agent.id, agent.name, availableProviders, requestedAgentProvider, selectedAgentKey, selectedProviderId]
+    [agent.id, agent.name, availableProviders, requestedAgentProvider, requestedHasRelayIdentity, selectedAgentKey, selectedProviderId]
   );
   const providerAgents = selectedProvider?.agents ?? [];
   const selectedProviderStatus = mapProviderStatus(selectedProvider?.status);
   const selectedProviderCanChat = providerCanChat(selectedProvider);
-  const selectedLiveAgent = providerAgents.find((item) => item.id === selectedAgentKey || item.name === selectedAgentKey) ?? providerAgents[0];
+  const selectedLiveAgent =
+    findRequestedRelayAgent(providerAgents, agent) ??
+    providerAgents.find((item) => item.id === selectedAgentKey || item.name === selectedAgentKey) ??
+    providerAgents[0];
   const selectableAgents = useMemo(
     () => collapseDuplicateAgentOptions(
       availableProviders.flatMap((provider) =>
@@ -122,14 +127,24 @@ export function ChatView({
     [availableProviders, selectorSettings]
   );
   const selectedAgentOptionKey = selectedProvider && selectedLiveAgent ? makeAgentOptionKey(selectedProvider.id, selectedLiveAgent.id) : "";
-  const selectedRelayDeviceId = getRelayDeviceId(selectedProvider, selectedLiveAgent);
+  const selectedRelayDeviceId = getRelayDeviceId(selectedProvider, selectedLiveAgent) ?? (requestedHasRelayIdentity ? agent.deviceId : undefined);
   const selectedIsRelayProvider = Boolean(selectedRelayDeviceId);
   const relayConversationKey =
     selectedIsRelayProvider && selectedRelayDeviceId && selectedProvider && selectedLiveAgent
-      ? makeRelayConversationKey(selectedRelayDeviceId, getRelayProviderId(selectedProvider), getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent.id)
+      ? makeRelayConversationKey(
+          selectedRelayDeviceId,
+          agent.relayProviderId ?? getRelayProviderId(selectedProvider),
+          agent.relayAgentId ?? getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent.id
+        )
       : null;
-  const relayProviderId = selectedProvider ? getRelayProviderId(selectedProvider) : "";
-  const relayAgentId = getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent?.id ?? selectedAgentKey;
+  const relayProviderId = (requestedHasRelayIdentity ? agent.relayProviderId : undefined) ?? (selectedProvider ? getRelayProviderId(selectedProvider) : "");
+  const relayAgentId =
+    (requestedHasRelayIdentity ? agent.relayAgentId : undefined) ?? getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent?.id ?? selectedAgentKey;
+  const relayRouteSummary =
+    selectedIsRelayProvider && selectedRelayDeviceId
+      ? `${selectedRelayDeviceId} / ${relayProviderId || "provider?"} / ${relayAgentId || "agent?"}${selectedSessionId ? ` / ${selectedSessionId}` : ""}`
+      : "";
+  const relayRouteReady = Boolean(selectedIsRelayProvider && selectedRelayDeviceId && relayProviderId && relayAgentId);
   const headerAgentName = selectedLiveAgent?.name ?? agent.name;
   const providerLabel = selectedProvider?.name ?? "Reika Server";
   const deviceName = selectedIsRelayProvider ? String(selectedLiveAgent?.source ?? selectedRelayDeviceId ?? "Relay Device") : getReikaDeviceName(serverState) || "Epic PC";
@@ -222,9 +237,11 @@ export function ChatView({
   useEffect(() => {
     if (!requestedAgentProvider) return;
     setSelectedProviderId((current) => (current === requestedAgentProvider.id ? current : requestedAgentProvider.id));
-    const requestedAgent = requestedAgentProvider.agents.find((item) => agentMatches(item, agent.id, agent.name));
+    const requestedAgent =
+      findRequestedRelayAgent(requestedAgentProvider.agents, agent) ??
+      requestedAgentProvider.agents.find((item) => agentMatches(item, agent.id, agent.name));
     if (requestedAgent) setSelectedAgentKey(requestedAgent.id);
-  }, [agent.id, agent.name, requestedAgentProvider]);
+  }, [agent.id, agent.name, agent.relayAgentId, requestedAgentProvider]);
 
   useEffect(() => {
     if (selectedProviderId || availableProviders.length === 0) return;
@@ -364,7 +381,7 @@ export function ChatView({
       return next;
     });
     try {
-      if (selectedIsRelayProvider && selectedProvider && selectedRelayDeviceId) {
+      if (relayRouteReady && selectedRelayDeviceId) {
         const relaySessionId =
           selectedSessionId ??
           (
@@ -492,7 +509,10 @@ export function ChatView({
   };
 
   const visibleMessages = messages;
-  const canSend = Boolean(draft.trim()) && !busy && Boolean(selectedProvider) && selectedProviderCanChat && selectedProviderStatus === "online" && (selectedIsRelayProvider || !stateError);
+  const canSend =
+    Boolean(draft.trim()) &&
+    !busy &&
+    (relayRouteReady || (Boolean(selectedProvider) && selectedProviderCanChat && selectedProviderStatus === "online" && !stateError));
 
   return (
     <main className={pageMotionClass("chat-screen")}>
@@ -598,7 +618,7 @@ export function ChatView({
           {stateError && !selectedIsRelayProvider ? <div className="chat-error-banner">Reika server offline. {stateError}</div> : null}
           {!stateError && selectedProvider && !selectedProviderCanChat ? <div className="chat-error-banner">{selectedProvider.name} is not chat-capable yet.</div> : null}
           {!stateError && selectedProvider && selectedProviderStatus !== "online" ? <div className="chat-error-banner">{selectedProvider.name} is {statusLabels[selectedProviderStatus].toLowerCase()}.</div> : null}
-          {selectedIsRelayProvider ? <div className="chat-inline-note">Relay chat active for {deviceName}.</div> : null}
+          {selectedIsRelayProvider ? <div className="chat-inline-note">Relay chat active: {relayRouteSummary}</div> : null}
           {sendError ? <div className="chat-error-banner">{sendError}</div> : null}
           <div className="message-list">
             {visibleMessages.map((message, index) => (
@@ -724,6 +744,20 @@ function getRelayProviderId(provider: ReikaProviderRecord) {
 function getRelayAgentId(agent: ReikaProviderRecord["agents"][number] | undefined) {
   if (!agent) return undefined;
   return typeof agent.relayAgentId === "string" && agent.relayAgentId ? agent.relayAgentId : agent.id;
+}
+
+function hasRequestedRelayIdentity(agent: Agent) {
+  return Boolean(agent.relayProviderId || agent.relayAgentId);
+}
+
+function findRequestedRelayAgent(agents: ReikaProviderRecord["agents"], agent: Agent) {
+  const requestedAgentId = typeof agent.relayAgentId === "string" && agent.relayAgentId ? agent.relayAgentId : "";
+  if (requestedAgentId) {
+    const byRelayId = agents.find((item) => getRelayAgentId(item) === requestedAgentId || item.id === requestedAgentId);
+    if (byRelayId) return byRelayId;
+  }
+
+  return agents.find((item) => item.id === agent.id || item.relayAgentId === agent.id);
 }
 
 function providerMatchesRequestedRelayAgent(provider: ReikaProviderRecord, agent: Agent) {
