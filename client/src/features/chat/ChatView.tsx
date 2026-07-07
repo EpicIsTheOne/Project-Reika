@@ -3,6 +3,12 @@ import type { ChangeEvent, FormEvent } from "react";
 import { Activity, ArrowLeft, Heart, Link2, MessageCircle, Plus, Search, Send, Trash2 } from "lucide-react";
 import { assets } from "../../data/assets";
 import {
+  appendRelayChatMessages,
+  createRelayChatSession,
+  getRelayChatMessages,
+  listRelayChatSessions
+} from "../../data/relay";
+import {
   chat,
   createSession,
   getSessionMessages,
@@ -30,6 +36,7 @@ import type { Agent, ChatMessage } from "../../types";
 export function ChatView({
   agent,
   initialState,
+  relayUrl,
   relayProviders = [],
   onRelayChat,
   selectorSettings,
@@ -38,6 +45,7 @@ export function ChatView({
 }: {
   agent: Agent;
   initialState: ReikaStateResponse | null;
+  relayUrl?: string;
   relayProviders?: ReikaProviderRecord[];
   onRelayChat: (deviceId: string, payload: AgentChatRequestPayload) => Promise<AgentChatResponsePayload>;
   selectorSettings: ReikaAgentSelectorSettings;
@@ -51,7 +59,6 @@ export function ChatView({
   const [sessions, setSessions] = useState<ReikaSessionSummary[]>([]);
   const [sessionSearch, setSessionSearch] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [relaySessionId, setRelaySessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [files, setFiles] = useState<ReikaFileItem[]>([]);
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
@@ -115,6 +122,8 @@ export function ChatView({
     selectedIsRelayProvider && selectedRelayDeviceId && selectedProvider && selectedLiveAgent
       ? makeRelayConversationKey(selectedRelayDeviceId, getRelayProviderId(selectedProvider), getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent.id)
       : null;
+  const relayProviderId = selectedProvider ? getRelayProviderId(selectedProvider) : "";
+  const relayAgentId = getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent?.id ?? selectedAgentKey;
   const headerAgentName = selectedLiveAgent?.name ?? agent.name;
   const providerLabel = selectedProvider?.name ?? "Reika Server";
   const deviceName = selectedIsRelayProvider ? String(selectedLiveAgent?.source ?? selectedRelayDeviceId ?? "Relay Device") : getReikaDeviceName(serverState) || "Epic PC";
@@ -149,8 +158,27 @@ export function ChatView({
 
   const loadSessionRows = async (query = sessionSearch, providerId = selectedProvider?.id, agentId = selectedLiveAgent?.id) => {
     if (selectedIsRelayProvider) {
-      setSessions([]);
-      setSessionListError(null);
+      if (!selectedRelayDeviceId || !selectedProvider) {
+        setSessions([]);
+        setSessionListError(null);
+        return;
+      }
+      try {
+        const result = await listRelayChatSessions(
+          {
+            limit: 30,
+            q: query.trim() || undefined,
+            deviceId: selectedRelayDeviceId,
+            providerId: getRelayProviderId(selectedProvider),
+            agent: getRelayAgentId(selectedLiveAgent) ?? agentId
+          },
+          relayUrl
+        );
+        setSessions(result);
+        setSessionListError(null);
+      } catch (loadError) {
+        setSessionListError(normalizeChatError(loadError, "Could not load relay sessions."));
+      }
       return;
     }
     try {
@@ -181,7 +209,6 @@ export function ChatView({
   useEffect(() => {
     setSelectedAgentKey(agent.id);
     setSelectedSessionId(null);
-    setRelaySessionId(null);
     setMessages([]);
     setSendError(null);
   }, [agent.id]);
@@ -213,7 +240,6 @@ export function ChatView({
     setSelectedProviderId(next.provider.id);
     setSelectedAgentKey(next.agent.id);
     setSelectedSessionId(null);
-    setRelaySessionId(null);
     setMessages([]);
     setSendError(null);
   }, [selectableAgents, selectedAgentOptionKey, selectedLiveAgent]);
@@ -223,12 +249,22 @@ export function ChatView({
       void loadSessionRows();
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [sessionSearch, selectedProvider?.id, selectedLiveAgent?.id]);
+  }, [relayUrl, selectedIsRelayProvider, selectedRelayDeviceId, sessionSearch, selectedProvider?.id, selectedLiveAgent?.id]);
 
   useEffect(() => {
     if (!selectedSessionId) {
-      if (selectedIsRelayProvider) return;
       setMessages([]);
+      return;
+    }
+    if (selectedIsRelayProvider) {
+      getRelayChatMessages(selectedSessionId, relayUrl)
+        .then((result) => {
+          setMessages(result.map(mapReikaMessage));
+          setSendError(null);
+        })
+        .catch((loadError) => {
+          setSendError(normalizeChatError(loadError, "Could not load that relay conversation."));
+        });
       return;
     }
     getSessionMessages(selectedSessionId)
@@ -239,15 +275,7 @@ export function ChatView({
       .catch((loadError) => {
         setSendError(normalizeChatError(loadError, "Could not load that conversation."));
       });
-  }, [selectedIsRelayProvider, selectedSessionId]);
-
-  useEffect(() => {
-    if (!relayConversationKey) return;
-    const stored = readRelayConversation(relayConversationKey);
-    setRelaySessionId(stored.sessionId);
-    setMessages(stored.messages);
-    setSendError(null);
-  }, [relayConversationKey]);
+  }, [relayUrl, selectedIsRelayProvider, selectedSessionId]);
 
   const handleRefreshProviders = async () => {
     setBusy(true);
@@ -269,10 +297,29 @@ export function ChatView({
   const handleNewSession = async () => {
     if (!selectedProvider) return;
     if (selectedIsRelayProvider) {
-      setRelaySessionId(null);
-      setMessages([]);
-      setSendError(null);
-      if (relayConversationKey) writeRelayConversation(relayConversationKey, null, []);
+      if (!selectedRelayDeviceId) return;
+      setBusy(true);
+      try {
+        const created = await createRelayChatSession(
+          {
+            id: relayConversationKey ? `${relayConversationKey}:${Date.now().toString(36)}` : undefined,
+            deviceId: selectedRelayDeviceId,
+            providerId: relayProviderId,
+            agent: relayAgentId,
+            title: `${selectedLiveAgent?.name ?? headerAgentName} session`,
+            metadata: { relayConversationKey }
+          },
+          relayUrl
+        );
+        setSelectedSessionId(created.id);
+        setMessages([]);
+        await loadSessionRows("", relayProviderId, relayAgentId);
+        setSendError(null);
+      } catch (createError) {
+        setSendError(normalizeChatError(createError, "Could not create a relay session."));
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     setBusy(true);
@@ -307,30 +354,52 @@ export function ChatView({
     };
     setMessages((current) => {
       const next = [...current, userMessage];
-      if (relayConversationKey) writeRelayConversation(relayConversationKey, relaySessionId, next);
       return next;
     });
     try {
       if (selectedIsRelayProvider && selectedProvider && selectedRelayDeviceId) {
+        const relaySessionId =
+          selectedSessionId ??
+          (
+            await createRelayChatSession(
+            {
+              deviceId: selectedRelayDeviceId,
+              providerId: relayProviderId,
+              agent: relayAgentId,
+              title: `${selectedLiveAgent?.name ?? headerAgentName} session`,
+              metadata: { relayConversationKey }
+            },
+            relayUrl
+            )
+          ).id;
+        if (!selectedSessionId) setSelectedSessionId(relaySessionId);
         const result = await onRelayChat(selectedRelayDeviceId, {
-          providerId: getRelayProviderId(selectedProvider),
-          agent: getRelayAgentId(selectedLiveAgent) ?? selectedAgentKey,
-          sessionId: relaySessionId ?? undefined,
+          providerId: relayProviderId,
+          agent: relayAgentId,
+          sessionId: relaySessionId,
           message,
           fileIds: selectedFileIds
         });
+        const now = new Date().toISOString();
         const agentMessage: ChatMessage = {
           id: `relay-${Date.now()}`,
           sender: "agent",
           body: result.text,
-          time: formatClock(new Date().toISOString())
+          time: formatClock(now)
         };
-        setRelaySessionId(result.sessionId);
         setMessages((current) => {
           const next = [...current, agentMessage];
-          if (relayConversationKey) writeRelayConversation(relayConversationKey, result.sessionId, next);
           return next;
         });
+        await appendRelayChatMessages(
+          relaySessionId,
+          [
+            { id: userMessage.id, role: "user", text: message, timestamp: now, meta: { fileIds: selectedFileIds } },
+            { id: agentMessage.id, role: "assistant", text: result.text, timestamp: now, meta: { runtime: result.runtime, providerSessionId: result.sessionId } }
+          ],
+          relayUrl
+        );
+        await loadSessionRows("", relayProviderId, relayAgentId);
         setStatus(`Routed through relay ${result.runtime}`);
         setFiles((current) => current.filter((file) => !selectedFileIds.includes(file.id)));
         setSelectedFileIds([]);
@@ -406,7 +475,6 @@ export function ChatView({
     setSelectedProviderId(selected.provider.id);
     setSelectedAgentKey(selected.agent.id);
     setSelectedSessionId(null);
-    setRelaySessionId(null);
     setMessages([]);
     setSendError(null);
   };
@@ -652,42 +720,6 @@ function makeAgentOptionKey(providerId: string, agentId: string) {
 
 function makeRelayConversationKey(deviceId: string, providerId: string, agentId: string) {
   return `agenthub:relay-chat:${deviceId}:${providerId}:${agentId}`;
-}
-
-function readRelayConversation(key: string): { sessionId: string | null; messages: ChatMessage[] } {
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return { sessionId: null, messages: [] };
-    const parsed = JSON.parse(raw) as { sessionId?: unknown; messages?: unknown };
-    const messages = Array.isArray(parsed.messages)
-      ? parsed.messages
-          .filter((message): message is ChatMessage => {
-            const candidate = message as Partial<ChatMessage>;
-            return typeof candidate.id === "string" && (candidate.sender === "user" || candidate.sender === "agent") && typeof candidate.body === "string" && typeof candidate.time === "string";
-          })
-          .slice(-200)
-      : [];
-    return {
-      sessionId: typeof parsed.sessionId === "string" && parsed.sessionId ? parsed.sessionId : null,
-      messages
-    };
-  } catch {
-    return { sessionId: null, messages: [] };
-  }
-}
-
-function writeRelayConversation(key: string, sessionId: string | null, messages: ChatMessage[]) {
-  try {
-    window.localStorage.setItem(
-      key,
-      JSON.stringify({
-        sessionId,
-        messages: messages.slice(-200)
-      })
-    );
-  } catch {
-    // Local persistence is best-effort; chat should keep working in memory.
-  }
 }
 
 type SelectableAgentOption = {

@@ -321,6 +321,7 @@ export function App() {
           <ChatView
             agent={selectedAgent}
             initialState={reikaState}
+            relayUrl={settings.relayUrl}
             relayProviders={relayProviderState}
             onRelayChat={sendRelayChatThroughApp}
             selectorSettings={settings.agentSelector}

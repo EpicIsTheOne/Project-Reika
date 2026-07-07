@@ -9,6 +9,7 @@ import {
   type AgentHubEnvelopeType,
   type DeviceStateSnapshotPayload
 } from "../shared/protocol";
+import type { ReikaChatMessage, ReikaSessionSummary } from "../lib/reikaApi";
 
 export interface RelayPairing {
   code: string;
@@ -26,6 +27,23 @@ export interface RelayDeviceRecord {
   agents: AgentHubAgent[];
   lastEnvelopeAt: string;
   lastCommand?: string;
+}
+
+export interface RelayChatSessionInput {
+  id?: string;
+  deviceId: string;
+  providerId: string;
+  agent: string;
+  title?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RelayChatMessageInput {
+  id?: string;
+  role: ReikaChatMessage["role"];
+  text: string;
+  timestamp?: string;
+  meta?: Record<string, unknown>;
 }
 
 interface PairingResponse {
@@ -86,6 +104,53 @@ export async function listRelayDevices(relayUrl?: string) {
     agents: record.device.providers?.flatMap((provider) => provider.agents) ?? [],
     lastEnvelopeAt: record.lastHeartbeatAt ?? record.device.lastSeenAt ?? new Date().toISOString()
   }));
+}
+
+export async function listRelayChatSessions(
+  input: { deviceId?: string; providerId?: string; agent?: string; q?: string; limit?: number },
+  relayUrl?: string
+) {
+  const params = compactRelayParams({
+    deviceId: input.deviceId,
+    providerId: input.providerId,
+    agent: input.agent,
+    q: input.q,
+    limit: input.limit
+  });
+  const response = await fetch(relayApiUrl(`/chat/sessions${params}`, relayUrl));
+  const payload = (await response.json()) as { ok: boolean; sessions?: ReikaSessionSummary[]; error?: string };
+  if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Relay chat session list failed.");
+  return payload.sessions ?? [];
+}
+
+export async function createRelayChatSession(input: RelayChatSessionInput, relayUrl?: string) {
+  const response = await fetch(relayApiUrl("/chat/sessions", relayUrl), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  const payload = (await response.json()) as { ok: boolean; session?: ReikaSessionSummary; error?: string };
+  if (!response.ok || !payload.ok || !payload.session) throw new Error(payload.error ?? "Relay chat session create failed.");
+  return payload.session;
+}
+
+export async function getRelayChatMessages(sessionId: string, relayUrl?: string, limit?: number) {
+  const params = compactRelayParams({ limit });
+  const response = await fetch(relayApiUrl(`/chat/sessions/${encodeURIComponent(sessionId)}/messages${params}`, relayUrl));
+  const payload = (await response.json()) as { ok: boolean; sessionId?: string; messages?: ReikaChatMessage[]; error?: string };
+  if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Relay chat messages failed.");
+  return payload.messages ?? [];
+}
+
+export async function appendRelayChatMessages(sessionId: string, messages: RelayChatMessageInput[], relayUrl?: string) {
+  const response = await fetch(relayApiUrl(`/chat/sessions/${encodeURIComponent(sessionId)}/messages`, relayUrl), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages })
+  });
+  const payload = (await response.json()) as { ok: boolean; session?: ReikaSessionSummary; messages?: ReikaChatMessage[]; error?: string };
+  if (!response.ok || !payload.ok || !payload.session) throw new Error(payload.error ?? "Relay chat message persist failed.");
+  return payload;
 }
 
 export async function approveRelayPairingCode(code: string, relayUrl?: string) {
@@ -444,4 +509,14 @@ function normalizeRosterAgents(agents: Array<Partial<AgentHubAgent> & { label?: 
     lastActivity: agent.lastActivity ?? "Updated through relay",
     updatedAt: agent.updatedAt ?? new Date().toISOString()
   }));
+}
+
+function compactRelayParams(values: Record<string, string | number | undefined>) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined || value === "") continue;
+    params.set(key, String(value));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }

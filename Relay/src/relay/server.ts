@@ -70,6 +70,26 @@ interface QueuedEnvelope {
   expiresAt: string;
 }
 
+interface RelayChatMessageRecord {
+  id: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+  timestamp: string;
+  meta?: Record<string, unknown>;
+}
+
+interface RelayChatSessionRecord {
+  id: string;
+  deviceId: string;
+  providerId: string;
+  agent: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: RelayChatMessageRecord[];
+  metadata?: Record<string, unknown>;
+}
+
 interface DeviceChallenge {
   deviceId: string;
   challenge: string;
@@ -81,10 +101,12 @@ interface PersistedRelayStore {
   updatedAt: string;
   pairingSessions: PairingSession[];
   devices: Array<Omit<RelayDeviceRecord, "socket">>;
+  chatSessions?: RelayChatSessionRecord[];
 }
 
 const pairingSessions = new Map<string, PairingSession>();
 const devices = new Map<string, RelayDeviceRecord>();
+const chatSessions = new Map<string, RelayChatSessionRecord>();
 const appSockets = new Set<WebSocket>();
 const deviceChallenges = new Map<string, DeviceChallenge>();
 
@@ -158,6 +180,58 @@ const server = createServer(async (request, response) => {
           lastHeartbeatAt: record.lastHeartbeatAt
         }))
       });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/v1/chat/sessions") {
+      const sessions = listChatSessions({
+        deviceId: url.searchParams.get("deviceId") ?? undefined,
+        providerId: url.searchParams.get("providerId") ?? undefined,
+        agent: url.searchParams.get("agent") ?? undefined,
+        q: url.searchParams.get("q") ?? undefined,
+        limit: Number(url.searchParams.get("limit") ?? 30)
+      });
+      sendJson(response, 200, { ok: true, sessions: sessions.map(publicChatSession) });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/v1/chat/sessions") {
+      const body = await readJsonBody<{
+        id?: string;
+        deviceId?: string;
+        providerId?: string;
+        agent?: string;
+        title?: string;
+        metadata?: Record<string, unknown>;
+      }>(request);
+      const session = createChatSession(body);
+      sendJson(response, 201, { ok: true, session: publicChatSession(session) });
+      return;
+    }
+
+    const chatMessagesMatch = url.pathname.match(/^\/v1\/chat\/sessions\/([^/]+)\/messages$/);
+    if (request.method === "GET" && chatMessagesMatch) {
+      const session = chatSessions.get(decodeURIComponent(chatMessagesMatch[1] || ""));
+      if (!session) {
+        sendJson(response, 404, { ok: false, error: "Relay chat session not found." });
+        return;
+      }
+      const limit = Number(url.searchParams.get("limit") ?? 0);
+      sendJson(response, 200, { ok: true, sessionId: session.id, messages: limit > 0 ? session.messages.slice(-limit) : session.messages });
+      return;
+    }
+
+    if (request.method === "POST" && chatMessagesMatch) {
+      const sessionId = decodeURIComponent(chatMessagesMatch[1] || "");
+      const body = await readJsonBody<{ messages?: RelayChatMessageRecord[]; message?: RelayChatMessageRecord }>(request);
+      const session = chatSessions.get(sessionId);
+      if (!session) {
+        sendJson(response, 404, { ok: false, error: "Relay chat session not found." });
+        return;
+      }
+      const messages = Array.isArray(body.messages) ? body.messages : body.message ? [body.message] : [];
+      for (const message of messages) appendChatMessage(session, message);
+      sendJson(response, 200, { ok: true, session: publicChatSession(session), messages: session.messages });
       return;
     }
 
@@ -467,6 +541,86 @@ function createPairingSession(accountId = relayConfig.accountId, ttlMs = relayCo
   pairingSessions.set(code, session);
   saveRelayStore();
   return session;
+}
+
+function createChatSession(input: { id?: string; deviceId?: string; providerId?: string; agent?: string; title?: string; metadata?: Record<string, unknown> }) {
+  const now = new Date().toISOString();
+  const deviceId = cleanText(input.deviceId) || "unknown-device";
+  const providerId = cleanText(input.providerId) || "unknown-provider";
+  const agent = cleanText(input.agent) || "agent";
+  const id = cleanText(input.id) || `relay_${slug(deviceId)}_${slug(providerId)}_${Date.now().toString(36)}_${randomBytes(3).toString("hex")}`;
+  const existing = chatSessions.get(id);
+  if (existing) return existing;
+  const session: RelayChatSessionRecord = {
+    id,
+    deviceId,
+    providerId,
+    agent,
+    title: cleanText(input.title) || `${agent} session`,
+    createdAt: now,
+    updatedAt: now,
+    messages: [],
+    metadata: isRecord(input.metadata) ? input.metadata : undefined
+  };
+  chatSessions.set(session.id, session);
+  saveRelayStore();
+  return session;
+}
+
+function listChatSessions(filters: { deviceId?: string; providerId?: string; agent?: string; q?: string; limit?: number }) {
+  const deviceId = cleanText(filters.deviceId).toLowerCase();
+  const providerId = cleanText(filters.providerId).toLowerCase();
+  const agent = cleanText(filters.agent).toLowerCase();
+  const q = cleanText(filters.q).toLowerCase();
+  const limit = Number.isFinite(filters.limit) && filters.limit && filters.limit > 0 ? filters.limit : 30;
+  return Array.from(chatSessions.values())
+    .filter((session) => !deviceId || session.deviceId.toLowerCase() === deviceId)
+    .filter((session) => !providerId || session.providerId.toLowerCase() === providerId)
+    .filter((session) => !agent || session.agent.toLowerCase() === agent)
+    .filter((session) => {
+      if (!q) return true;
+      const haystack = [session.title, session.agent, session.providerId, session.deviceId, ...session.messages.map((message) => message.text)].join("\n").toLowerCase();
+      return haystack.includes(q);
+    })
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, limit);
+}
+
+function appendChatMessage(session: RelayChatSessionRecord, input: RelayChatMessageRecord) {
+  const role = input.role === "assistant" || input.role === "system" ? input.role : "user";
+  const text = cleanText(input.text);
+  if (!text) return;
+  const timestamp = cleanText(input.timestamp) || new Date().toISOString();
+  const message: RelayChatMessageRecord = {
+    id: cleanText(input.id) || `relay_msg_${Date.now().toString(36)}_${randomBytes(3).toString("hex")}`,
+    role,
+    text,
+    timestamp,
+    meta: isRecord(input.meta) ? input.meta : undefined
+  };
+  session.messages.push(message);
+  session.updatedAt = timestamp;
+  if (!session.title || / session$/i.test(session.title)) session.title = text.slice(0, 80);
+  chatSessions.set(session.id, session);
+  saveRelayStore();
+}
+
+function publicChatSession(session: RelayChatSessionRecord) {
+  return {
+    id: session.id,
+    providerId: session.providerId,
+    agent: session.agent,
+    title: session.title,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    messageCount: session.messages.length,
+    lastMessagePreview: session.messages.at(-1)?.text.slice(0, 160) || "",
+    metadata: {
+      ...session.metadata,
+      relay: true,
+      relayDeviceId: session.deviceId
+    }
+  };
 }
 
 function claimPairingSession(code: string, request: DeviceRegistrationRequest & { publicKey?: string }) {
@@ -810,6 +964,10 @@ function loadRelayStore() {
         lastHeartbeatAt: record.lastHeartbeatAt
       });
     }
+    chatSessions.clear();
+    for (const session of parsed.chatSessions ?? []) {
+      if (isChatSessionRecord(session)) chatSessions.set(session.id, session);
+    }
   } catch (error) {
     console.warn(`[agenthub-relay] Could not load relay store: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -827,10 +985,25 @@ function saveRelayStore() {
       latestRoster: record.latestRoster,
       queuedEnvelopes: record.queuedEnvelopes,
       lastHeartbeatAt: record.lastHeartbeatAt
-    }))
+    })),
+    chatSessions: Array.from(chatSessions.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   };
   mkdirSync(dirname(relayConfig.storePath), { recursive: true });
   writeFileSync(relayConfig.storePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+}
+
+function isChatSessionRecord(value: unknown): value is RelayChatSessionRecord {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.deviceId === "string" &&
+    typeof value.providerId === "string" &&
+    typeof value.agent === "string" &&
+    typeof value.title === "string" &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string" &&
+    Array.isArray(value.messages)
+  );
 }
 
 function normalizeCapabilities(value: unknown): ProviderCapability[] {
@@ -851,6 +1024,14 @@ function inferDeviceType(platform?: string) {
   if (normalized.includes("linux") || normalized.includes("server")) return "server";
   if (normalized.includes("darwin") || normalized.includes("win")) return "pc";
   return "pc";
+}
+
+function cleanText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function slug(value: unknown) {
