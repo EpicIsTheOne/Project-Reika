@@ -542,7 +542,7 @@ export function ChatView({
           <div className="live-chat-card">
             <label>
               <span>Agent</span>
-              <select value={selectedAgentOptionKey} onChange={(event) => handleAgentChange(event.target.value)}>
+              <select data-testid="relay-agent-select" value={selectedAgentOptionKey} onChange={(event) => handleAgentChange(event.target.value)}>
                 {selectableAgents.length > 0 ? (
                   selectableAgents.map((item) => (
                     <option value={item.key} key={item.key}>
@@ -610,7 +610,7 @@ export function ChatView({
               {statusLabels[selectedProviderStatus]}
             </p>
           </div>
-          <button className="icon-button" onClick={() => void handleRefreshProviders()} disabled={busy} aria-label="Refresh providers">
+          <button className="icon-button" data-testid="chat-refresh-providers" onClick={() => void handleRefreshProviders()} disabled={busy} aria-label="Refresh providers">
             <Activity size={22} />
           </button>
         </header>
@@ -626,7 +626,7 @@ export function ChatView({
           {!stateError && selectedProvider && selectedProviderStatus !== "online" ? <div className="chat-error-banner">{selectedProvider.name} is {statusLabels[selectedProviderStatus].toLowerCase()}.</div> : null}
           {selectedIsRelayProvider ? <div className="chat-inline-note">Relay chat active: {relayRouteSummary}</div> : null}
           {sendError ? <div className="chat-error-banner">{sendError}</div> : null}
-          <div className="message-list">
+          <div className="message-list" data-testid="message-list">
             {visibleMessages.map((message, index) => (
               <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={headerAgentName} motionIndex={index} />
             ))}
@@ -637,7 +637,7 @@ export function ChatView({
               </div>
             ) : null}
             {busy ? (
-              <div className="typing-row">
+              <div className="typing-row" data-testid="thinking-row">
                 <img src={chatAvatar} alt="" />
                 <span>{headerAgentName} is thinking</span>
                 <i />
@@ -647,8 +647,8 @@ export function ChatView({
             ) : null}
           </div>
 
-          <form className="chat-composer" onSubmit={handleSubmit}>
-            <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${headerAgentName}...`} />
+          <form className="chat-composer" data-testid="chat-composer" onSubmit={handleSubmit}>
+            <input data-testid="chat-input" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${headerAgentName}...`} />
             {selectedAttachments.length > 0 ? (
               <div className="selected-attachment-chips">
                 {selectedAttachments.map((file) => (
@@ -690,7 +690,7 @@ export function ChatView({
                 ) : null}
               </div>
             </div>
-            <button className="send-button" type="submit" aria-label="Send" disabled={!canSend}>
+            <button className="send-button" data-testid="chat-send" type="submit" aria-label="Send" disabled={!canSend}>
               <Send size={24} />
             </button>
           </form>
@@ -706,7 +706,7 @@ function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex 
   const avatar = agentAvatar ?? assets.reika.avatar;
 
   return (
-    <article className={cx("chat-message motion-message", isUser ? "user" : "agent")} style={motionDelay(Math.min(motionIndex, 8), 28)}>
+    <article className={cx("chat-message motion-message", isUser ? "user" : "agent")} data-testid={isUser ? "chat-message-user" : "chat-message-agent"} style={motionDelay(Math.min(motionIndex, 8), 28)}>
       {!isUser ? <img src={avatar} alt="" /> : null}
       <div className="message-content">
         {!isUser ? (

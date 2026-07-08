@@ -184,7 +184,7 @@ function ProviderBlock({ provider, artRuntime, onOpenChat }: { provider: Provide
       <div className="provider-agents">
         {provider.agents.length > 0 ? (
           provider.agents.map((agent, index) => (
-            <button className="agent-row motion-row" key={agent.id} onClick={() => onOpenChat(agent.id)} style={motionDelay(index, 34, 80)}>
+            <button className="agent-row motion-row" data-testid={`agent-row-${agent.id}`} key={agent.id} onClick={() => onOpenChat(agent.id)} style={motionDelay(index, 34, 80)}>
               <img src={getAgentAvatar(agent, artRuntime)} alt="" />
               <span>
                 <strong>{agent.name}</strong>

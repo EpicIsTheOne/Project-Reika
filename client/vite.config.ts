@@ -3,6 +3,7 @@ import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 
 const configuredRelayUrl = process.env.VITE_REIKA_RELAY_URL ?? process.env.REIKA_RELAY_URL ?? "";
+const configuredAgentProxyTarget = process.env.VITE_REIKA_AGENT_TARGET ?? "http://127.0.0.1:47840";
 const configuredRelayProxyTarget =
   process.env.VITE_REIKA_RELAY_PROXY_TARGET ??
   process.env.AGENTHUB_RELAY_TARGET ??
@@ -23,7 +24,7 @@ export default defineConfig({
     proxy: {
       "/api": "http://127.0.0.1:8787",
       "/agent": {
-        target: "http://127.0.0.1:47840",
+        target: configuredAgentProxyTarget,
         rewrite: (path) => path.replace(/^\/agent/u, ""),
         configure(proxy) {
           proxy.on("error", (_error, _request, response) => {
@@ -42,7 +43,7 @@ export default defineConfig({
 });
 
 function quietLocalAgentHealthProbe(): Plugin {
-  const target = "http://127.0.0.1:47840";
+  const target = configuredAgentProxyTarget;
   return {
     name: "quiet-local-agent-health-probe",
     configureServer(server: ViteDevServer) {
