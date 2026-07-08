@@ -61,6 +61,7 @@ export interface ProviderChatResult {
 
 const commandCenterBaseUrl = process.env.COMMANDCENTER_LOCAL_API_BASE || 'http://127.0.0.1:3002/commandcenter/api/v1';
 const openClawBin = process.env.OPENCLAW_BIN || 'openclaw';
+const openClawGatewayBaseUrl = process.env.OPENCLAW_GATEWAY_BASE_URL || `http://127.0.0.1:${process.env.OPENCLAW_GATEWAY_PORT || '18789'}`;
 const hermesBin = process.env.HERMES_BIN || 'hermes';
 const hermesSessionSource = process.env.HERMES_SESSION_SOURCE || 'cli';
 
@@ -132,6 +133,80 @@ async function renameHermesSession(sessionId: string, title: string) {
   }
 }
 
+interface OpenClawGatewayConfig {
+  baseUrl: string;
+  authHeader?: string;
+}
+
+async function readOpenClawGatewayConfig(): Promise<OpenClawGatewayConfig> {
+  const baseUrl = String(openClawGatewayBaseUrl || '').trim().replace(/\/+$/g, '');
+  const explicitToken = String(process.env.OPENCLAW_GATEWAY_TOKEN || '').trim();
+  const explicitPassword = String(process.env.OPENCLAW_GATEWAY_PASSWORD || '').trim();
+  if (explicitToken) return { baseUrl, authHeader: `Bearer ${explicitToken}` };
+  if (explicitPassword) return { baseUrl, authHeader: `Bearer ${explicitPassword}` };
+  try {
+    const raw = await readFile(`${process.env.HOME || ''}/.openclaw/openclaw.json`, 'utf8');
+    const config = JSON.parse(raw) as { gateway?: { auth?: { mode?: string; token?: string; password?: string } } };
+    const auth = config.gateway?.auth;
+    const secret = String(auth?.token || auth?.password || '').trim();
+    return secret ? { baseUrl, authHeader: `Bearer ${secret}` } : { baseUrl };
+  } catch {
+    return { baseUrl };
+  }
+}
+
+function openClawSessionKey(agentId: string, providerSessionId: string) {
+  const safeAgent = cleanProviderSessionSegment(agentId) || 'main';
+  const safeSession = cleanProviderSessionSegment(providerSessionId) || `prs_${Date.now().toString(36)}`;
+  return `agent:${safeAgent}:reika:${safeSession}`;
+}
+
+function extractOpenClawText(payload: unknown) {
+  const root = payload as { choices?: Array<{ message?: { content?: unknown } }> };
+  const content = root?.choices?.[0]?.message?.content;
+  if (typeof content === 'string') return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (!item || typeof item !== 'object') return '';
+        const part = item as { type?: string; text?: string };
+        return part.type === 'text' && typeof part.text === 'string' ? part.text : '';
+      })
+      .join('')
+      .trim();
+  }
+  return '';
+}
+
+async function runOpenClawGatewayChat(input: { agentId: string; providerSessionId: string; message: string; model?: string }) {
+  const gateway = await readOpenClawGatewayConfig();
+  const sessionKey = openClawSessionKey(input.agentId, input.providerSessionId);
+  const response = await fetch(`${gateway.baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(gateway.authHeader ? { Authorization: gateway.authHeader } : {}),
+      'x-openclaw-agent-id': input.agentId,
+      'x-openclaw-session-key': sessionKey
+    },
+    body: JSON.stringify({
+      model: `openclaw:${input.agentId}`,
+      user: sessionKey,
+      messages: [{ role: 'user', content: input.message }]
+    })
+  });
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+  const text = extractOpenClawText(body);
+  if (!response.ok) {
+    const errorBody = body.error && typeof body.error === 'object' ? body.error as { message?: unknown } : undefined;
+    const message = String(errorBody?.message || body.error || `OpenClaw HTTP ${response.status}`).trim();
+    throw new Error(message || `OpenClaw HTTP ${response.status}`);
+  }
+  if (!text) throw new Error('OpenClaw returned no chat response.');
+  return { text, sessionKey, raw: JSON.stringify(body) };
+}
+
 export function findProvider(providers: ProviderRecord[], providerId?: string) {
   const requested = String(providerId || '').trim();
   if (requested) return providers.find((provider) => provider.id === requested || provider.kind === requested);
@@ -182,24 +257,28 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
 
   if (provider.kind === 'openclaw') {
     const openClawSessionId = request.providerSessionId || providerSessionId('project_reika', sessionId);
-    const args = [
-      'agent', '--agent', agentId,
-      '--session-id', openClawSessionId,
-      '--thinking', agentId === 'orchestrator' || agentId === 'main' ? 'low' : 'off',
-      '--message', request.message
-    ];
-    const { stdout, stderr } = await runCommand(openClawBin, args);
-    const text = String(stdout || stderr || '').trim();
-    onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text } });
+    const gatewayResult = await runOpenClawGatewayChat({
+      agentId,
+      providerSessionId: openClawSessionId,
+      message: request.message,
+      model: request.model
+    });
+    onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text: gatewayResult.text } });
     onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: openClawSessionId } });
     return {
       providerId: provider.id,
       agentId,
       sessionId: openClawSessionId,
       runtime: 'openclaw',
-      text,
-      raw: `${stdout || ''}\n${stderr || ''}`.trim(),
-      metadata: { providerSessionId: openClawSessionId, openClawSessionId, localSessionId: sessionId }
+      text: gatewayResult.text,
+      raw: gatewayResult.raw,
+      metadata: {
+        providerSessionId: openClawSessionId,
+        openClawSessionId,
+        openClawSessionKey: gatewayResult.sessionKey,
+        localSessionId: sessionId,
+        transport: 'gateway-chat-completions'
+      }
     };
   }
 
