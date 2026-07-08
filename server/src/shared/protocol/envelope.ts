@@ -16,6 +16,7 @@ export const agentHubEnvelopeTypes = [
   'agent.roster.snapshot',
   'agent.chat.request',
   'agent.chat.response',
+  'agent.activity',
   'command.accepted',
   'command.rejected',
   'command.completed',

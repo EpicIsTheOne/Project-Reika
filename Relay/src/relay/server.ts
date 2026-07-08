@@ -458,7 +458,7 @@ deviceSocketServer.on("connection", (socket, request) => {
       return;
     }
 
-    if (parsed.type === "agent.chat.response" || parsed.type.startsWith("command.")) {
+    if (parsed.type === "agent.chat.response" || parsed.type === "agent.activity" || parsed.type.startsWith("command.")) {
       broadcastToApps(parsed);
       return;
     }

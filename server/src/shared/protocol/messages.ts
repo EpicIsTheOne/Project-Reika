@@ -58,6 +58,23 @@ export interface AgentChatResponsePayload {
   runtime: string;
 }
 
+export type AgentActivityStatus = 'idle' | 'thinking' | 'responding' | 'tool_use' | 'error' | 'active';
+
+export interface AgentActivityPayload {
+  deviceId: string;
+  providerId?: string;
+  agent: string;
+  status: AgentActivityStatus;
+  message?: string;
+  tool?: string;
+  input?: unknown;
+  sessionId?: string;
+  providerSessionId?: string;
+  source?: string;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface CommandAcceptedPayload {
   commandType: string;
 }

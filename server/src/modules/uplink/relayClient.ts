@@ -45,7 +45,7 @@ export class RelayClient {
     chatHandler?: AgentChatHandler
   ) {
     this.deviceEndpoint = { kind: 'device', id: this.deviceId };
-    this.dispatcher = new CommandDispatcher(state, this.deviceEndpoint, chatHandler);
+    this.dispatcher = new CommandDispatcher(state, this.deviceEndpoint, chatHandler, (envelope) => this.send(envelope));
   }
 
   start() {

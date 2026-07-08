@@ -2,7 +2,9 @@ export const deviceAgentCapabilities = [
   'device.state.read',
   'provider.refresh',
   'provider.snapshot.read',
-  'agent.roster.read'
+  'agent.roster.read',
+  'agent.chat',
+  'agent.activity'
 ] as const;
 
 export type DeviceAgentCapability = typeof deviceAgentCapabilities[number];

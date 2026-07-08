@@ -13,6 +13,7 @@ export const agentHubEnvelopeTypes = [
   "agent.roster.snapshot",
   "agent.chat.request",
   "agent.chat.response",
+  "agent.activity",
   "command.accepted",
   "command.rejected",
   "command.completed",
@@ -58,6 +59,23 @@ export interface AgentChatResponsePayload {
   runtime: string;
 }
 
+export type AgentActivityStatus = "idle" | "thinking" | "responding" | "tool_use" | "error" | "active";
+
+export interface AgentActivityPayload {
+  deviceId: string;
+  providerId?: string;
+  agent: string;
+  status: AgentActivityStatus;
+  message?: string;
+  tool?: string;
+  input?: unknown;
+  sessionId?: string;
+  providerSessionId?: string;
+  source?: string;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface CommandStatusPayload {
   ok: boolean;
   message: string;
@@ -98,6 +116,7 @@ export type AgentRosterRequestEnvelope = AgentHubEnvelope<Record<string, never>>
 export type AgentRosterSnapshotEnvelope = AgentHubEnvelope<AgentRosterSnapshotPayload> & { type: "agent.roster.snapshot" };
 export type AgentChatRequestEnvelope = AgentHubEnvelope<AgentChatRequestPayload> & { type: "agent.chat.request" };
 export type AgentChatResponseEnvelope = AgentHubEnvelope<AgentChatResponsePayload> & { type: "agent.chat.response" };
+export type AgentActivityEnvelope = AgentHubEnvelope<AgentActivityPayload> & { type: "agent.activity" };
 export type CommandAcceptedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.accepted" };
 export type CommandRejectedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.rejected" };
 export type CommandCompletedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.completed" };
@@ -114,6 +133,7 @@ export type KnownAgentHubEnvelope =
   | AgentRosterSnapshotEnvelope
   | AgentChatRequestEnvelope
   | AgentChatResponseEnvelope
+  | AgentActivityEnvelope
   | CommandAcceptedEnvelope
   | CommandRejectedEnvelope
   | CommandCompletedEnvelope
