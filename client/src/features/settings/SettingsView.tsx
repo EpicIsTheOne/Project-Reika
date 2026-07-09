@@ -299,6 +299,13 @@ export function SettingsView({
                     <ChevronDown size={18} />
                   </button>
                 </SettingRow>
+                <SettingRow title="Show Agent Roles" detail={settings.agentSelector.showRole ? "Agent names can include role suffixes like Astra / Mission Orchestrator." : "Agent names show the base name only."}>
+                  <Toggle
+                    checked={settings.agentSelector.showRole}
+                    disabled={busySetting === "agentSelector"}
+                    onClick={() => updateAgentSelectorSetting("showRole", !settings.agentSelector.showRole)}
+                  />
+                </SettingRow>
                 <SettingRow title="Hide CommandCenter Duplicates" detail={settings.agentSelector.hideCommandCenterDuplicates ? "Same-name CommandCenter/native pairs on the same server collapse into one agent." : "All same-name provider entries are shown."}>
                   <Toggle
                     checked={settings.agentSelector.hideCommandCenterDuplicates}

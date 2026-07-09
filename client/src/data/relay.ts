@@ -98,7 +98,14 @@ export async function listRelayDevices(relayUrl?: string) {
   return (payload.devices ?? []).map((record): RelayDeviceRecord => ({
     device: {
       ...record.device,
-      status: record.socketConnected ? "online" : record.device.status
+      status: record.socketConnected ? "online" : "offline",
+      providers: record.socketConnected
+        ? record.device.providers
+        : record.device.providers?.map((provider) => ({
+            ...provider,
+            status: "offline",
+            agents: provider.agents.map((agent) => ({ ...agent, status: "offline" }))
+          }))
     },
     activeProviderId: record.activeProviderId,
     agents: record.device.providers?.flatMap((provider) => provider.agents) ?? [],

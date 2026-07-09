@@ -26,7 +26,7 @@ import {
   type ReikaStateResponse
 } from "../../lib/reikaApi";
 import type { AgentChatRequestPayload, AgentChatResponsePayload } from "../../shared/protocol";
-import { artRerollSlot, makeArtRuntimeSeed, type ArtAgentLike, type ArtRuntime } from "../../lib/artRuntime";
+import { artRerollSlot, makeArtRuntimeSeed, type ArtAgentLike, type ArtRenderAsset, type ArtRuntime } from "../../lib/artRuntime";
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
 import { StatusDot } from "../../components/status";
 import { statusLabels } from "../../app/constants";
@@ -40,6 +40,7 @@ export function ChatView({
   relayProviders = [],
   onRelayChat,
   selectorSettings,
+  developerDiagnostics,
   artRuntime,
   onBack
 }: {
@@ -49,6 +50,7 @@ export function ChatView({
   relayProviders?: ReikaProviderRecord[];
   onRelayChat: (deviceId: string, payload: AgentChatRequestPayload) => Promise<AgentChatResponsePayload>;
   selectorSettings: ReikaAgentSelectorSettings;
+  developerDiagnostics: boolean;
   artRuntime: ArtRuntime;
   onBack: () => void;
 }) {
@@ -74,6 +76,7 @@ export function ChatView({
   const [agentSelectionDirty, setAgentSelectionDirty] = useState(false);
   const suppressedRelaySessionLoadRef = useRef<string | null>(null);
   const artInstanceKey = useMemo(() => makeArtRuntimeSeed(), []);
+  const requestedAgentRouteKey = [agent.id, agent.providerId, agent.deviceId, agent.relayProviderId ?? "", agent.relayAgentId ?? ""].join("::");
 
   const availableProviders = useMemo(() => {
     const localDeviceId = String(serverState?.device.id ?? serverState?.device.deviceId ?? "").trim();
@@ -114,6 +117,7 @@ export function ChatView({
     (shouldUseRequestedAgentRoute ? findRequestedRelayAgent(providerAgents, agent) : undefined) ??
     providerAgents.find((item) => item.id === selectedAgentKey || item.name === selectedAgentKey) ??
     providerAgents[0];
+  const selectedAgentOptionKey = selectedProvider && selectedLiveAgent ? makeAgentOptionKey(selectedProvider.id, selectedLiveAgent.id) : "";
   const selectableAgents = useMemo(
     () => collapseDuplicateAgentOptions(
       availableProviders.flatMap((provider) =>
@@ -121,14 +125,14 @@ export function ChatView({
           key: makeAgentOptionKey(provider.id, item.id),
           provider,
           agent: item,
-          label: formatAgentOptionLabel(item, provider, selectorSettings.labelMode)
+          label: formatAgentOptionLabel(item, provider, selectorSettings.labelMode, selectorSettings.showRole)
         }))
       ),
-      selectorSettings
+      selectorSettings,
+      selectedAgentOptionKey
     ),
-    [availableProviders, selectorSettings]
+    [availableProviders, selectedAgentOptionKey, selectorSettings]
   );
-  const selectedAgentOptionKey = selectedProvider && selectedLiveAgent ? makeAgentOptionKey(selectedProvider.id, selectedLiveAgent.id) : "";
   const selectedRelayDeviceId = getRelayDeviceId(selectedProvider, selectedLiveAgent) ?? (shouldUseRequestedAgentRoute && requestedHasRelayIdentity ? agent.deviceId : undefined);
   const selectedIsRelayProvider = Boolean(selectedRelayDeviceId);
   const relayConversationKey =
@@ -148,16 +152,18 @@ export function ChatView({
       : "";
   const relayRouteReady = Boolean(selectedIsRelayProvider && selectedRelayDeviceId && relayProviderId && relayAgentId);
   const headerAgentName = selectedLiveAgent?.name ?? agent.name;
+  const displayAgentName = formatAgentDisplayName(headerAgentName, selectedLiveAgent?.role ?? agent.role, selectorSettings.showRole);
   const providerLabel = selectedProvider?.name ?? "Reika Server";
   const deviceName = selectedIsRelayProvider ? String(selectedLiveAgent?.source ?? selectedRelayDeviceId ?? "Relay Device") : getReikaDeviceName(serverState) || "Epic PC";
+  const showAgentContext = selectorSettings.labelMode !== "agent-only";
   const selectedAttachments = files.filter((file) => selectedFileIds.includes(file.id));
   const artAgent: ArtAgentLike = {
     id: selectedLiveAgent?.id ?? selectedAgentKey ?? agent.id,
     name: headerAgentName,
     characterId: selectedLiveAgent?.characterId ?? agent.characterId
   };
-  const chatAvatar = artRuntime.agentPortrait(artAgent, artRerollSlot("chat-portrait", artInstanceKey));
-  const chatPortraitArt = artRuntime.agentArt(artAgent, "portrait-chat", assets.reika.halfBody, artRerollSlot("chat-profile-portrait", artInstanceKey));
+  const chatAvatar = artRuntime.agentAvatarRender(artAgent, artRerollSlot("chat-avatar", artInstanceKey));
+  const chatPortraitArt = artRuntime.agentPortraitRender(artAgent, artRerollSlot("chat-profile-portrait", artInstanceKey));
 
   const normalizeChatError = (value: unknown, fallback = "Something went wrong.") => {
     const raw = value instanceof Error ? value.message : String(value || fallback);
@@ -232,10 +238,11 @@ export function ChatView({
   useEffect(() => {
     setAgentSelectionDirty(false);
     setSelectedAgentKey(agent.id);
+    setSelectedProviderId(agent.providerId);
     setSelectedSessionId(null);
     setMessages([]);
     setSendError(null);
-  }, [agent.id]);
+  }, [requestedAgentRouteKey]);
 
   useEffect(() => {
     if (agentSelectionDirty) return;
@@ -527,13 +534,12 @@ export function ChatView({
           <ArrowLeft size={20} />
           Back
         </button>
-        <img className="chat-profile-art" src={chatPortraitArt} alt="" />
+        <img className="chat-profile-art" src={chatPortraitArt.src} alt="" style={chatPortraitArt.style} />
         <div className="chat-profile-card live-chat-profile-card">
           <h2>
-            {headerAgentName}
-            <Heart size={24} fill="currentColor" />
+            {displayAgentName}
           </h2>
-          <p>{providerLabel} {"\u2022"} {deviceName}</p>
+          {showAgentContext ? <p>{providerLabel} {"\u2022"} {deviceName}</p> : null}
           <span>
             <StatusDot status={selectedProviderStatus} />
             {statusLabels[selectedProviderStatus]}
@@ -598,17 +604,23 @@ export function ChatView({
 
       <section className="chat-main">
         <header className="chat-header">
-          <img src={chatAvatar} alt="" />
+          <img src={chatAvatar.src} alt="" style={chatAvatar.style} />
           <div>
             <h1>
-              {headerAgentName}
-              <Heart size={26} fill="currentColor" />
+              {displayAgentName}
             </h1>
-            <p>
-              {providerLabel} {"\u2022"} {deviceName}
-              <StatusDot status={selectedProviderStatus} />
-              {statusLabels[selectedProviderStatus]}
-            </p>
+            {showAgentContext ? (
+              <p>
+                {providerLabel} {"\u2022"} {deviceName}
+                <StatusDot status={selectedProviderStatus} />
+                {statusLabels[selectedProviderStatus]}
+              </p>
+            ) : (
+              <p>
+                <StatusDot status={selectedProviderStatus} />
+                {statusLabels[selectedProviderStatus]}
+              </p>
+            )}
           </div>
           <button className="icon-button" data-testid="chat-refresh-providers" onClick={() => void handleRefreshProviders()} disabled={busy} aria-label="Refresh providers">
             <Activity size={22} />
@@ -624,11 +636,11 @@ export function ChatView({
           {stateError && !selectedIsRelayProvider ? <div className="chat-error-banner">Reika server offline. {stateError}</div> : null}
           {!stateError && selectedProvider && !selectedProviderCanChat ? <div className="chat-error-banner">{selectedProvider.name} is not chat-capable yet.</div> : null}
           {!stateError && selectedProvider && selectedProviderStatus !== "online" ? <div className="chat-error-banner">{selectedProvider.name} is {statusLabels[selectedProviderStatus].toLowerCase()}.</div> : null}
-          {selectedIsRelayProvider ? <div className="chat-inline-note">Relay chat active: {relayRouteSummary}</div> : null}
+          {developerDiagnostics && selectedIsRelayProvider ? <div className="chat-inline-note">Relay chat active: {relayRouteSummary}</div> : null}
           {sendError ? <div className="chat-error-banner">{sendError}</div> : null}
           <div className="message-list" data-testid="message-list">
             {visibleMessages.map((message, index) => (
-              <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={headerAgentName} motionIndex={index} />
+              <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={displayAgentName} motionIndex={index} />
             ))}
             {!busy && visibleMessages.length === 0 && !sendError && (!stateError || selectedIsRelayProvider) ? (
               <div className="chat-empty-state">
@@ -638,8 +650,8 @@ export function ChatView({
             ) : null}
             {busy ? (
               <div className="typing-row" data-testid="thinking-row">
-                <img src={chatAvatar} alt="" />
-                <span>{headerAgentName} is thinking</span>
+                <img src={chatAvatar.src} alt="" style={chatAvatar.style} />
+                <span>{displayAgentName} is thinking</span>
                 <i />
                 <i />
                 <i />
@@ -648,7 +660,7 @@ export function ChatView({
           </div>
 
           <form className="chat-composer" data-testid="chat-composer" onSubmit={handleSubmit}>
-            <input data-testid="chat-input" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${headerAgentName}...`} />
+            <input data-testid="chat-input" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${displayAgentName}...`} />
             {selectedAttachments.length > 0 ? (
               <div className="selected-attachment-chips">
                 {selectedAttachments.map((file) => (
@@ -700,14 +712,13 @@ export function ChatView({
   );
 }
 
-function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex = 0 }: { message: ChatMessage; agentAvatar?: string; agentName?: string; motionIndex?: number }) {
+function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex = 0 }: { message: ChatMessage; agentAvatar?: ArtRenderAsset; agentName?: string; motionIndex?: number }) {
   if (message.sender === "system") return null;
   const isUser = message.sender === "user";
-  const avatar = agentAvatar ?? assets.reika.avatar;
 
   return (
     <article className={cx("chat-message motion-message", isUser ? "user" : "agent")} data-testid={isUser ? "chat-message-user" : "chat-message-agent"} style={motionDelay(Math.min(motionIndex, 8), 28)}>
-      {!isUser ? <img src={avatar} alt="" /> : null}
+      {!isUser ? <img src={agentAvatar?.src ?? assets.reika.avatar} alt="" style={agentAvatar?.style} /> : null}
       <div className="message-content">
         {!isUser ? (
           <header>
@@ -811,7 +822,7 @@ type SelectableAgentOption = {
   label: string;
 };
 
-function collapseDuplicateAgentOptions(options: SelectableAgentOption[], settings: ReikaAgentSelectorSettings) {
+function collapseDuplicateAgentOptions(options: SelectableAgentOption[], settings: ReikaAgentSelectorSettings, selectedKey = "") {
   if (!settings.hideCommandCenterDuplicates) return options;
 
   const groups = new Map<string, SelectableAgentOption[]>();
@@ -828,17 +839,38 @@ function collapseDuplicateAgentOptions(options: SelectableAgentOption[], setting
     if (commandCenterOptions.length === 0 || agentProviderOptions.length === 0) continue;
 
     const toHide = settings.duplicatePreference === "commandcenter" ? agentProviderOptions : commandCenterOptions;
-    for (const option of toHide) hidden.add(option.key);
+    for (const option of toHide) {
+      if (option.key !== selectedKey) hidden.add(option.key);
+    }
   }
 
   return options.filter((option) => !hidden.has(option.key));
 }
 
-function formatAgentOptionLabel(agent: ReikaProviderRecord["agents"][number], provider: ReikaProviderRecord, mode: ReikaAgentSelectorSettings["labelMode"]) {
-  const agentName = String(agent.name || agent.label || agent.id || "Agent");
+function formatAgentOptionLabel(agent: ReikaProviderRecord["agents"][number], provider: ReikaProviderRecord, mode: ReikaAgentSelectorSettings["labelMode"], showRole: boolean) {
+  const agentName = formatAgentDisplayName(String(agent.name || agent.label || agent.id || "Agent"), agent.role, showRole);
   if (mode === "agent-only") return agentName;
   if (mode === "agent-device") return `${agentName} - ${getProviderDeviceLabel(provider, agent)}`;
   return `${agentName} - ${formatProviderLabel(provider.name)}`;
+}
+
+function formatAgentDisplayName(name: string, role: unknown, showRole: boolean) {
+  const baseName = stripRoleSuffix(name);
+  if (!showRole) return baseName;
+  const roleText = cleanRoleLabel(role, baseName);
+  return roleText ? `${baseName} / ${roleText}` : name;
+}
+
+function stripRoleSuffix(name: string) {
+  return String(name || "Agent").split(/\s+\/\s+/u)[0]?.trim() || "Agent";
+}
+
+function cleanRoleLabel(role: unknown, baseName: string) {
+  const roleText = String(role ?? "").trim();
+  if (!roleText) return "";
+  if (roleText.toLowerCase() === baseName.toLowerCase()) return "";
+  if (/^(agent|assistant)$/iu.test(roleText)) return "";
+  return roleText;
 }
 
 function formatProviderLabel(name: string) {

@@ -137,6 +137,7 @@ export interface ReikaSettings {
 
 export interface ReikaAgentSelectorSettings {
   labelMode: "agent-provider" | "agent-only" | "agent-device";
+  showRole: boolean;
   hideCommandCenterDuplicates: boolean;
   duplicatePreference: "agent" | "commandcenter";
 }
@@ -225,6 +226,12 @@ export interface ReikaArtAsset {
   prompt?: string;
   model?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface ReikaArtPlacement {
+  scale: number;
+  x: number;
+  y: number;
 }
 
 export interface ReikaArtCategory {
@@ -509,6 +516,21 @@ export async function deleteArtAsset(profileId: string, categoryId: string, asse
   return request<ReikaArtLibraryResponse & { asset: ReikaArtAsset }>(
     `/art/profiles/${encodeURIComponent(profileId)}/categories/${encodeURIComponent(categoryId)}/assets/${encodeURIComponent(assetId)}`,
     { method: "DELETE" }
+  );
+}
+
+export async function updateArtAsset(
+  profileId: string,
+  categoryId: string,
+  assetId: string,
+  input: { placement?: ReikaArtPlacement | null }
+) {
+  return request<ReikaArtLibraryResponse & { asset: ReikaArtAsset }>(
+    `/art/profiles/${encodeURIComponent(profileId)}/categories/${encodeURIComponent(categoryId)}/assets/${encodeURIComponent(assetId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    }
   );
 }
 

@@ -60,7 +60,10 @@ export async function ensureLocalAgent(options: LocalAgentOptions = {}): Promise
     log.write(`[${new Date().toISOString()}] exited code=${code ?? "null"} signal=${signal ?? "null"}\n`);
   });
 
-  await waitForAgent(url, options.waitMs ?? 8000);
+  const ready = await waitForAgent(url, options.waitMs ?? 8000);
+  if (!ready) {
+    log.write(`[${new Date().toISOString()}] startup timed out waiting for ${url}\n`);
+  }
   return { url, started: true, logPath, stop: stopLocalAgent };
 }
 

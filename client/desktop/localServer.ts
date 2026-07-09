@@ -10,6 +10,7 @@ export interface DesktopServerOptions {
   agentTarget?: string;
   relayTarget?: string;
   apiTarget?: string;
+  recoverAgentTarget?: () => Promise<string | undefined>;
 }
 
 export interface DesktopServer {
@@ -46,7 +47,7 @@ export async function startDesktopServer(options: DesktopServerOptions): Promise
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${host}:${port}`}`);
       if (url.pathname.startsWith("/agent")) {
-        await proxyHttp(req, res, agentTarget, url.pathname.replace(/^\/agent/u, "") || "/", url.search);
+        await proxyHttpWithRecovery(req, res, agentTarget, url.pathname.replace(/^\/agent/u, "") || "/", url.search, options.recoverAgentTarget);
         return;
       }
       if (url.pathname.startsWith("/v1")) {
@@ -134,6 +135,30 @@ async function proxyHttp(req: IncomingMessage, res: ServerResponse, targetBase: 
   }
   const buffer = Buffer.from(await response.arrayBuffer());
   res.end(buffer);
+}
+
+async function proxyHttpWithRecovery(
+  req: IncomingMessage,
+  res: ServerResponse,
+  targetBase: string,
+  pathname: string,
+  search: string,
+  recoverTarget?: () => Promise<string | undefined>
+) {
+  try {
+    await proxyHttp(req, res, targetBase, pathname, search);
+  } catch (error) {
+    if (!recoverTarget || !isRecoverableProxyError(error)) throw error;
+    const recoveredTarget = await recoverTarget();
+    if (!recoveredTarget) throw error;
+    await proxyHttp(req, res, recoveredTarget, pathname, search);
+  }
+}
+
+function isRecoverableProxyError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return message.includes("fetch failed") || message.includes("econnrefused") || message.includes("socket") || message.includes("terminated");
 }
 
 function serveStatic(distDir: string, rawPathname: string, res: ServerResponse) {

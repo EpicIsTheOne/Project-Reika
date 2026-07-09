@@ -855,8 +855,20 @@ const server = http.createServer(async (req, res) => {
     }
 
     const artAssetDeleteMatch = url.pathname.match(/^\/art\/profiles\/([^/]+)\/categories\/([^/]+)\/assets\/([^/]+)$/);
+    if (req.method === 'PATCH' && artAssetDeleteMatch) {
+      const body = await readJson(req);
+      const assetRecord = art.updateAsset(
+        decodeURIComponent(artAssetDeleteMatch[1] || ''),
+        decodeURIComponent(artAssetDeleteMatch[2] || ''),
+        decodeURIComponent(artAssetDeleteMatch[3] || ''),
+        { placement: Object.prototype.hasOwnProperty.call(body, 'placement') ? body.placement : undefined }
+      );
+      sendJson(res, 200, await artPayload({ asset: assetRecord }));
+      return;
+    }
+
     if (req.method === 'DELETE' && artAssetDeleteMatch) {
-      const assetRecord = art.deleteAsset(decodeURIComponent(artAssetDeleteMatch[1] || ''), decodeURIComponent(artAssetDeleteMatch[2] || ''), decodeURIComponent(artAssetDeleteMatch[3] || ''));
+      const assetRecord = await art.deleteAsset(decodeURIComponent(artAssetDeleteMatch[1] || ''), decodeURIComponent(artAssetDeleteMatch[2] || ''), decodeURIComponent(artAssetDeleteMatch[3] || ''));
       sendJson(res, 200, await artPayload({ asset: assetRecord }));
       return;
     }
@@ -1429,6 +1441,7 @@ const server = http.createServer(async (req, res) => {
         'DELETE /art/profiles/:id/categories/:categoryId',
         'POST /art/profiles/:id/categories/:categoryId/assets/upload',
         'POST /art/profiles/:id/categories/:categoryId/assets/link',
+        'PATCH /art/profiles/:id/categories/:categoryId/assets/:assetId',
         'DELETE /art/profiles/:id/categories/:categoryId/assets/:assetId',
         'POST /art/profiles/:id/categories/:categoryId/generate',
         'GET /art/assets/:id/content',

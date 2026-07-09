@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ChangeEvent, ElementType } from "react";
+import type { CSSProperties, ChangeEvent, ElementType } from "react";
 import { Activity, Bell, Box, Check, ChevronDown, Copy, Gift, Grid2X2, Heart, Images, Info, KeyRound, Layers, Link2, List, Monitor, Plus, Sparkles, Trash2, TriangleAlert, Upload, UserRound, WandSparkles, X } from "lucide-react";
 import {
   connectArtOAuth,
@@ -14,19 +14,23 @@ import {
   linkArtAsset,
   requestArtGeneration,
   updateArtCategory,
+  updateArtAsset,
   uploadArtAsset,
   type ReikaArtAsset,
   type ReikaArtCategory,
   type ReikaArtGenerationStatus,
   type ReikaArtLibraryResponse,
+  type ReikaArtPlacement,
   type ReikaArtProfile,
   type ReikaArtScope
 } from "../../lib/reikaApi";
-import { artRerollSlot, makeArtRuntimeSeed, resolveArtAssetUrl, type ArtRuntime } from "../../lib/artRuntime";
+import { artPlacementStyle, readAssetPlacement, resolveArtAssetUrl, type ArtRuntime } from "../../lib/artRuntime";
 import { StatusDot } from "../../components/status";
 import { statusLabels } from "../../app/constants";
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
 import type { Agent, Device } from "../../types";
+
+const defaultPlacement: ReikaArtPlacement = { scale: 1, x: 0, y: 0 };
 
 export function AgentArtStudio({
   initialLibrary,
@@ -52,6 +56,11 @@ export function AgentArtStudio({
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<"all" | "selected">("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [manageAssets, setManageAssets] = useState(false);
+  const [manageReferences, setManageReferences] = useState(false);
+  const [placementDraft, setPlacementDraft] = useState<ReikaArtPlacement>(defaultPlacement);
+  const [placementPreview, setPlacementPreview] = useState<"chat" | "avatar" | "banner">("chat");
+  const [positionEditorOpen, setPositionEditorOpen] = useState(false);
   const [promptDraft, setPromptDraft] = useState("");
   const [systemPromptDraft, setSystemPromptDraft] = useState("");
   const [linkName, setLinkName] = useState("");
@@ -59,7 +68,6 @@ export function AgentArtStudio({
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [previewNonce, setPreviewNonce] = useState(() => makeArtRuntimeSeed());
   const [generationState, setGenerationState] = useState<Record<string, ReikaArtGenerationStatus | { status: "waiting" | "running"; message: string; profileId: string; categoryId: string }>>({});
 
   const applyLibrary = (response: ReikaArtLibraryResponse) => {
@@ -93,11 +101,8 @@ export function AgentArtStudio({
     : categories;
   const selectedCategory = categories.find((category) => category.id === selectedCategoryId) ?? categories[0] ?? null;
   const selectedAsset = selectedCategory?.assets.find((item) => item.id === selectedCategory.selectedAssetId) ?? selectedCategory?.assets[0] ?? null;
-  const selectedPreviewUrl = selectedCategory && selectedCategory.selectionMode === "random"
-    ? artRuntime.profileArt(selectedProfile, selectedCategory.id, selectedAsset ? resolveArtAssetUrl(selectedAsset) : "", artRerollSlot("studio-detail-preview", previewNonce))
-    : selectedAsset
-      ? resolveArtAssetUrl(selectedAsset)
-      : "";
+  const selectedAssetUrl = selectedAsset ? resolveArtAssetUrl(selectedAsset) : "";
+  const selectedPreviewUrl = selectedAsset ? resolveArtAssetUrl(selectedAsset) : "";
   const selectedReferences = selectedCategory?.referenceAssetIds
     .map((id) => selectedCategory.assets.find((item) => item.id === id))
     .filter((item): item is ReikaArtAsset => Boolean(item)) ?? [];
@@ -120,13 +125,13 @@ export function AgentArtStudio({
   }, [categories, selectedCategory, selectedCategoryId]);
 
   useEffect(() => {
-    if (selectedCategory?.selectionMode === "random") setPreviewNonce(makeArtRuntimeSeed());
-  }, [artRuntime.versionKey, selectedCategory?.assets.length, selectedCategory?.id, selectedCategory?.selectionMode, selectedProfile?.id]);
-
-  useEffect(() => {
     setPromptDraft(selectedCategory?.prompt ?? "");
     setSystemPromptDraft(selectedCategory?.systemPrompt ?? "");
   }, [selectedCategory?.id, selectedCategory?.prompt, selectedCategory?.systemPrompt]);
+
+  useEffect(() => {
+    setPlacementDraft(readAssetPlacement(selectedAsset));
+  }, [selectedAsset?.id]);
 
   useEffect(() => {
     if (!library || activeScope !== "agent" || discoveredAgents.length === 0 || busy) return;
@@ -256,6 +261,39 @@ export function AgentArtStudio({
   const removeAsset = () => {
     if (!selectedProfile || !selectedCategory || !selectedAsset || selectedAsset.kind === "seed") return;
     runAction("delete-asset", () => deleteArtAsset(selectedProfile.id, selectedCategory.id, selectedAsset.id), () => "Art asset removed.");
+  };
+
+  const removeAssetById = (asset: ReikaArtAsset) => {
+    if (!selectedProfile || !selectedCategory || asset.kind === "seed") return;
+    runAction("delete-asset", () => deleteArtAsset(selectedProfile.id, selectedCategory.id, asset.id), () => `${asset.name} deleted.`);
+  };
+
+  const removeReference = (assetId: string) => {
+    if (!selectedProfile || !selectedCategory) return;
+    runAction(
+      "reference-remove",
+      () => updateArtCategory(selectedProfile.id, selectedCategory.id, { referenceAssetIds: selectedCategory.referenceAssetIds.filter((id) => id !== assetId) }),
+      () => "Reference removed."
+    );
+  };
+
+  const savePlacement = () => {
+    if (!selectedProfile || !selectedCategory || !selectedAsset) return;
+    runAction(
+      "asset-placement",
+      () => updateArtAsset(selectedProfile.id, selectedCategory.id, selectedAsset.id, { placement: placementDraft }),
+      () => "Image placement saved."
+    );
+  };
+
+  const resetPlacement = () => {
+    if (!selectedProfile || !selectedCategory || !selectedAsset) return;
+    setPlacementDraft(defaultPlacement);
+    runAction(
+      "asset-placement",
+      () => updateArtAsset(selectedProfile.id, selectedCategory.id, selectedAsset.id, { placement: null }),
+      () => "Image placement reset."
+    );
   };
 
   const generateMore = () => {
@@ -560,8 +598,18 @@ export function AgentArtStudio({
               </header>
 
               <div className="art-preview-frame">
-                {selectedPreviewUrl ? <img src={selectedPreviewUrl} alt="" /> : <div>No artwork yet</div>}
+                {selectedPreviewUrl ? <img src={selectedPreviewUrl} alt="" style={assetPlacementStyle(selectedAsset)} /> : <div>No artwork yet</div>}
               </div>
+
+              <section className="art-detail-section art-position-editor">
+                <button className="art-position-toggle" type="button" onClick={() => setPositionEditorOpen(true)} aria-haspopup="dialog" aria-expanded={positionEditorOpen}>
+                  <span>
+                    <strong>Position Editor</strong>
+                    <small>{selectedAsset?.name ?? "No image"} - {Math.round(placementDraft.scale * 100)}%, X {placementDraft.x}, Y {placementDraft.y}</small>
+                  </span>
+                  <ChevronDown size={17} />
+                </button>
+              </section>
 
               <section className="art-detail-section">
                 <div className="art-detail-title">
@@ -579,14 +627,21 @@ export function AgentArtStudio({
               <section className="art-detail-section">
                 <div className="art-detail-title">
                   <h3>Current Pool ({selectedCategory.assets.length} images)</h3>
-                  <button type="button" onClick={() => setCategoryFilter("all")}>Manage</button>
+                  <button type="button" onClick={() => setManageAssets((current) => !current)}>{manageAssets ? "Done" : "Manage"}</button>
                 </div>
                 <div className="art-pool-grid">
                   {selectedCategory.assets.map((item) => (
-                    <button className={item.id === selectedCategory.selectedAssetId ? "selected" : ""} key={item.id} type="button" onClick={() => chooseAsset(item.id)}>
-                      <img src={resolveArtAssetUrl(item)} alt="" />
-                      {item.id === selectedCategory.selectedAssetId ? <Check size={15} /> : null}
-                    </button>
+                    <div className={cx("art-image-tile", item.id === selectedCategory.selectedAssetId && "selected")} key={item.id}>
+                      <button type="button" onClick={() => chooseAsset(item.id)} title={`Select ${item.name}`}>
+                        <img src={resolveArtAssetUrl(item)} alt="" style={assetPlacementStyle(item)} />
+                        {item.id === selectedCategory.selectedAssetId ? <Check size={15} /> : null}
+                      </button>
+                      {manageAssets ? (
+                        <button className="art-tile-delete" type="button" onClick={() => removeAssetById(item)} disabled={item.kind === "seed" || busy !== null} title={item.kind === "seed" ? "Default seed art cannot be deleted here" : `Delete ${item.name}`}>
+                          <Trash2 size={14} />
+                        </button>
+                      ) : null}
+                    </div>
                   ))}
                 </div>
                 <div className="art-detail-actions">
@@ -623,13 +678,26 @@ export function AgentArtStudio({
               <section className="art-detail-section">
                 <div className="art-detail-title">
                   <h3>Reference Images ({selectedReferences.length})</h3>
-                  <button type="button" onClick={() => setNotice("Click any image in the pool to toggle whether it is used as a generation reference.")}>Manage</button>
+                  <button type="button" onClick={() => setManageReferences((current) => !current)}>{manageReferences ? "Done" : "Manage"}</button>
                 </div>
                 <div className="art-reference-row">
-                  {selectedCategory.assets.slice(0, 5).map((item) => (
-                    <button className={selectedCategory.referenceAssetIds.includes(item.id) ? "active" : ""} key={item.id} type="button" onClick={() => toggleReference(item.id)}>
-                      <img src={resolveArtAssetUrl(item)} alt="" />
-                    </button>
+                  {selectedCategory.assets.map((item) => (
+                    <div className={cx("art-image-tile", selectedCategory.referenceAssetIds.includes(item.id) && "active")} key={item.id}>
+                      <button type="button" onClick={() => toggleReference(item.id)} title={selectedCategory.referenceAssetIds.includes(item.id) ? `Stop using ${item.name} as a reference` : `Use ${item.name} as a reference`}>
+                        <img src={resolveArtAssetUrl(item)} alt="" style={assetPlacementStyle(item)} />
+                        {selectedCategory.referenceAssetIds.includes(item.id) ? <Check size={15} /> : null}
+                      </button>
+                      {manageReferences && selectedCategory.referenceAssetIds.includes(item.id) ? (
+                        <button className="art-tile-remove" type="button" onClick={() => removeReference(item.id)} disabled={busy !== null} title={`Remove ${item.name} from references`}>
+                          <X size={14} />
+                        </button>
+                      ) : null}
+                      {manageReferences ? (
+                        <button className="art-tile-delete" type="button" onClick={() => removeAssetById(item)} disabled={item.kind === "seed" || busy !== null} title={item.kind === "seed" ? "Default seed art cannot be deleted here" : `Delete ${item.name}`}>
+                          <Trash2 size={14} />
+                        </button>
+                      ) : null}
+                    </div>
                   ))}
                   <label className="art-reference-add">
                     <Plus size={24} />
@@ -671,6 +739,66 @@ export function AgentArtStudio({
           )}
         </aside>
       </div>
+      {positionEditorOpen ? (
+        <div className="art-position-modal-backdrop" role="presentation" onMouseDown={() => setPositionEditorOpen(false)}>
+          <section className="art-position-modal" role="dialog" aria-modal="true" aria-label="Position Editor" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <span>
+                <h2>Position Editor</h2>
+                <p>{selectedProfile?.name ?? "Agent"} - {selectedCategory?.name ?? "Art"} - {selectedAsset?.name ?? "No image selected"}</p>
+              </span>
+              <button className="icon-button compact" type="button" onClick={() => setPositionEditorOpen(false)} aria-label="Close position editor">
+                <X size={17} />
+              </button>
+            </header>
+            <div className="art-position-modal-grid">
+              <div className="art-position-source-panel">
+                <span>Full Image</span>
+                <div className="art-position-source-preview">
+                  {selectedAssetUrl ? <img src={selectedAssetUrl} alt="" /> : <small>No artwork yet</small>}
+                </div>
+              </div>
+              <div className="art-position-crop-panel">
+                <div className="art-position-presets" role="tablist" aria-label="Preview shape">
+                  <button className={placementPreview === "chat" ? "active" : ""} type="button" onClick={() => setPlacementPreview("chat")}>Chat</button>
+                  <button className={placementPreview === "avatar" ? "active" : ""} type="button" onClick={() => setPlacementPreview("avatar")}>Avatar</button>
+                  <button className={placementPreview === "banner" ? "active" : ""} type="button" onClick={() => setPlacementPreview("banner")}>Banner</button>
+                </div>
+                <div className={cx("art-position-preview large", `mode-${placementPreview}`)}>
+                  {selectedAssetUrl ? <img src={selectedAssetUrl} alt="" style={placementStyle(placementDraft)} /> : <span>No artwork yet</span>}
+                </div>
+              </div>
+            </div>
+            <div className="art-position-controls modal-controls">
+              <label>
+                <span>Size</span>
+                <input type="range" min="1" max="3" step="0.01" value={placementDraft.scale} onChange={(event) => setPlacementDraft((current) => ({ ...current, scale: Number(event.target.value) }))} disabled={!selectedAsset} />
+                <b>{Math.round(placementDraft.scale * 100)}%</b>
+              </label>
+              <label>
+                <span>X</span>
+                <input type="range" min="-100" max="100" step="1" value={placementDraft.x} onChange={(event) => setPlacementDraft((current) => ({ ...current, x: Number(event.target.value) }))} disabled={!selectedAsset} />
+                <b>{placementDraft.x}</b>
+              </label>
+              <label>
+                <span>Y</span>
+                <input type="range" min="-100" max="100" step="1" value={placementDraft.y} onChange={(event) => setPlacementDraft((current) => ({ ...current, y: Number(event.target.value) }))} disabled={!selectedAsset} />
+                <b>{placementDraft.y}</b>
+              </label>
+            </div>
+            <footer>
+              <button className="secondary-action small" type="button" onClick={resetPlacement} disabled={!selectedAsset || busy !== null}>
+                <X size={16} />
+                Reset
+              </button>
+              <button className="primary-action small" type="button" onClick={savePlacement} disabled={!selectedAsset || busy !== null}>
+                <Check size={16} />
+                Save Position
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -689,7 +817,7 @@ function ArtCategoryCard({ category, active, onClick, motionIndex = 0 }: { categ
     <button className={cx("art-category-card motion-card", active && "active")} type="button" onClick={onClick} style={motionDelay(motionIndex, 36)}>
       <strong>{category.name}</strong>
       <div className={preview.length > 1 ? "art-card-preview multi" : "art-card-preview"}>
-        {preview.length > 0 ? preview.map((item) => <img src={resolveArtAssetUrl(item)} alt="" key={item.id} />) : <span>No art yet</span>}
+        {preview.length > 0 ? preview.map((item) => <img src={resolveArtAssetUrl(item)} alt="" key={item.id} style={assetPlacementStyle(item)} />) : <span>No art yet</span>}
       </div>
       <footer>
         <span>
@@ -700,6 +828,14 @@ function ArtCategoryCard({ category, active, onClick, motionIndex = 0 }: { categ
       </footer>
     </button>
   );
+}
+
+function assetPlacementStyle(asset: ReikaArtAsset | null | undefined): CSSProperties {
+  return placementStyle(readAssetPlacement(asset));
+}
+
+function placementStyle(placement: ReikaArtPlacement): CSSProperties {
+  return artPlacementStyle(placement);
 }
 
 function GenerationStatusLine({ status, label }: { status?: ReikaArtGenerationStatus | { status: "waiting" | "running"; message: string; profileId: string; categoryId: string }; label?: string }) {

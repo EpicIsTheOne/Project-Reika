@@ -20,6 +20,12 @@ export interface GeneratedImageResult {
   revisedPrompt?: string;
 }
 
+export interface ImageReferenceInput {
+  name: string;
+  filePath: string;
+  mimeType: string;
+}
+
 interface CodexAuthFile {
   auth_mode?: string;
   OPENAI_API_KEY?: string | null;
@@ -169,7 +175,7 @@ function upstreamMessage(payload: unknown, fallback: string) {
   return parts.length > 0 ? parts.join(' ') : fallback;
 }
 
-export async function generateImageWithOpenAI(input: { prompt: string; systemPrompt?: string }): Promise<GeneratedImageResult> {
+export async function generateImageWithOpenAI(input: { prompt: string; systemPrompt?: string; references?: ImageReferenceInput[] }): Promise<GeneratedImageResult> {
   const auth = await resolveAuthHeader();
   if (!auth) {
     throw new Error('No OpenAI API key or Codex/ChatGPT OAuth token is available to generate art.');
@@ -177,8 +183,13 @@ export async function generateImageWithOpenAI(input: { prompt: string; systemPro
 
   const model = imageModel();
   const prompt = [input.systemPrompt, input.prompt].filter(Boolean).join('\n\n');
+  const references = input.references?.filter((item) => item.filePath).slice(0, 4) ?? [];
   if (auth.provider === 'codex-oauth') {
-    return generateImageWithCodexOAuth({ prompt, token: auth.value, model });
+    return generateImageWithCodexOAuth({ prompt, token: auth.value, model, references });
+  }
+
+  if (references.length > 0) {
+    return generateImageEditWithOpenAI({ prompt, token: auth.value, model, references });
   }
 
   const response = await fetch(process.env.REIKA_OPENAI_IMAGES_URL || 'https://api.openai.com/v1/images/generations', {
@@ -220,7 +231,78 @@ export async function generateImageWithOpenAI(input: { prompt: string; systemPro
   };
 }
 
-async function generateImageWithCodexOAuth(input: { prompt: string; token: string; model: string }): Promise<GeneratedImageResult> {
+async function generateImageEditWithOpenAI(input: { prompt: string; token: string; model: string; references: ImageReferenceInput[] }): Promise<GeneratedImageResult> {
+  const endpoint = process.env.REIKA_OPENAI_IMAGES_EDIT_URL || 'https://api.openai.com/v1/images/edits';
+  const first = await postImageEdit(endpoint, input, 'image[]');
+  if (!first.response.ok && first.response.status === 400) {
+    const retry = await postImageEdit(endpoint, input, 'image');
+    if (retry.response.ok) return imageEditResult(retry.payload, input.model);
+    throw imageEditError(retry.response, retry.payload);
+  }
+  if (!first.response.ok) throw imageEditError(first.response, first.payload);
+  return imageEditResult(first.payload, input.model);
+}
+
+async function postImageEdit(endpoint: string, input: { prompt: string; token: string; model: string; references: ImageReferenceInput[] }, imageFieldName: string) {
+  const form = new FormData();
+  form.set('model', input.model);
+  form.set('prompt', input.prompt);
+  form.set('size', imageSize());
+  form.set('quality', imageQuality());
+  form.set('n', '1');
+  form.set('response_format', 'b64_json');
+
+  for (const reference of input.references) {
+    const buffer = await readFile(reference.filePath);
+    const blob = new Blob([buffer], { type: reference.mimeType || 'image/png' });
+    form.append(imageFieldName, blob, reference.name || 'reference.png');
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.token}`,
+      'OpenAI-Beta': 'assistants=v2'
+    },
+    body: form
+  });
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = undefined;
+  }
+  return { response, payload };
+}
+
+function imageEditError(response: Response, payload: unknown) {
+  return new Error(`OpenAI reference image generation failed (${response.status}): ${upstreamMessage(payload, response.statusText)}. Check that the selected reference images are valid PNG/JPEG/WebP files and that the saved key has image edit access.`);
+}
+
+function imageEditResult(payload: unknown, model: string): GeneratedImageResult {
+  const image = extractImageBase64(payload);
+  if (!image) throw new Error('OpenAI reference image generation completed but returned no base64 image data.');
+
+  return {
+    ...image,
+    mimeType: 'image/png',
+    model,
+    provider: 'openai-api-key'
+  };
+}
+
+async function generateImageWithCodexOAuth(input: { prompt: string; token: string; model: string; references: ImageReferenceInput[] }): Promise<GeneratedImageResult> {
+  const content: Array<Record<string, unknown>> = [{ type: 'input_text', text: input.prompt }];
+  for (const reference of input.references) {
+    const buffer = await readFile(reference.filePath);
+    const mimeType = reference.mimeType || 'image/png';
+    content.push({
+      type: 'input_image',
+      image_url: `data:${mimeType};base64,${buffer.toString('base64')}`
+    });
+  }
+
   const response = await fetch(`${codexBaseUrl()}/responses`, {
     method: 'POST',
     headers: {
@@ -236,7 +318,7 @@ async function generateImageWithCodexOAuth(input: { prompt: string; token: strin
       input: [{
         type: 'message',
         role: 'user',
-        content: [{ type: 'input_text', text: input.prompt }]
+        content
       }],
       tools: [{
         type: 'image_generation',

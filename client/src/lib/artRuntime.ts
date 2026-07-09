@@ -1,7 +1,9 @@
 import { assets } from "../data/assets";
+import type { CSSProperties } from "react";
 import type { Agent } from "../types";
 import {
   artAssetContentUrl,
+  type ReikaArtPlacement,
   type ReikaArtAsset,
   type ReikaArtCategory,
   type ReikaArtLibraryResponse,
@@ -14,15 +16,29 @@ export interface ArtRuntime {
   library: ReikaArtLibraryResponse | null;
   versionKey: string;
   resolveAssetUrl: (assetRecord: ReikaArtAsset | null | undefined, fallback?: string) => string;
+  resolveAssetRender: (assetRecord: ReikaArtAsset | null | undefined, fallback?: string) => ArtRenderAsset;
   resolveAssetKey: (assetKey: string | undefined, fallback?: string) => string;
   profileForAgent: (agent: ArtAgentLike) => ReikaArtProfile | undefined;
   profileAvatar: (profile: ReikaArtProfile | null | undefined, slot?: string) => string;
+  profileAvatarRender: (profile: ReikaArtProfile | null | undefined, slot?: string) => ArtRenderAsset;
   profilePortrait: (profile: ReikaArtProfile | null | undefined, slot?: string) => string;
+  profilePortraitRender: (profile: ReikaArtProfile | null | undefined, slot?: string) => ArtRenderAsset;
   agentAvatar: (agent: ArtAgentLike, slot?: string) => string;
+  agentAvatarRender: (agent: ArtAgentLike, slot?: string) => ArtRenderAsset;
   agentPortrait: (agent: ArtAgentLike, slot?: string) => string;
+  agentPortraitRender: (agent: ArtAgentLike, slot?: string) => ArtRenderAsset;
   agentArt: (agent: ArtAgentLike, categoryId: string, fallback: string, slot?: string) => string;
+  agentArtRender: (agent: ArtAgentLike, categoryId: string, fallback: string, slot?: string) => ArtRenderAsset;
   profileArt: (profile: ReikaArtProfile | null | undefined, categoryId: string, fallback: string, slot?: string) => string;
+  profileArtRender: (profile: ReikaArtProfile | null | undefined, categoryId: string, fallback: string, slot?: string) => ArtRenderAsset;
   globalArt: (categoryId: string, fallback: string, slot?: string) => string;
+  globalArtRender: (categoryId: string, fallback: string, slot?: string) => ArtRenderAsset;
+}
+
+export interface ArtRenderAsset {
+  src: string;
+  placement: ReikaArtPlacement;
+  style: CSSProperties;
 }
 
 const fallbackProfileOrder = ["reika", "astra", "miyabi", "nyxie"];
@@ -55,44 +71,86 @@ export function createArtRuntime(library: ReikaArtLibraryResponse | null, sessio
     return fallback;
   };
 
+  const resolveAssetRender = (assetRecord: ReikaArtAsset | null | undefined, fallback = assets.reika.avatar): ArtRenderAsset => {
+    const placement = readAssetPlacement(assetRecord);
+    return {
+      src: resolveAssetUrl(assetRecord, fallback),
+      placement,
+      style: artPlacementStyle(placement)
+    };
+  };
+
   const resolveAssetKey = (assetKey: string | undefined, fallback = assets.reika.avatar) => resolveArtAssetKey(assetKey, fallback);
 
   const profileForAgent = (agent: ArtAgentLike) => findProfileForAgent(library, agent);
 
-  const pickFromCategory = (profile: ReikaArtProfile | null | undefined, categoryId: string, fallback: string, slot = "default") => {
+  const pickFromCategory = (
+    profile: ReikaArtProfile | null | undefined,
+    categoryId: string,
+    fallback: string,
+    slot = "default",
+    options: { skipInheritedReikaArt?: boolean } = {}
+  ) => {
     const category = findCategory(profile, categoryId);
     const parsedSlot = parseRerollSlot(slot);
     const assetRecord = pickAsset(category, {
       hashKey: `${sessionSeed}:${versionKey}:${profile?.id ?? "none"}:${categoryId}:${slot}`,
       memoryKey: `${versionKey}:${profile?.id ?? "none"}:${categoryId}:${parsedSlot.baseSlot}`,
       rerollNonce: parsedSlot.rerollNonce
-    });
-    return resolveAssetUrl(assetRecord, fallback);
+    }, profile, options);
+    return resolveAssetRender(assetRecord, fallback);
   };
 
   const profileAvatar = (profile: ReikaArtProfile | null | undefined, slot = "avatar") => {
+    const fallback = resolveAssetKey(profile?.avatarAssetKey, assets.reika.avatar);
+    return pickFromCategory(profile, "avatar-circle", fallback, slot).src;
+  };
+
+  const profileAvatarRender = (profile: ReikaArtProfile | null | undefined, slot = "avatar") => {
     const fallback = resolveAssetKey(profile?.avatarAssetKey, assets.reika.avatar);
     return pickFromCategory(profile, "avatar-circle", fallback, slot);
   };
 
   const profilePortrait = (profile: ReikaArtProfile | null | undefined, slot = "portrait") => {
     const fallback = profileAvatar(profile, `${slot}-fallback`);
-    return pickFromCategory(profile, "portrait-chat", fallback, slot);
+    return pickFromCategory(profile, "portrait-chat", fallback, slot).src;
+  };
+
+  const profilePortraitRender = (profile: ReikaArtProfile | null | undefined, slot = "portrait") => {
+    const fallback = profileAvatarRender(profile, `${slot}-fallback`);
+    return pickFromCategory(profile, "portrait-chat", fallback.src, slot, { skipInheritedReikaArt: true });
   };
 
   const agentAvatar = (agent: ArtAgentLike, slot = "avatar") => profileAvatar(profileForAgent(agent), slot);
+  const agentAvatarRender = (agent: ArtAgentLike, slot = "avatar") => profileAvatarRender(profileForAgent(agent), slot);
   const agentPortrait = (agent: ArtAgentLike, slot = "portrait") => profilePortrait(profileForAgent(agent), slot);
+  const agentPortraitRender = (agent: ArtAgentLike, slot = "portrait") => profilePortraitRender(profileForAgent(agent), slot);
 
   const agentArt = (agent: ArtAgentLike, categoryId: string, fallback: string, slot = "default") => {
+    const profile = profileForAgent(agent);
+    return pickFromCategory(profile, categoryId, fallback, slot).src;
+  };
+
+  const agentArtRender = (agent: ArtAgentLike, categoryId: string, fallback: string, slot = "default") => {
     const profile = profileForAgent(agent);
     return pickFromCategory(profile, categoryId, fallback, slot);
   };
 
   const profileArt = (profile: ReikaArtProfile | null | undefined, categoryId: string, fallback: string, slot = "default") => (
+    pickFromCategory(profile, categoryId, fallback, slot).src
+  );
+
+  const profileArtRender = (profile: ReikaArtProfile | null | undefined, categoryId: string, fallback: string, slot = "default") => (
     pickFromCategory(profile, categoryId, fallback, slot)
   );
 
   const globalArt = (categoryId: string, fallback: string, slot = "default") => {
+    const globalProfile = library?.profiles.find((profile) => profile.scope === "global" && profile.id === "global")
+      ?? library?.profiles.find((profile) => profile.scope === "global");
+    return pickFromCategory(globalProfile, categoryId, fallback, slot).src;
+  };
+
+  const globalArtRender = (categoryId: string, fallback: string, slot = "default") => {
     const globalProfile = library?.profiles.find((profile) => profile.scope === "global" && profile.id === "global")
       ?? library?.profiles.find((profile) => profile.scope === "global");
     return pickFromCategory(globalProfile, categoryId, fallback, slot);
@@ -102,15 +160,23 @@ export function createArtRuntime(library: ReikaArtLibraryResponse | null, sessio
     library,
     versionKey,
     resolveAssetUrl,
+    resolveAssetRender,
     resolveAssetKey,
     profileForAgent,
     profileAvatar,
+    profileAvatarRender,
     profilePortrait,
+    profilePortraitRender,
     agentAvatar,
+    agentAvatarRender,
     agentPortrait,
+    agentPortraitRender,
     agentArt,
+    agentArtRender,
     profileArt,
-    globalArt
+    profileArtRender,
+    globalArt,
+    globalArtRender
   };
 }
 
@@ -120,6 +186,35 @@ export function resolveArtAssetUrl(assetRecord: ReikaArtAsset | null | undefined
   if (assetRecord.filePath || assetRecord.kind === "upload") return artAssetContentUrl(assetRecord.id);
   if (assetRecord.assetKey) return resolveArtAssetKey(assetRecord.assetKey, fallback);
   return fallback;
+}
+
+export function readAssetPlacement(assetRecord: ReikaArtAsset | null | undefined): ReikaArtPlacement {
+  const value = assetRecord?.metadata?.placement;
+  if (!value || typeof value !== "object") return defaultPlacement();
+  const input = value as Partial<Record<keyof ReikaArtPlacement, unknown>>;
+  return {
+    scale: clampPlacement(input.scale, 1, 3, 1),
+    x: clampPlacement(input.x, -100, 100, 0),
+    y: clampPlacement(input.y, -100, 100, 0)
+  };
+}
+
+export function artPlacementStyle(placement: ReikaArtPlacement): CSSProperties {
+  return {
+    "--art-x": `${placement.x}%`,
+    "--art-y": `${placement.y}%`,
+    "--art-scale": String(placement.scale)
+  } as CSSProperties;
+}
+
+function defaultPlacement(): ReikaArtPlacement {
+  return { scale: 1, x: 0, y: 0 };
+}
+
+function clampPlacement(value: unknown, min: number, max: number, fallback: number) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return fallback;
+  return Math.min(max, Math.max(min, numberValue));
 }
 
 export function resolveArtAssetKey(assetKey: string | undefined, fallback = assets.reika.avatar) {
@@ -152,12 +247,21 @@ function findProfileForAgent(library: ReikaArtLibraryResponse | null, agent: Art
   const keys = agentKeys(agent);
 
   for (const key of keys) {
-    const exact = profiles.find((profile) => profile.id.toLowerCase() === key || profile.name.toLowerCase() === key);
+    const exact = profiles.find((profile) => profileKey(profile.id) === key || profileKey(profile.name) === key || profileBaseKey(profile.name) === key);
     if (exact) return exact;
   }
 
   for (const key of keys) {
-    const contained = profiles.find((profile) => key.includes(profile.id.toLowerCase()) || key.includes(profile.name.toLowerCase()));
+    const contained = profiles.find((profile) => {
+      const id = profileKey(profile.id);
+      const name = profileKey(profile.name);
+      const baseName = profileBaseKey(profile.name);
+      return Boolean(
+        (id && (key.includes(id) || id.includes(key))) ||
+        (name && (key.includes(name) || name.includes(key))) ||
+        (baseName && (key.includes(baseName) || baseName.includes(key)))
+      );
+    });
     if (contained) return contained;
   }
 
@@ -171,12 +275,24 @@ function findProfileForAgent(library: ReikaArtLibraryResponse | null, agent: Art
 
 function agentKeys(agent: ArtAgentLike) {
   if (!agent) return ["reika"];
-  if (typeof agent === "string") return [cleanKey(agent)];
-  return [agent.characterId, agent.id, agent.name].map(cleanKey).filter(Boolean);
+  if (typeof agent === "string") return uniqueKeys([profileBaseKey(agent), profileKey(agent)]);
+  return uniqueKeys([agent.characterId, agent.id, agent.name, profileBaseKey(agent.name)].map(profileKey));
 }
 
 function cleanKey(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function profileKey(value: unknown) {
+  return cleanKey(value).replace(/\s+/g, " ");
+}
+
+function profileBaseKey(value: unknown) {
+  return profileKey(String(value ?? "").split(/\s+\/\s+/u)[0]);
+}
+
+function uniqueKeys(values: unknown[]) {
+  return [...new Set(values.map(profileKey).filter((value) => value.length >= 2))];
 }
 
 function findCategory(profile: ReikaArtProfile | null | undefined, categoryId: string) {
@@ -198,12 +314,22 @@ function cleanCategoryKey(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-function pickAsset(category: ReikaArtCategory | undefined, context: { hashKey: string; memoryKey: string; rerollNonce?: string }) {
+function pickAsset(
+  category: ReikaArtCategory | undefined,
+  context: { hashKey: string; memoryKey: string; rerollNonce?: string },
+  profile?: ReikaArtProfile | null,
+  options: { skipInheritedReikaArt?: boolean } = {}
+) {
   if (!category || category.assets.length === 0) return undefined;
+  const preferredAssets = options.skipInheritedReikaArt
+    ? category.assets.filter((assetRecord) => !isInheritedReikaAsset(profile, assetRecord))
+    : category.assets;
+  if (options.skipInheritedReikaArt && preferredAssets.length === 0) return undefined;
+
   if (category.selectionMode === "single") {
-    return category.assets.find((assetRecord) => assetRecord.id === category.selectedAssetId) ?? category.assets[0];
+    return preferredAssets.find((assetRecord) => assetRecord.id === category.selectedAssetId) ?? preferredAssets[0];
   }
-  const pool = category.assets;
+  const pool = preferredAssets;
   let index = positiveHash(context.hashKey) % pool.length;
 
   if (!context.rerollNonce) return pool[index];
@@ -219,6 +345,16 @@ function pickAsset(category: ReikaArtCategory | undefined, context: { hashKey: s
   const picked = pool[index];
   writeRerollMemory(context.memoryKey, { nonce: context.rerollNonce, assetId: picked.id });
   return picked;
+}
+
+function isInheritedReikaAsset(profile: ReikaArtProfile | null | undefined, assetRecord: ReikaArtAsset) {
+  if (isReikaProfile(profile)) return false;
+  return cleanKey(assetRecord.assetKey).startsWith("reika.");
+}
+
+function isReikaProfile(profile: ReikaArtProfile | null | undefined) {
+  if (!profile) return false;
+  return profileKey(profile.id) === "reika" || profileBaseKey(profile.name) === "reika";
 }
 
 function positiveHash(value: string) {

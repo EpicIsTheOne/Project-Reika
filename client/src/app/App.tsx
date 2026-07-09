@@ -15,7 +15,7 @@ import {
   type ReikaStateResponse
 } from "../lib/reikaApi";
 import { createArtRuntime, makeArtRuntimeSeed } from "../lib/artRuntime";
-import type { Device, View } from "../types";
+import type { Agent, Device, View } from "../types";
 import { defaultSettings, emptyDevice } from "./constants";
 import type { BackendMode, BootStep, BootStepState } from "./types";
 import { AppShell } from "../components/AppShell";
@@ -41,6 +41,7 @@ import {
 export function App() {
   const [view, setView] = useState<View>("loading");
   const [selectedAgentId, setSelectedAgentId] = useState("reika");
+  const [selectedAgentOverride, setSelectedAgentOverride] = useState<Agent | null>(null);
   const [appDevices, setAppDevices] = useState<Device[]>([]);
   const [reikaState, setReikaState] = useState<ReikaStateResponse | null>(null);
   const [settings, setSettings] = useState<ReikaSettings>(defaultSettings);
@@ -208,6 +209,7 @@ export function App() {
   const relayProviderState = useMemo(() => mapRelayRecordsToProviderState(relayDevices), [relayDevices]);
 
   const selectedAgent = useMemo(() => {
+    if (selectedAgentOverride && selectedAgentOverride.id === selectedAgentId) return selectedAgentOverride;
     for (const device of presentationDevices) {
       for (const provider of device.providers) {
         const agent = provider.agents.find((item) => item.id === selectedAgentId);
@@ -215,7 +217,14 @@ export function App() {
       }
     }
     return getFallbackAgent(settings.mockEnabled);
-  }, [presentationDevices, selectedAgentId, settings.mockEnabled]);
+  }, [presentationDevices, selectedAgentId, selectedAgentOverride, settings.mockEnabled]);
+
+  const openChat = (agent: Agent | string) => {
+    const agentId = typeof agent === "string" ? agent : agent.id;
+    setSelectedAgentId(agentId);
+    setSelectedAgentOverride(typeof agent === "string" ? null : agent);
+    setView("chat");
+  };
 
   const handleScanProviders = () => {
     refreshProviders()
@@ -255,6 +264,7 @@ export function App() {
           <HomePage
             devices={presentationDevices}
             backendMode={backendMode}
+            selectorSettings={settings.agentSelector}
             artRuntime={artRuntime}
             onScanProviders={handleScanProviders}
             onOpenNotifications={() => setView("notifications")}
@@ -262,10 +272,7 @@ export function App() {
               setPairingOpenRequest((value) => value + 1);
               setView("devices");
             }}
-            onOpenChat={(agentId) => {
-              setSelectedAgentId(agentId);
-              setView("chat");
-            }}
+            onOpenChat={openChat}
           />
         )}
         {view === "chat" && (
@@ -276,6 +283,7 @@ export function App() {
             relayProviders={relayProviderState}
             onRelayChat={sendRelayChatThroughApp}
             selectorSettings={settings.agentSelector}
+            developerDiagnostics={settings.developerDiagnostics}
             artRuntime={artRuntime}
             onBack={() => setView("home")}
           />
@@ -292,10 +300,7 @@ export function App() {
             onRelayStatusChange={setRelayStatus}
             artRuntime={artRuntime}
             onScanProviders={handleScanProviders}
-            onOpenChat={(agentId) => {
-              setSelectedAgentId(agentId);
-              setView("chat");
-            }}
+            onOpenChat={openChat}
           />
         )}
         {view === "notifications" && (
@@ -305,8 +310,7 @@ export function App() {
             onRefresh={refreshNotifications}
             onUpdateNotifications={setNotifications}
             onOpenChat={() => {
-              setSelectedAgentId("reika");
-              setView("chat");
+              openChat("reika");
             }}
           />
         )}

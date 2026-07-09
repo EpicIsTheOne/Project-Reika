@@ -1,17 +1,19 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Bell, Box, ChevronRight, Heart, MessageCircle, Monitor, MoreHorizontal, Plus, Search } from "lucide-react";
 import { statusLabels } from "../../app/constants";
 import type { BackendMode } from "../../app/types";
 import { assets } from "../../data/assets";
-import { deviceMatchesQuery, getAgentAvatar } from "../../domain/reikaMappers";
+import { deviceMatchesQuery, getAgentAvatarRender } from "../../domain/reikaMappers";
 import type { ArtRuntime } from "../../lib/artRuntime";
+import type { ReikaAgentSelectorSettings } from "../../lib/reikaApi";
 import { motionDelay, pageMotionClass } from "../../lib/motion";
-import type { Device, Provider } from "../../types";
+import type { Agent, Device, Provider } from "../../types";
 import { StatusDot, StatusPill } from "../../components/status";
 
 export function HomePage({
   devices,
   backendMode,
+  selectorSettings,
   artRuntime,
   onOpenNotifications,
   onAddDevice,
@@ -19,15 +21,22 @@ export function HomePage({
 }: {
   devices: Device[];
   backendMode: BackendMode;
+  selectorSettings: ReikaAgentSelectorSettings;
   artRuntime: ArtRuntime;
   onScanProviders: () => void;
   onOpenNotifications: () => void;
   onAddDevice: () => void;
-  onOpenChat: (agentId: string) => void;
+  onOpenChat: (agent: Agent | string) => void;
 }) {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
   const visibleDevices = normalizedQuery ? devices.filter((device) => deviceMatchesQuery(device, normalizedQuery)) : devices;
+  const featuredSeed = useMemo(() => Math.random(), []);
+  const featuredAgents = devices.flatMap((device) => device.providers.flatMap((provider) => provider.agents));
+  const featuredAgent = featuredAgents.length > 0 ? featuredAgents[Math.floor(featuredSeed * featuredAgents.length) % featuredAgents.length] : null;
+  const featuredAgentName = formatAgentDisplayName(featuredAgent?.name ?? "Reika", featuredAgent?.role, selectorSettings.showRole);
+  const featuredAgentArtKey = featuredAgent ?? "reika";
+  const featuredArt = artRuntime.agentArtRender(featuredAgentArtKey, "hero-banner", assets.room.hero, "home-hero");
   const onlineAgents = devices
     .flatMap((device) => device.providers.flatMap((provider) => provider.agents))
     .filter((agent) => agent.status === "online" || agent.status === "busy" || agent.status === "thinking").length;
@@ -53,21 +62,20 @@ export function HomePage({
       />
 
       <section className="feature-hero motion-hero">
-        <img src={artRuntime.agentArt("reika", "hero-banner", assets.room.hero, "home-hero")} alt="" />
+        <img src={featuredArt.src} alt="" style={featuredArt.style} />
         <div className="feature-copy">
           <p className="eyebrow">Featured Agent</p>
           <h2>
-            Reika
-            <Heart size={28} fill="currentColor" />
+            {featuredAgentName}
           </h2>
-          <p className="hero-quote">"Hehe~ You're back."</p>
+          <p className="hero-quote">"{featuredAgentName === "Reika" ? "Hehe~ You're back." : "Ready when you are."}"</p>
           <p>Ready to get things done together?</p>
           <div className="hero-actions">
-            <button className="primary-action" onClick={() => onOpenChat("reika")}>
+            <button className="primary-action" onClick={() => onOpenChat(featuredAgent ?? "reika")}>
               <MessageCircle size={20} />
               Chat Now
             </button>
-            <button className="secondary-action" onClick={() => onOpenChat("reika")}>
+            <button className="secondary-action" onClick={() => onOpenChat(featuredAgent ?? "reika")}>
               View Profile
               <ChevronRight size={18} />
             </button>
@@ -91,7 +99,7 @@ export function HomePage({
 
       <section className="device-grid">
         {visibleDevices.length > 0 ? visibleDevices.map((device, index) => (
-          <DeviceCard device={device} key={device.id} artRuntime={artRuntime} onOpenChat={onOpenChat} motionIndex={index} />
+          <DeviceCard device={device} key={device.id} selectorSettings={selectorSettings} artRuntime={artRuntime} onOpenChat={onOpenChat} motionIndex={index} />
         )) : <div className="empty-agent-row">No matching agents or devices.</div>}
       </section>
 
@@ -144,7 +152,7 @@ function NotificationButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-function DeviceCard({ device, artRuntime, onOpenChat, motionIndex = 0 }: { device: Device; artRuntime: ArtRuntime; onOpenChat: (agentId: string) => void; motionIndex?: number }) {
+function DeviceCard({ device, selectorSettings, artRuntime, onOpenChat, motionIndex = 0 }: { device: Device; selectorSettings: ReikaAgentSelectorSettings; artRuntime: ArtRuntime; onOpenChat: (agent: Agent | string) => void; motionIndex?: number }) {
   const Icon = device.type === "server" ? Box : device.type === "laptop" ? Monitor : Monitor;
   const agentCount = device.providers.reduce((total, provider) => total + provider.agents.length, 0);
 
@@ -161,7 +169,7 @@ function DeviceCard({ device, artRuntime, onOpenChat, motionIndex = 0 }: { devic
 
       <div className="provider-stack">
         {device.providers.map((provider) => (
-          <ProviderBlock provider={provider} key={provider.id} artRuntime={artRuntime} onOpenChat={onOpenChat} />
+          <ProviderBlock provider={provider} key={provider.id} selectorSettings={selectorSettings} artRuntime={artRuntime} onOpenChat={onOpenChat} />
         ))}
       </div>
 
@@ -173,7 +181,7 @@ function DeviceCard({ device, artRuntime, onOpenChat, motionIndex = 0 }: { devic
   );
 }
 
-function ProviderBlock({ provider, artRuntime, onOpenChat }: { provider: Provider; artRuntime: ArtRuntime; onOpenChat: (agentId: string) => void }) {
+function ProviderBlock({ provider, selectorSettings, artRuntime, onOpenChat }: { provider: Provider; selectorSettings: ReikaAgentSelectorSettings; artRuntime: ArtRuntime; onOpenChat: (agent: Agent | string) => void }) {
   return (
     <section className="provider-block">
       <header>
@@ -183,23 +191,34 @@ function ProviderBlock({ provider, artRuntime, onOpenChat }: { provider: Provide
       </header>
       <div className="provider-agents">
         {provider.agents.length > 0 ? (
-          provider.agents.map((agent, index) => (
-            <button className="agent-row motion-row" data-testid={`agent-row-${agent.id}`} key={agent.id} onClick={() => onOpenChat(agent.id)} style={motionDelay(index, 34, 80)}>
-              <img src={getAgentAvatar(agent, artRuntime)} alt="" />
-              <span>
-                <strong>{agent.name}</strong>
-                <small>
-                  <StatusDot status={agent.status} />
-                  {statusLabels[agent.status]}
-                </small>
-              </span>
-              <ChevronRight size={18} />
-            </button>
-          ))
+          provider.agents.map((agent, index) => {
+            const avatar = getAgentAvatarRender(agent, artRuntime);
+            return (
+              <button className="agent-row motion-row" data-testid={`agent-row-${agent.id}`} key={agent.id} onClick={() => onOpenChat(agent)} style={motionDelay(index, 34, 80)}>
+                <img src={avatar.src} alt="" style={avatar.style} />
+                <span>
+                  <strong>{formatAgentDisplayName(agent.name, agent.role, selectorSettings.showRole)}</strong>
+                  <small>
+                    <StatusDot status={agent.status} />
+                    {statusLabels[agent.status]}
+                  </small>
+                </span>
+                <ChevronRight size={18} />
+              </button>
+            );
+          })
         ) : (
           <div className="empty-agent-row">No agents available</div>
         )}
       </div>
     </section>
   );
+}
+
+function formatAgentDisplayName(name: string, role: unknown, showRole: boolean) {
+  const baseName = String(name || "Agent").split(/\s+\/\s+/u)[0]?.trim() || "Agent";
+  if (!showRole) return baseName;
+  const roleText = String(role ?? "").trim();
+  if (!roleText || roleText.toLowerCase() === baseName.toLowerCase() || /^(agent|assistant)$/iu.test(roleText)) return String(name || baseName);
+  return `${baseName} / ${roleText}`;
 }

@@ -41,6 +41,7 @@ export const defaultSettings: ReikaSettings = {
   },
   agentSelector: {
     labelMode: "agent-provider",
+    showRole: true,
     hideCommandCenterDuplicates: true,
     duplicatePreference: "agent"
   },

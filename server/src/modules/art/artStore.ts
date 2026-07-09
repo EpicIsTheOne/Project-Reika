@@ -1,9 +1,9 @@
 import { createReadStream, type ReadStream } from 'node:fs';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, extname, join } from 'node:path';
 import { homedir } from 'node:os';
-import { generateImageWithOpenAI, getImageAuthStatus, type ImageAuthStatus } from './imageGeneration.js';
+import { generateImageWithOpenAI, getImageAuthStatus, type ImageAuthStatus, type ImageReferenceInput } from './imageGeneration.js';
 import { clearStoredImageApiKey, saveStoredImageApiKey } from './imageCredentials.js';
 
 export type ArtScope = 'agent' | 'global';
@@ -23,6 +23,12 @@ export interface ArtAssetRecord {
   prompt?: string;
   model?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface ArtAssetPlacement {
+  scale: number;
+  x: number;
+  y: number;
 }
 
 export interface ArtCategoryRecord {
@@ -440,7 +446,7 @@ const builtInProfileIds = new Set(['reika', 'astra', 'miyabi', 'nyxie', 'global'
 const builtInPromptDefaults = defaultCategoryPromptMap();
 
 function normalizeBuiltInPromptDefaults(profiles: ArtProfileRecord[]) {
-  return profiles.map((profile) => {
+  return normalizeAgentSelections(profiles.map((profile) => {
     if (!builtInProfileIds.has(profile.id)) return profile;
     return {
       ...profile,
@@ -457,7 +463,43 @@ function normalizeBuiltInPromptDefaults(profiles: ArtProfileRecord[]) {
         };
       })
     };
+  }));
+}
+
+function normalizeAgentSelections(profiles: ArtProfileRecord[]) {
+  return profiles.map((profile) => {
+    if (profile.scope !== 'agent' || isReikaProfile(profile)) return profile;
+    let changed = false;
+    const categories = profile.categories.map((categoryRecord) => {
+      const selected = categoryRecord.assets.find((item) => item.id === categoryRecord.selectedAssetId);
+      if (!selected || !isInheritedReikaAsset(selected)) return categoryRecord;
+
+      const agentAsset = categoryRecord.assets.find((item) => !isInheritedReikaAsset(item) && (item.filePath || item.sourceUrl || item.kind === 'upload' || item.kind === 'generated' || item.kind === 'link'));
+      if (!agentAsset) return categoryRecord;
+
+      changed = true;
+      return {
+        ...categoryRecord,
+        selectedAssetId: agentAsset.id,
+        selectionMode: 'single' as const
+      };
+    });
+
+    if (!changed) return profile;
+    return {
+      ...profile,
+      categories,
+      updatedAt: nowIso()
+    };
   });
+}
+
+function isInheritedReikaAsset(assetRecord: ArtAssetRecord) {
+  return typeof assetRecord.assetKey === 'string' && assetRecord.assetKey.toLowerCase().startsWith('reika.');
+}
+
+function isReikaProfile(profile: ArtProfileRecord) {
+  return profile.id.toLowerCase() === 'reika' || profile.name.split(/\s+\/\s+/u)[0]?.trim().toLowerCase() === 'reika';
 }
 
 function isProfile(value: unknown): value is ArtProfileRecord {
@@ -477,6 +519,33 @@ function extensionForMime(mimeType: string, originalName?: string) {
   if (mimeType === 'image/webp') return '.webp';
   if (mimeType === 'image/gif') return '.gif';
   return '.png';
+}
+
+function normalizePlacement(input: unknown): ArtAssetPlacement {
+  const value = typeof input === 'object' && input ? input as Record<string, unknown> : {};
+  return {
+    scale: clampNumber(value.scale, 1, 3, 1),
+    x: clampNumber(value.x, -100, 100, 0),
+    y: clampNumber(value.y, -100, 100, 0)
+  };
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function agentIdentityPrompt(profile: ArtProfileRecord, categoryRecord: ArtCategoryRecord) {
+  if (profile.scope !== 'agent') return categoryRecord.prompt;
+  const baseName = profile.name.split(/\s+\/\s+/u)[0]?.trim() || profile.name;
+  return [
+    `Subject identity: ${baseName}.`,
+    `Profile context: ${profile.subtitle}.`,
+    'Reference lock: treat the attached character sheet as the source of truth. Preserve the same anime illustration style, apparent gender presentation, face shape, violet eyes, very long black hair with purple highlights, ornate black and purple gothic mission-control outfit, gold chain details, earrings, star/geometric hair accessories, ID tag/accessories, and elegant dark couture silhouette.',
+    'Do not redesign the character into a realistic person, a man, a corporate employee, a tactical uniform, a blue jacket, a generic AgentHub mascot, a glasses portrait, or a logo-first badge avatar. AgentHub UI styling may appear only as subtle background/interface framing; it must not replace the character design.',
+    categoryRecord.prompt
+  ].filter(Boolean).join('\n\n');
 }
 
 export class ArtStore {
@@ -687,12 +756,13 @@ export class ArtStore {
     };
     categoryRecord.assets.unshift(record);
     categoryRecord.selectedAssetId = record.id;
+    categoryRecord.referenceAssetIds = [record.id, ...categoryRecord.referenceAssetIds.filter((id) => id !== record.id)];
     profile.updatedAt = nowIso();
     this.queueSave();
     return record;
   }
 
-  deleteAsset(profileId: string, categoryId: string, assetId: string) {
+  async deleteAsset(profileId: string, categoryId: string, assetId: string) {
     const profile = this.requireProfile(profileId);
     const categoryRecord = this.requireCategory(profile, categoryId);
     const existing = categoryRecord.assets.find((item) => item.id === assetId);
@@ -702,8 +772,44 @@ export class ArtStore {
     if (categoryRecord.selectedAssetId === assetId) categoryRecord.selectedAssetId = categoryRecord.assets[0]?.id;
     categoryRecord.referenceAssetIds = categoryRecord.referenceAssetIds.filter((id) => id !== assetId);
     profile.updatedAt = nowIso();
+    await this.deleteAssetFileIfUnused(existing);
     this.queueSave();
     return existing;
+  }
+
+  updateAsset(profileId: string, categoryId: string, assetId: string, input: { placement?: unknown }) {
+    const profile = this.requireProfile(profileId);
+    const categoryRecord = this.requireCategory(profile, categoryId);
+    const existing = categoryRecord.assets.find((item) => item.id === assetId);
+    if (!existing) throw new Error('Art asset not found.');
+
+    if (input.placement === null) {
+      const metadata = { ...(existing.metadata || {}) };
+      delete metadata.placement;
+      existing.metadata = Object.keys(metadata).length > 0 ? metadata : undefined;
+    } else if (input.placement !== undefined) {
+      existing.metadata = {
+        ...(existing.metadata || {}),
+        placement: normalizePlacement(input.placement)
+      };
+    }
+
+    profile.updatedAt = nowIso();
+    this.queueSave();
+    return existing;
+  }
+
+  private async deleteAssetFileIfUnused(assetRecord: ArtAssetRecord) {
+    if (!assetRecord.filePath || assetRecord.kind === 'seed') return;
+    const stillUsed = this.profiles.some((profile) => profile.categories.some((categoryRecord) => (
+      categoryRecord.assets.some((item) => item.id !== assetRecord.id && item.filePath === assetRecord.filePath)
+    )));
+    if (stillUsed) return;
+    try {
+      await unlink(assetRecord.filePath);
+    } catch {
+      // The library record is already gone. A missing or locked file should not block UI deletion.
+    }
   }
 
   resolveAssetContent(assetId: string): { stream: ReadStream; mimeType: string; name: string } | undefined {
@@ -739,9 +845,11 @@ export class ArtStore {
     }
 
     try {
+      const references = this.referenceImagesForGeneration(profile, categoryRecord);
       const generated = await generateImageWithOpenAI({
-        prompt: categoryRecord.prompt,
-        systemPrompt: categoryRecord.systemPrompt
+        prompt: agentIdentityPrompt(profile, categoryRecord),
+        systemPrompt: categoryRecord.systemPrompt,
+        references
       });
       const id = makeId('art_generated');
       const filePath = join(this.assetDir, `${id}.png`);
@@ -761,7 +869,8 @@ export class ArtStore {
         metadata: {
           provider: generated.provider,
           revisedPrompt: generated.revisedPrompt,
-          source: generated.provider === 'codex-oauth' ? 'codex-image-generation' : 'openai-images'
+          source: generated.provider === 'codex-oauth' ? 'codex-image-generation' : references.length > 0 ? 'openai-images-edit' : 'openai-images',
+          referenceAssetIds: references.map((item) => item.name)
         }
       };
       categoryRecord.assets.unshift(record);
@@ -775,7 +884,7 @@ export class ArtStore {
         categoryId: categoryRecord.id,
         assetId: record.id,
         message: `${record.name} generated and selected.`,
-        prompt: categoryRecord.prompt,
+        prompt: agentIdentityPrompt(profile, categoryRecord),
         systemPrompt: categoryRecord.systemPrompt
       };
     } catch (error) {
@@ -810,6 +919,38 @@ export class ArtStore {
   private touchProfile(profileId: string) {
     const profile = this.requireProfile(profileId);
     profile.updatedAt = nowIso();
+  }
+
+  private referenceImagesForGeneration(profile: ArtProfileRecord, categoryRecord: ArtCategoryRecord): ImageReferenceInput[] {
+    const byId = new Map<string, ArtAssetRecord>();
+    for (const category of profile.categories) {
+      for (const assetRecord of category.assets) byId.set(assetRecord.id, assetRecord);
+    }
+
+    const ordered: ArtAssetRecord[] = [];
+    const add = (assetRecord?: ArtAssetRecord) => {
+      if (!assetRecord?.filePath || ordered.some((item) => item.id === assetRecord.id)) return;
+      ordered.push(assetRecord);
+    };
+
+    for (const id of categoryRecord.referenceAssetIds) add(byId.get(id));
+    for (const category of profile.categories) {
+      for (const id of category.referenceAssetIds) add(byId.get(id));
+    }
+    for (const category of profile.categories) {
+      add(category.assets.find((item) => item.id === category.selectedAssetId));
+    }
+    for (const category of profile.categories) {
+      for (const assetRecord of category.assets) {
+        if (assetRecord.kind === 'upload' || assetRecord.kind === 'reference') add(assetRecord);
+      }
+    }
+
+    return ordered.slice(0, 4).map((assetRecord) => ({
+      name: assetRecord.name,
+      filePath: assetRecord.filePath!,
+      mimeType: assetRecord.mimeType || 'image/png'
+    }));
   }
 
   private queueSave() {

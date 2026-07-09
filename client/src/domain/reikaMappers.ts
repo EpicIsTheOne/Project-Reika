@@ -144,6 +144,10 @@ export function getAgentAvatar(agent: Agent, artRuntime: ArtRuntime) {
   return artRuntime.agentAvatar(agent, `agent-avatar-${agent.id}`);
 }
 
+export function getAgentAvatarRender(agent: Agent, artRuntime: ArtRuntime) {
+  return artRuntime.agentAvatarRender(agent, `agent-avatar-${agent.id}`);
+}
+
 export function mapLocalDeviceRecord(device: Device): DevicePageRow {
   const activeProvider =
     device.providers.find((provider) => provider.id === device.activeProviderId) ??
@@ -208,15 +212,22 @@ export function mapRelayDeviceRecord(record: RelayDeviceRecord, relayUrl: string
 
 export function mapRelayRecordToDevice(record: RelayDeviceRecord): Device {
   const device = namespaceRelayDevice(mapDevice(record.device), record.device.id);
+  const deviceStatus = normalizeDeviceStatus(device.status);
   const hasProviderScopedRoster = record.agents.some((agent) => Boolean(agent.providerId));
   const agents = hasProviderScopedRoster ? record.agents.map((agent) => mapRelayAgent(agent, record.device.id)) : device.providers.flatMap((provider) => provider.agents);
   const providers = device.providers.map((provider) => ({
     ...provider,
-    agents: agents.filter((agent) => agent.providerId === provider.id || getRelayOriginalProviderId(agent) === getRelayOriginalProviderId(provider))
+    status: deviceStatus === "online" ? provider.status : "offline",
+    agents: agents
+      .filter((agent) => agent.providerId === provider.id || getRelayOriginalProviderId(agent) === getRelayOriginalProviderId(provider))
+      .map((agent) => ({
+        ...agent,
+        status: deviceStatus === "online" && provider.status === "online" ? agent.status : "offline"
+      }))
   }));
   return {
     ...device,
-    status: record.device.status === "online" ? "online" : device.status,
+    status: deviceStatus,
     activeProviderId: record.activeProviderId ? namespaceRelayProviderId(record.device.id, record.activeProviderId) : device.activeProviderId,
     providers: providers.length > 0 ? providers : device.providers
   };
@@ -438,5 +449,34 @@ export function formatMetric(value: number | undefined) {
 }
 
 export function buildPresentationDevices(devices: Device[]) {
-  return devices;
+  return devices.map((device) => {
+    const deviceStatus = normalizeDeviceStatus(device.status);
+    return {
+      ...device,
+      status: deviceStatus,
+      providers: device.providers.map((provider) => {
+        const providerStatus = deviceStatus === "online" ? normalizeProviderUiStatus(provider.status) : "offline";
+        return {
+          ...provider,
+          status: providerStatus,
+          agents: provider.agents.map((agent) => ({
+            ...agent,
+            status: providerStatus === "online" ? normalizeAgentUiStatus(agent.status) : "offline"
+          }))
+        };
+      })
+    };
+  });
+}
+
+function normalizeDeviceStatus(status: Status): Status {
+  return status === "online" || status === "busy" || status === "thinking" ? status : status === "error" ? "error" : "offline";
+}
+
+function normalizeProviderUiStatus(status: Status): Status {
+  return status === "online" || status === "busy" || status === "thinking" ? status : status === "error" ? "error" : "offline";
+}
+
+function normalizeAgentUiStatus(status: Status): Status {
+  return status === "online" || status === "busy" || status === "thinking" ? status : status === "error" ? "error" : "offline";
 }

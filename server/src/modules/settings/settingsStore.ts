@@ -24,6 +24,7 @@ export type AgentSelectorLabelMode = 'agent-provider' | 'agent-only' | 'agent-de
 export type AgentSelectorDuplicatePreference = 'agent' | 'commandcenter';
 export interface AgentSelectorSettings {
   labelMode: AgentSelectorLabelMode;
+  showRole: boolean;
   hideCommandCenterDuplicates: boolean;
   duplicatePreference: AgentSelectorDuplicatePreference;
 }
@@ -54,6 +55,7 @@ const defaultSettings: ReikaSettings = {
   },
   agentSelector: {
     labelMode: 'agent-provider',
+    showRole: true,
     hideCommandCenterDuplicates: true,
     duplicatePreference: 'agent'
   },
@@ -119,6 +121,7 @@ function normalizeAgentSelector(value: unknown): AgentSelectorSettings {
     : defaultSettings.agentSelector.duplicatePreference;
   return {
     labelMode,
+    showRole: typeof input.showRole === 'boolean' ? input.showRole : defaultSettings.agentSelector.showRole,
     hideCommandCenterDuplicates: typeof input.hideCommandCenterDuplicates === 'boolean'
       ? input.hideCommandCenterDuplicates
       : defaultSettings.agentSelector.hideCommandCenterDuplicates,

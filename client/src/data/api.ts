@@ -28,24 +28,26 @@ export async function scanLocalAgentHubProviders() {
 }
 
 export function mapDevice(device: AgentHubDevice): Device {
+  const deviceStatus = device.status;
   return {
     id: device.id,
     name: device.name,
     type: device.type,
-    status: device.status,
+    status: deviceStatus,
     location: labelLocation(device.location),
     lastSeenAt: device.lastSeenAt,
     agentVersion: device.agentVersion,
-    providers: device.providers.map(mapProvider)
+    providers: device.providers.map((provider) => mapProvider(provider, deviceStatus))
   };
 }
 
-function mapProvider(provider: AgentHubProvider): Provider {
+function mapProvider(provider: AgentHubProvider, deviceStatus: Device["status"] = "online"): Provider {
+  const providerStatus = deviceStatus === "online" ? provider.status : "offline";
   return {
     id: provider.id,
     name: labelProvider(provider.kind),
     deviceId: provider.deviceId,
-    status: provider.status,
+    status: providerStatus,
     latency: provider.endpoint ? "api" : "--",
     agents: provider.agents.map((agent) => ({
       id: agent.id,
@@ -53,7 +55,7 @@ function mapProvider(provider: AgentHubProvider): Provider {
       providerId: agent.providerId,
       deviceId: agent.deviceId,
       role: agent.role,
-      status: agent.status,
+      status: providerStatus === "online" ? agent.status : "offline",
       lastActivity: agent.lastActivity ?? "Discovered by backend",
       characterId: agent.characterId
     }))

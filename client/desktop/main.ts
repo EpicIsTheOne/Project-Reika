@@ -56,10 +56,20 @@ async function createWindow() {
     distDir,
     port: Number(process.env.AGENTHUB_DESKTOP_PORT ?? 0) || 0,
     agentTarget: localAgent.url,
+    recoverAgentTarget: recoverLocalAgent,
     relayTarget: process.env.AGENTHUB_RELAY_TARGET,
     apiTarget: process.env.AGENTHUB_API_TARGET
   });
   await mainWindow.loadURL(desktopServer.url);
+}
+
+async function recoverLocalAgent() {
+  if (localAgent?.started) stopLocalAgent();
+  localAgent = await ensureLocalAgent({
+    target: process.env.AGENTHUB_AGENT_TARGET,
+    waitMs: 10000
+  });
+  return localAgent.url;
 }
 
 app.setName("AgentHub");
