@@ -1,5 +1,7 @@
 # Connection Plan
 
+> Historical plan. Use `../../docs/CURRENT_ARCHITECTURE.md` for current behavior and supported boundaries.
+
 Project Reika uses an outbound relay model:
 
 ```text

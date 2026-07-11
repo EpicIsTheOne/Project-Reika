@@ -2,6 +2,8 @@
   "name": "agenthub-phase1-ui",
   "private": true,
   "version": "0.1.0",
+  "description": "Project Reika AgentHub desktop client",
+  "author": "Project Reika contributors",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n backend,ui -c cyan,blue \"npm:dev:backend\" \"npm:dev:ui\"",
@@ -9,6 +11,7 @@
     "dev:desktop": "node scripts/dev-desktop.mjs",
     "dev:backend": "tsx src/backend/server.ts",
     "build": "tsc --noEmit && vite build",
+    "assets:webp": "python scripts/build-webp-assets.py",
     "build:desktop:main": "node scripts/build-desktop.mjs",
     "build:desktop": "npm --prefix ../server run build:windows-exe && npm run build && npm run build:desktop:main && electron-builder --win nsis --config electron-builder.json",
     "dist:windows": "npm run build:desktop",

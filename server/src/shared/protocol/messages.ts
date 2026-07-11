@@ -48,6 +48,25 @@ export interface AgentChatRequestPayload {
   message: string;
   model?: string;
   fileIds?: string[];
+  delivery?: {
+    idempotencyKey?: string;
+    statusMetadataVersion?: 1;
+  };
+}
+
+export type DeliveryState = 'accepted' | 'delivered' | 'executing' | 'completed' | 'failed';
+
+export interface CommandStatusPayload {
+  ok: boolean;
+  message: string;
+  state: DeliveryState;
+  requestId: string;
+  legacy?: boolean;
+}
+
+export interface CommandStatusRequestPayload {
+  requestId: string;
+  sessionId?: string;
 }
 
 export interface AgentChatResponsePayload {

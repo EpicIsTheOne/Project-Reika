@@ -14,6 +14,8 @@ export const agentHubEnvelopeTypes = [
   "agent.chat.request",
   "agent.chat.response",
   "agent.activity",
+  "command.status",
+  "command.status.request",
   "command.accepted",
   "command.rejected",
   "command.completed",
@@ -49,6 +51,10 @@ export interface AgentChatRequestPayload {
   message: string;
   model?: string;
   fileIds?: string[];
+  delivery?: {
+    idempotencyKey?: string;
+    statusMetadataVersion?: 1;
+  };
 }
 
 export interface AgentChatResponsePayload {
@@ -79,6 +85,16 @@ export interface AgentActivityPayload {
 export interface CommandStatusPayload {
   ok: boolean;
   message: string;
+  state?: DeliveryState;
+  requestId?: string;
+  legacy?: boolean;
+}
+
+export type DeliveryState = "accepted" | "delivered" | "executing" | "completed" | "failed";
+
+export interface CommandStatusRequestPayload {
+  requestId: string;
+  sessionId?: string;
 }
 
 export interface AgentHubEndpoint {
@@ -118,6 +134,8 @@ export type AgentChatRequestEnvelope = AgentHubEnvelope<AgentChatRequestPayload>
 export type AgentChatResponseEnvelope = AgentHubEnvelope<AgentChatResponsePayload> & { type: "agent.chat.response" };
 export type AgentActivityEnvelope = AgentHubEnvelope<AgentActivityPayload> & { type: "agent.activity" };
 export type CommandAcceptedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.accepted" };
+export type CommandStatusEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.status" };
+export type CommandStatusRequestEnvelope = AgentHubEnvelope<CommandStatusRequestPayload> & { type: "command.status.request" };
 export type CommandRejectedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.rejected" };
 export type CommandCompletedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.completed" };
 export type CommandFailedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.failed" };
@@ -134,6 +152,8 @@ export type KnownAgentHubEnvelope =
   | AgentChatRequestEnvelope
   | AgentChatResponseEnvelope
   | AgentActivityEnvelope
+  | CommandStatusEnvelope
+  | CommandStatusRequestEnvelope
   | CommandAcceptedEnvelope
   | CommandRejectedEnvelope
   | CommandCompletedEnvelope
@@ -168,7 +188,7 @@ export function isAgentHubEnvelope(value: unknown): value is KnownAgentHubEnvelo
 }
 
 export function isRelayRequestType(type: AgentHubEnvelopeType) {
-  return type === "device.state.request" || type === "provider.refresh.request" || type === "agent.roster.request" || type === "agent.chat.request";
+  return type === "device.state.request" || type === "provider.refresh.request" || type === "agent.roster.request" || type === "agent.chat.request" || type === "command.status.request";
 }
 
 export function createEnvelopeId(prefix = "env") {

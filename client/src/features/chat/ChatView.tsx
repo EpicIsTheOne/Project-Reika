@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { Activity, ArrowLeft, Heart, Link2, MessageCircle, Plus, Search, Send, Trash2 } from "lucide-react";
+import { Activity, ArrowLeft, Heart, Link2, MessageCircle, PanelLeft, Plus, Search, Send, Trash2, X } from "lucide-react";
 import { assets } from "../../data/assets";
 import {
   appendRelayChatMessages,
@@ -74,7 +74,10 @@ export function ChatView({
   const [sendError, setSendError] = useState<string | null>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [agentSelectionDirty, setAgentSelectionDirty] = useState(false);
+  const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false);
   const suppressedRelaySessionLoadRef = useRef<string | null>(null);
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const followLatestRef = useRef(true);
   const artInstanceKey = useMemo(() => makeArtRuntimeSeed(), []);
   const requestedAgentRouteKey = [agent.id, agent.providerId, agent.deviceId, agent.relayProviderId ?? "", agent.relayAgentId ?? ""].join("::");
 
@@ -286,6 +289,12 @@ export function ChatView({
   }, [relayUrl, selectedIsRelayProvider, selectedRelayDeviceId, sessionSearch, selectedProvider?.id, selectedLiveAgent?.id]);
 
   useEffect(() => {
+    if (!selectedIsRelayProvider) return;
+    setSelectedFileIds([]);
+    setAttachmentMenuOpen(false);
+  }, [selectedIsRelayProvider]);
+
+  useEffect(() => {
     if (!selectedSessionId) {
       setMessages([]);
       return;
@@ -313,6 +322,10 @@ export function ChatView({
   }, [relayUrl, selectedIsRelayProvider, selectedSessionId]);
 
   const handleRefreshProviders = async () => {
+    if (selectedIsRelayProvider) {
+      setStatus("Remote provider selection preserved; refresh the device from Devices.");
+      return;
+    }
     setBusy(true);
     try {
       const state = await refreshProviders();
@@ -411,7 +424,7 @@ export function ChatView({
         const userTimestamp = new Date().toISOString();
         await appendRelayChatMessages(
           relaySessionId,
-          [{ id: userMessage.id, role: "user", text: message, timestamp: userTimestamp, meta: { fileIds: selectedFileIds } }],
+          [{ id: userMessage.id, role: "user", text: message, timestamp: userTimestamp }],
           relayUrl
         );
         if (!selectedSessionId) setSelectedSessionId(relaySessionId);
@@ -421,7 +434,7 @@ export function ChatView({
           sessionId: relaySessionId,
           providerSessionId: makeProviderSessionId(relaySessionId),
           message,
-          fileIds: selectedFileIds
+          fileIds: []
         });
         const now = new Date().toISOString();
         const agentMessage: ChatMessage = {
@@ -521,7 +534,13 @@ export function ChatView({
     setSendError(null);
   };
 
-  const visibleMessages = messages;
+  const visibleMessages = messages.slice(-500);
+
+  useEffect(() => {
+    if (!followLatestRef.current) return;
+    const list = messageListRef.current;
+    if (list) list.scrollTop = list.scrollHeight;
+  }, [busy, visibleMessages.length]);
   const canSend =
     Boolean(draft.trim()) &&
     !busy &&
@@ -529,10 +548,14 @@ export function ChatView({
 
   return (
     <main className={pageMotionClass("chat-screen")}>
-      <aside className="chat-profile">
+      {sessionDrawerOpen ? <button className="chat-drawer-backdrop" type="button" aria-label="Close sessions" onClick={() => setSessionDrawerOpen(false)} /> : null}
+      <aside className={cx("chat-profile", sessionDrawerOpen && "drawer-open")}>
         <button className="back-button" onClick={onBack}>
           <ArrowLeft size={20} />
           Back
+        </button>
+        <button className="chat-drawer-close icon-button" type="button" aria-label="Close sessions" onClick={() => setSessionDrawerOpen(false)}>
+          <X size={20} />
         </button>
         <img className="chat-profile-art" src={chatPortraitArt.src} alt="" style={chatPortraitArt.style} />
         <div className="chat-profile-card live-chat-profile-card">
@@ -588,7 +611,10 @@ export function ChatView({
                   <button
                     className={session.id === selectedSessionId ? "selected" : ""}
                     key={session.id}
-                    onClick={() => setSelectedSessionId(session.id)}
+                    onClick={() => {
+                      setSelectedSessionId(session.id);
+                      setSessionDrawerOpen(false);
+                    }}
                   >
                     <strong>{session.title}</strong>
                     <small>{session.lastMessagePreview || `${session.messageCount} messages`}</small>
@@ -604,6 +630,9 @@ export function ChatView({
 
       <section className="chat-main">
         <header className="chat-header">
+          <button className="chat-drawer-toggle icon-button" type="button" aria-label="Open agent and sessions" onClick={() => setSessionDrawerOpen(true)}>
+            <PanelLeft size={20} />
+          </button>
           <img src={chatAvatar.src} alt="" style={chatAvatar.style} />
           <div>
             <h1>
@@ -638,7 +667,16 @@ export function ChatView({
           {!stateError && selectedProvider && selectedProviderStatus !== "online" ? <div className="chat-error-banner">{selectedProvider.name} is {statusLabels[selectedProviderStatus].toLowerCase()}.</div> : null}
           {developerDiagnostics && selectedIsRelayProvider ? <div className="chat-inline-note">Relay chat active: {relayRouteSummary}</div> : null}
           {sendError ? <div className="chat-error-banner">{sendError}</div> : null}
-          <div className="message-list" data-testid="message-list">
+          <div
+            ref={messageListRef}
+            className="message-list"
+            data-testid="message-list"
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              followLatestRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+            }}
+          >
+            {messages.length > visibleMessages.length ? <div className="chat-inline-note">Showing the latest {visibleMessages.length} messages.</div> : null}
             {visibleMessages.map((message, index) => (
               <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={displayAgentName} motionIndex={index} />
             ))}
@@ -679,7 +717,8 @@ export function ChatView({
                   type="button"
                   aria-label="Attach file or link"
                   onClick={() => setAttachmentMenuOpen((current) => !current)}
-                  disabled={busy || (Boolean(stateError) && !selectedIsRelayProvider)}
+                  disabled={busy || selectedIsRelayProvider || (Boolean(stateError) && !selectedIsRelayProvider)}
+                  title={selectedIsRelayProvider ? "Attachments are unavailable for remote chat until secure file transfer is supported." : undefined}
                 >
                   <Link2 size={21} />
                 </button>
@@ -726,12 +765,8 @@ function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex 
             <time>{message.time}</time>
           </header>
         ) : null}
-        <p>{message.body}</p>
-        {!isUser ? (
-          <button className="reaction-pill" aria-label="Heart reaction">
-            <Heart size={14} fill="currentColor" />
-          </button>
-        ) : (
+        <MessageBody text={message.body} />
+        {!isUser ? null : (
           <time>{message.time}</time>
         )}
       </div>
@@ -761,6 +796,22 @@ function getRelayProviderId(provider: ReikaProviderRecord) {
 function getRelayAgentId(agent: ReikaProviderRecord["agents"][number] | undefined) {
   if (!agent) return undefined;
   return typeof agent.relayAgentId === "string" && agent.relayAgentId ? agent.relayAgentId : agent.id;
+}
+
+function MessageBody({ text }: { text: string }) {
+  const parts = text.split(/```([\w+-]*)\n?([\s\S]*?)```/g);
+  return (
+    <div className="message-body">
+      {parts.map((part, index) => {
+        if (index % 3 === 1) return null;
+        if (index % 3 === 2) {
+          const language = parts[index - 1];
+          return <pre key={index} data-language={language || undefined}><code>{part.trimEnd()}</code></pre>;
+        }
+        return part ? <p key={index}>{part}</p> : null;
+      })}
+    </div>
+  );
 }
 
 function hasRequestedRelayIdentity(agent: Agent) {

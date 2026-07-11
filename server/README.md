@@ -181,7 +181,7 @@ Outbound relay mode is disabled by default.
 
 ```env
 REIKA_UPLINK_ENABLED=false
-REIKA_RELAY_URL=wss://relay.techexplore.us/v1/device
+REIKA_RELAY_URL=ws://127.0.0.1:8790/v1/device
 REIKA_DEVICE_ID=
 REIKA_DEVICE_KEY_PATH=
 REIKA_PAIRING_TOKEN=

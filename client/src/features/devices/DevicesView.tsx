@@ -501,7 +501,7 @@ function DeviceDetailPanel({
             {(device.providers ?? []).length > 0 ? (
               device.providers?.map((provider) => (
                 <div className={provider.id === device.activeProviderId ? "relay-provider-row active" : "relay-provider-row"} key={provider.id}>
-                  <img src={assets.icons.providers[provider.name]} alt="" />
+                  <img src={assets.icons.providers[provider.name]} alt="" loading="lazy" decoding="async" />
                   <span>
                     <strong>{provider.name}</strong>
                     <small>{provider.agents.length} {provider.agents.length === 1 ? "agent" : "agents"}</small>

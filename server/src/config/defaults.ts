@@ -23,7 +23,7 @@ export const serverConfig = {
   chatTransportEnabled: false,
   uplink: {
     enabled: boolFromEnv('REIKA_UPLINK_ENABLED', false),
-    relayUrl: process.env.REIKA_RELAY_URL || 'wss://relay.techexplore.us/v1/device',
+    relayUrl: process.env.REIKA_RELAY_URL || 'ws://127.0.0.1:8790/v1/device',
     deviceId: process.env.REIKA_DEVICE_ID || defaultDeviceId(),
     deviceKeyPath: process.env.REIKA_DEVICE_KEY_PATH || '',
     pairingToken: process.env.REIKA_PAIRING_TOKEN || '',

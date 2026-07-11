@@ -1,4 +1,6 @@
 **Findings**
+
+> Historical snapshot, not current defect or release certification. See `../AUDIT_FIX_CHECKLIST.md`.
 - No remaining P0/P1/P2 findings.
 
 **Open Questions**

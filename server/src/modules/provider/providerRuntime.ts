@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { delimiter, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ProviderRecord } from './types.js';
 
@@ -66,7 +68,13 @@ const hermesBin = process.env.HERMES_BIN || 'hermes';
 const hermesSessionSource = process.env.HERMES_SESSION_SOURCE || 'cli';
 
 function envWithLocalBin() {
-  return { ...process.env, PATH: `${process.env.HOME || ''}/.local/bin:${process.env.PATH || ''}` };
+  return { ...process.env, PATH: [join(homedir(), '.local', 'bin'), process.env.PATH || ''].filter(Boolean).join(delimiter) };
+}
+
+const providerHttpTimeoutMs = Math.max(1000, Number(process.env.REIKA_PROVIDER_HTTP_TIMEOUT_MS || 120000));
+
+function providerFetch(input: string | URL, init: RequestInit = {}) {
+  return fetch(input, { ...init, signal: init.signal ?? AbortSignal.timeout(providerHttpTimeoutMs) });
 }
 
 async function runCommand(command: string, args: string[], timeout = 120000) {
@@ -145,7 +153,7 @@ async function readOpenClawGatewayConfig(): Promise<OpenClawGatewayConfig> {
   if (explicitToken) return { baseUrl, authHeader: `Bearer ${explicitToken}` };
   if (explicitPassword) return { baseUrl, authHeader: `Bearer ${explicitPassword}` };
   try {
-    const raw = await readFile(`${process.env.HOME || ''}/.openclaw/openclaw.json`, 'utf8');
+    const raw = await readFile(join(homedir(), '.openclaw', 'openclaw.json'), 'utf8');
     const config = JSON.parse(raw) as { gateway?: { auth?: { mode?: string; token?: string; password?: string } } };
     const auth = config.gateway?.auth;
     const secret = String(auth?.token || auth?.password || '').trim();
@@ -182,7 +190,7 @@ function extractOpenClawText(payload: unknown) {
 async function runOpenClawGatewayChat(input: { agentId: string; providerSessionId: string; message: string; model?: string }) {
   const gateway = await readOpenClawGatewayConfig();
   const sessionKey = openClawSessionKey(input.agentId, input.providerSessionId);
-  const response = await fetch(`${gateway.baseUrl}/v1/chat/completions`, {
+  const response = await providerFetch(`${gateway.baseUrl}/v1/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -234,7 +242,7 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
   onEvent?.({ type: 'thinking', data: { providerId: provider.id, agent: agentId, status: `Routing to ${provider.name}...` } });
 
   if (provider.kind === 'commandcenter') {
-    const response = await fetch(`${commandCenterBaseUrl}/chat`, {
+    const response = await providerFetch(`${commandCenterBaseUrl}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent: agentId, sessionId, message: request.message })
@@ -418,7 +426,7 @@ export async function listProviderHistorySessions(providerId: string, providers:
   if (!provider) throw new Error(`Provider not found: ${providerId}`);
 
   if (provider.kind === 'commandcenter') {
-    const response = await fetch(`${commandCenterBaseUrl}/sessions`);
+    const response = await providerFetch(`${commandCenterBaseUrl}/sessions`);
     const body = await response.json().catch(() => ({})) as { ok?: boolean; sessions?: Array<Record<string, unknown>>; error?: unknown };
     if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
     return (body.sessions || []).slice(0, limit).map((session) => ({
@@ -457,7 +465,7 @@ export async function getProviderHistoryMessages(providerId: string, providerSes
     return normalizeOpenClawMessages(stdout || stderr);
   }
   if (provider.kind !== 'commandcenter') return [];
-  const response = await fetch(`${commandCenterBaseUrl}/sessions/${encodeURIComponent(providerSessionId)}/messages`);
+  const response = await providerFetch(`${commandCenterBaseUrl}/sessions/${encodeURIComponent(providerSessionId)}/messages`);
   const body = await response.json().catch(() => ({})) as { ok?: boolean; messages?: Array<Record<string, unknown>>; error?: unknown };
   if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
   return (body.messages || []).map((message) => {
@@ -473,7 +481,7 @@ export async function getProviderHistoryMessages(providerId: string, providerSes
 }
 
 export async function readOpenClawConfigAgents() {
-  const path = `${process.env.HOME || ''}/.openclaw/openclaw.json`;
+  const path = join(homedir(), '.openclaw', 'openclaw.json');
   const raw = await readFile(path, 'utf8');
   const json = JSON.parse(raw);
   return { path, agents: Array.isArray(json?.agents?.list) ? json.agents.list : [] };

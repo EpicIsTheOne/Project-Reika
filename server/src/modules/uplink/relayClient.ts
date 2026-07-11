@@ -63,7 +63,7 @@ export class RelayClient {
   }
 
   connectWith(options: RelayConnectOptions) {
-    this.stop();
+    this.stop(false);
     this.enabled = true;
     this.status = 'idle';
     this.relayUrl = options.relayUrl || this.relayUrl;
@@ -74,11 +74,13 @@ export class RelayClient {
     this.start();
   }
 
-  stop() {
+  stop(disableReconnect = true) {
+    if (disableReconnect) this.enabled = false;
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.socket?.close();
+    const socket = this.socket;
     this.socket = undefined;
+    socket?.close();
     this.status = this.enabled ? 'disconnected' : 'disabled';
   }
 
@@ -94,6 +96,7 @@ export class RelayClient {
   }
 
   private connect() {
+    if (!this.enabled) return;
     this.status = 'connecting';
     this.events.emit('uplink.connecting', { relayUrl: this.relayUrl });
 
@@ -102,11 +105,12 @@ export class RelayClient {
       if (this.pairingToken) url.searchParams.set('pairingToken', this.pairingToken);
       url.searchParams.set('deviceId', this.deviceId);
 
-      this.socket = new WebSocket(url);
-      this.socket.addEventListener('open', () => this.onOpen());
-      this.socket.addEventListener('message', (event) => void this.onMessage(event.data));
-      this.socket.addEventListener('close', () => this.onClose());
-      this.socket.addEventListener('error', () => this.fail('Relay WebSocket error'));
+      const socket = new WebSocket(url);
+      this.socket = socket;
+      socket.addEventListener('open', () => this.onOpen());
+      socket.addEventListener('message', (event) => void this.onMessage(event.data));
+      socket.addEventListener('close', () => this.onClose(socket));
+      socket.addEventListener('error', () => this.fail('Relay WebSocket error'));
     } catch (error) {
       this.fail(error instanceof Error ? error.message : String(error));
       this.scheduleReconnect();
@@ -114,6 +118,10 @@ export class RelayClient {
   }
 
   private onOpen() {
+    if (!this.enabled) {
+      this.socket?.close();
+      return;
+    }
     this.status = 'connected';
     this.lastConnectedAt = new Date().toISOString();
     this.lastError = undefined;
@@ -124,9 +132,11 @@ export class RelayClient {
     this.heartbeatTimer = setInterval(() => this.sendHeartbeat(), serverConfig.uplink.heartbeatMs);
   }
 
-  private onClose() {
+  private onClose(socket: WebSocket) {
+    if (this.socket !== socket) return;
+    this.socket = undefined;
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    this.status = 'disconnected';
+    this.status = this.enabled ? 'disconnected' : 'disabled';
     this.events.emit('uplink.disconnected', {});
     this.scheduleReconnect();
   }

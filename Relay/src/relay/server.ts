@@ -1,5 +1,5 @@
 import { createHash, randomBytes, verify } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -30,6 +30,11 @@ const relayConfig = {
   pairingTtlMs: Number(process.env.REIKA_PAIRING_TTL_MS ?? 10 * 60 * 1000),
   offlineQueueTtlMs: Number(process.env.REIKA_RELAY_OFFLINE_QUEUE_TTL_MS ?? 15 * 60 * 1000),
   offlineQueueLimit: Number(process.env.REIKA_RELAY_OFFLINE_QUEUE_LIMIT ?? 50),
+  maxHttpBodyBytes: Number(process.env.REIKA_RELAY_MAX_HTTP_BODY_BYTES ?? 256 * 1024),
+  maxWsPayloadBytes: Number(process.env.REIKA_RELAY_MAX_WS_PAYLOAD_BYTES ?? 256 * 1024),
+  maxChatMessageBytes: Number(process.env.REIKA_RELAY_MAX_CHAT_MESSAGE_BYTES ?? 64 * 1024),
+  maxMessagesPerSession: Number(process.env.REIKA_RELAY_MAX_MESSAGES_PER_SESSION ?? 2000),
+  heartbeatStaleMs: Number(process.env.REIKA_RELAY_HEARTBEAT_STALE_MS ?? 45_000),
   storePath: process.env.REIKA_RELAY_STORE_PATH ?? join(homedir(), ".local", "share", "project-reika", "relay-store.json")
 };
 
@@ -112,8 +117,12 @@ const deviceChallenges = new Map<string, DeviceChallenge>();
 
 loadRelayStore();
 
+if (!["127.0.0.1", "::1", "localhost"].includes(relayConfig.host) && process.env.REIKA_RELAY_ALLOW_NONLOCAL !== "1") {
+  throw new Error("Private testing relay refused a non-loopback bind. Set REIKA_RELAY_ALLOW_NONLOCAL=1 only on a trusted private network.");
+}
+
 const server = createServer(async (request, response) => {
-  setCorsHeaders(response);
+  setCorsHeaders(request, response);
   if (request.method === "OPTIONS") {
     response.statusCode = 204;
     response.end();
@@ -131,6 +140,8 @@ const server = createServer(async (request, response) => {
         deviceCount: devices.size,
         appSocketCount: appSockets.size,
         durable: true,
+        deploymentMode: "private-single-operator-testing",
+        publicDeploymentSupported: false,
         storePath: relayConfig.storePath,
         offlineQueue: {
           ttlMs: relayConfig.offlineQueueTtlMs,
@@ -138,6 +149,8 @@ const server = createServer(async (request, response) => {
           queuedCount: Array.from(devices.values()).reduce((total, record) => total + record.queuedEnvelopes.length, 0)
         },
         security: {
+          privateTestingOnly: true,
+          authenticatedTenancy: false,
           perDeviceKeypairs: true,
           signedChallenges: true,
           revocation: true,
@@ -152,6 +165,8 @@ const server = createServer(async (request, response) => {
       sendJson(response, 200, {
         ok: true,
         accountId: relayConfig.accountId,
+        deploymentMode: "private-single-operator-testing",
+        publicDeploymentSupported: false,
         allowedEnvelopeTypes: agentHubEnvelopeTypes,
         offlineDelivery: {
           enabled: true,
@@ -351,12 +366,13 @@ const server = createServer(async (request, response) => {
 
     sendJson(response, 404, { ok: false, error: "Route not found" });
   } catch (error) {
-    sendJson(response, 500, { ok: false, error: String(error) });
+    const status = error instanceof RequestBodyTooLargeError ? 413 : error instanceof SyntaxError ? 400 : 500;
+    sendJson(response, status, { ok: false, error: error instanceof Error ? error.message : String(error) });
   }
 });
 
-const deviceSocketServer = new WebSocketServer({ noServer: true });
-const appSocketServer = new WebSocketServer({ noServer: true });
+const deviceSocketServer = new WebSocketServer({ noServer: true, maxPayload: relayConfig.maxWsPayloadBytes });
+const appSocketServer = new WebSocketServer({ noServer: true, maxPayload: relayConfig.maxWsPayloadBytes });
 
 server.on("upgrade", (request, socket, head) => {
   const url = getRequestUrl(request);
@@ -528,6 +544,23 @@ server.listen(relayConfig.port, relayConfig.host, () => {
   console.log(`[agenthub-relay] Relay listening at http://${relayConfig.host}:${relayConfig.port}`);
 });
 
+const presenceWatchdog = setInterval(() => {
+  const cutoff = Date.now() - relayConfig.heartbeatStaleMs;
+  let changed = false;
+  for (const record of devices.values()) {
+    if (record.device.status === "offline" || !record.lastHeartbeatAt || Date.parse(record.lastHeartbeatAt) >= cutoff) continue;
+    record.device.status = "offline";
+    record.socket?.close(4000, "Heartbeat expired");
+    record.socket = undefined;
+    changed = true;
+  }
+  if (changed) {
+    saveRelayStore();
+    broadcastRelayState();
+  }
+}, Math.max(1000, Math.floor(relayConfig.heartbeatStaleMs / 3)));
+presenceWatchdog.unref();
+
 function createPairingSession(accountId = relayConfig.accountId, ttlMs = relayConfig.pairingTtlMs) {
   const now = new Date();
   const code = `${randomBytes(2).toString("hex")}-${randomBytes(2).toString("hex")}`.toUpperCase();
@@ -572,7 +605,7 @@ function listChatSessions(filters: { deviceId?: string; providerId?: string; age
   const providerId = cleanText(filters.providerId).toLowerCase();
   const agent = cleanText(filters.agent).toLowerCase();
   const q = cleanText(filters.q).toLowerCase();
-  const limit = Number.isFinite(filters.limit) && filters.limit && filters.limit > 0 ? filters.limit : 30;
+  const limit = Math.min(100, Number.isFinite(filters.limit) && filters.limit && filters.limit > 0 ? filters.limit : 30);
   return Array.from(chatSessions.values())
     .filter((session) => !deviceId || session.deviceId.toLowerCase() === deviceId)
     .filter((session) => !providerId || session.providerId.toLowerCase() === providerId)
@@ -590,6 +623,12 @@ function appendChatMessage(session: RelayChatSessionRecord, input: RelayChatMess
   const role = input.role === "assistant" || input.role === "system" ? input.role : "user";
   const text = cleanText(input.text);
   if (!text) return;
+  if (Buffer.byteLength(text, "utf8") > relayConfig.maxChatMessageBytes) {
+    throw new RequestBodyTooLargeError(relayConfig.maxChatMessageBytes);
+  }
+  if (session.messages.length >= relayConfig.maxMessagesPerSession) {
+    throw new Error(`Relay chat session reached its ${relayConfig.maxMessagesPerSession}-message limit.`);
+  }
   const timestamp = cleanText(input.timestamp) || new Date().toISOString();
   const message: RelayChatMessageRecord = {
     id: cleanText(input.id) || `relay_msg_${Date.now().toString(36)}_${randomBytes(3).toString("hex")}`,
@@ -842,7 +881,12 @@ function broadcastToApps(envelope: AgentHubEnvelope) {
 }
 
 function createCommandStatus(type: "command.accepted" | "command.rejected" | "command.completed" | "command.failed", message: string, replyTo?: string, deviceId?: string) {
-  return createEnvelope(type, { ok: type === "command.accepted" || type === "command.completed", message }, {
+  return createEnvelope(type, {
+    ok: type === "command.accepted" || type === "command.completed",
+    message,
+    state: type === "command.accepted" ? "accepted" : type === "command.completed" ? "completed" : "failed",
+    requestId: replyTo
+  }, {
     source: { kind: "relay", id: "agenthub-relay" },
     replyTo,
     deviceId,
@@ -989,7 +1033,11 @@ function saveRelayStore() {
     chatSessions: Array.from(chatSessions.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   };
   mkdirSync(dirname(relayConfig.storePath), { recursive: true });
-  writeFileSync(relayConfig.storePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  const temporaryPath = `${relayConfig.storePath}.tmp`;
+  const backupPath = `${relayConfig.storePath}.bak`;
+  writeFileSync(temporaryPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  if (existsSync(relayConfig.storePath)) copyFileSync(relayConfig.storePath, backupPath);
+  renameSync(temporaryPath, relayConfig.storePath);
 }
 
 function isChatSessionRecord(value: unknown): value is RelayChatSessionRecord {
@@ -1048,15 +1096,39 @@ function getRequestUrl(request: IncomingMessage) {
 
 async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.byteLength;
+    if (size > relayConfig.maxHttpBodyBytes) throw new RequestBodyTooLargeError(relayConfig.maxHttpBodyBytes);
+    chunks.push(buffer);
+  }
   if (chunks.length === 0) return {} as T;
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as T;
 }
 
-function setCorsHeaders(response: ServerResponse) {
-  response.setHeader("Access-Control-Allow-Origin", "*");
+class RequestBodyTooLargeError extends Error {
+  constructor(limit: number) {
+    super(`Request body exceeds the ${limit}-byte relay limit.`);
+  }
+}
+
+function setCorsHeaders(request: IncomingMessage, response: ServerResponse) {
+  const origin = String(request.headers.origin || "");
+  if (isPrivateDevelopmentOrigin(origin)) response.setHeader("Access-Control-Allow-Origin", origin);
+  response.setHeader("Vary", "Origin");
   response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   response.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+}
+
+function isPrivateDevelopmentOrigin(origin: string) {
+  if (!origin) return false;
+  try {
+    const url = new URL(origin);
+    return (url.protocol === "http:" || url.protocol === "https:") && ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {

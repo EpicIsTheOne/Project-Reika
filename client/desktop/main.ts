@@ -29,13 +29,22 @@ async function createWindow() {
       preload,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     }
   });
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const currentUrl = mainWindow?.webContents.getURL();
+    if (!currentUrl || new URL(url).origin !== new URL(currentUrl).origin) event.preventDefault();
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "https:") void shell.openExternal(parsed.toString());
+    } catch {
+      // Reject malformed external URLs.
+    }
     return { action: "deny" };
   });
 

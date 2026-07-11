@@ -74,19 +74,21 @@ REIKA_RELAY_SYSTEMD_MODE=system
 REIKA_RELAY_HEALTH_URL=http://127.0.0.1:8790/v1/health
 ```
 
-## Production Container
+## Private testing-only container
 
 ```bash
 docker build -t project-reika-relay ./Relay
-docker run -p 8790:8790 -v reika-relay-data:/data project-reika-relay
+docker run -e REIKA_RELAY_HOST=0.0.0.0 -e REIKA_RELAY_ALLOW_NONLOCAL=1 -p 8790:8790 -v reika-relay-data:/data project-reika-relay
 ```
 
-For production, put the relay behind TLS and expose WebSockets at:
+The current relay is for one operator on localhost or a trusted private network. It is not an authenticated multi-tenant service and must not be exposed directly to the public internet. It refuses non-loopback binds unless `REIKA_RELAY_ALLOW_NONLOCAL=1` is explicitly set.
+
+For trusted private-network testing, put the relay behind TLS and expose WebSockets at:
 
 - `wss://<relay-host>/v1/device`
 - `wss://<relay-host>/v1/app`
 
-Persist `/data/relay-store.json`. That file contains paired device state, public keys, latest snapshots, and offline queued envelopes.
+Persist `/data/relay-store.json`. That file contains paired device state, public keys, latest snapshots, and offline queued envelopes. Public deployment requires authenticated tenancy, resource authorization, recovery, and audit logging first.
 
 ## Endpoints
 

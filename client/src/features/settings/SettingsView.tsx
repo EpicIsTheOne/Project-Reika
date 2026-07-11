@@ -116,6 +116,15 @@ export function SettingsView({
     });
   };
 
+  const updateAutomaticUpdates = (enabled: boolean) => {
+    setBusySetting("automaticUpdates");
+    setSettingsError(null);
+    patchSettings({ autoUpdateServer: enabled, autoUpdateClient: enabled })
+      .then(({ settings, state }) => onSettingsChange(settings, state))
+      .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setBusySetting(null));
+  };
+
   const updateAgentSelectorSetting = <Key extends keyof ReikaSettings["agentSelector"]>(key: Key, value: ReikaSettings["agentSelector"][Key]) => {
     updateSetting("agentSelector", {
       ...settings.agentSelector,
@@ -283,8 +292,8 @@ export function SettingsView({
                     <ChevronDown size={18} />
                   </button>
                 </SettingRow>
-                <SettingRow title="Minimize to Tray" detail="Keep AgentHub running in the background.">
-                  <Toggle checked={settings.minimizeToTray} disabled={busySetting === "minimizeToTray"} onClick={() => updateSetting("minimizeToTray", !settings.minimizeToTray)} />
+                <SettingRow title="Minimize to Tray" detail="Unavailable in this build; minimizing keeps the normal taskbar window.">
+                  <Toggle checked={false} disabled onClick={() => undefined} />
                 </SettingRow>
                 <SettingRow title="Start On Sign In" detail={startupStatus?.message ?? (startupStatus?.enabled ? "Local agent starts with Windows/Linux sign-in." : "Local agent startup is disabled.")}>
                   <Toggle checked={Boolean(startupStatus?.enabled)} disabled={startupBusy || !startupStatus?.supported} onClick={toggleStartup} />
@@ -404,24 +413,21 @@ export function SettingsView({
                 <SettingRow title="Diagnostics" detail="Show extra backend details while building Project Reika.">
                   <Toggle checked={settings.developerDiagnostics} disabled={busySetting === "developerDiagnostics"} onClick={() => updateSetting("developerDiagnostics", !settings.developerDiagnostics)} />
                 </SettingRow>
-                <SettingRow title="Server Auto Update" detail={settings.autoUpdateServer ? "Server updates can apply from the GitHub repo on startup." : "Server update checks are manual until enabled."}>
-                  <Toggle checked={settings.autoUpdateServer} disabled={busySetting === "autoUpdateServer"} onClick={() => updateSetting("autoUpdateServer", !settings.autoUpdateServer)} />
-                </SettingRow>
-                <SettingRow title="Client Auto Update" detail={settings.autoUpdateClient ? "Client files can update from the GitHub repo on startup." : "Client update checks are manual until enabled."}>
-                  <Toggle checked={settings.autoUpdateClient} disabled={busySetting === "autoUpdateClient"} onClick={() => updateSetting("autoUpdateClient", !settings.autoUpdateClient)} />
+                <SettingRow title="Automatic App Updates" detail={settings.autoUpdateServer && settings.autoUpdateClient ? "AgentHub and its bundled server can update together." : "Updates are checked and applied manually."}>
+                  <Toggle checked={settings.autoUpdateServer && settings.autoUpdateClient} disabled={busySetting === "automaticUpdates"} onClick={() => updateAutomaticUpdates(!(settings.autoUpdateServer && settings.autoUpdateClient))} />
                 </SettingRow>
                 <UpdateStatusCard status={updateStatus} busy={updateBusy} onCheck={runUpdateCheck} onApply={runUpdateApply} />
                 <SettingRow title="Data & Cache" detail={cacheStatus ? `${cacheStatus.cache.events.count} transient events. Chat, files, art, and settings are preserved.` : backendError ?? `Backend mode: ${backendMode}.`}>
                   <button className="secondary-action small" onClick={runCacheClear} disabled={busySetting === "cache"}>Clear Transient</button>
                 </SettingRow>
-                <div className="security-row" onClick={refreshSecurity} role="button" tabIndex={0}>
+                <button type="button" className="security-row" onClick={refreshSecurity}>
                   <Shield size={28} />
                   <span>
                     <strong>Security</strong>
                     <small>{securityStatus?.security.relayAuth ?? "Refresh local security/session status."}</small>
                   </span>
                   <ChevronRight size={20} />
-                </div>
+                </button>
                 {securityStatus ? (
                   <div className="update-status-card">
                     <header>

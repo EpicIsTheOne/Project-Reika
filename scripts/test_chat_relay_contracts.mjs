@@ -55,10 +55,10 @@ assert(
 );
 
 assert(
-  providerRuntime.includes("'agent', '--agent', agentId") &&
-    providerRuntime.includes("'--session-id', openClawSessionId") &&
+  providerRuntime.includes("'x-openclaw-agent-id': input.agentId") &&
+    providerRuntime.includes("'x-openclaw-session-key': sessionKey") &&
     providerRuntime.includes("const openClawSessionId = request.providerSessionId || providerSessionId('project_reika', sessionId)") &&
-    providerRuntime.includes("metadata: { providerSessionId: openClawSessionId"),
+    providerRuntime.includes("providerSessionId: openClawSessionId"),
   "OpenClaw chat must target the selected agent and store a real OpenClaw session id."
 );
 

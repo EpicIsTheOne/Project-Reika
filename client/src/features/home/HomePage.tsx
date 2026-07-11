@@ -40,19 +40,28 @@ export function HomePage({
   const onlineAgents = devices
     .flatMap((device) => device.providers.flatMap((provider) => provider.agents))
     .filter((agent) => agent.status === "online" || agent.status === "busy" || agent.status === "thinking").length;
+  const providers = devices.flatMap((device) => device.providers);
+  const unavailableProviders = providers.filter((provider) => provider.status !== "online").length;
+  const healthText = backendMode === "fallback"
+    ? "Local server unavailable"
+    : unavailableProviders > 0
+      ? `App connected; ${unavailableProviders} ${unavailableProviders === 1 ? "provider" : "providers"} unavailable`
+      : providers.length > 0
+        ? "App and providers connected"
+        : "App connected; no providers configured";
 
   return (
     <main className={pageMotionClass("page home-page")}>
       <HeaderBar
         title={
           <>
-            Welcome back, <span>Epic.</span>
+            Welcome back to your <span>local profile.</span>
           </>
         }
         subtitle={
           <>
             <StatusDot status={backendMode === "fallback" ? "offline" : "online"} />
-            {backendMode === "fallback" ? "Server degraded" : "All systems operational"}
+            {healthText}
             <b>{onlineAgents} agents online</b>
           </>
         }
@@ -76,7 +85,7 @@ export function HomePage({
               Chat Now
             </button>
             <button className="secondary-action" onClick={() => onOpenChat(featuredAgent ?? "reika")}>
-              View Profile
+              Open Chat
               <ChevronRight size={18} />
             </button>
           </div>
@@ -195,7 +204,7 @@ function ProviderBlock({ provider, selectorSettings, artRuntime, onOpenChat }: {
             const avatar = getAgentAvatarRender(agent, artRuntime);
             return (
               <button className="agent-row motion-row" data-testid={`agent-row-${agent.id}`} key={agent.id} onClick={() => onOpenChat(agent)} style={motionDelay(index, 34, 80)}>
-                <img src={avatar.src} alt="" style={avatar.style} />
+                <img src={avatar.src} alt="" style={avatar.style} loading="lazy" decoding="async" />
                 <span>
                   <strong>{formatAgentDisplayName(agent.name, agent.role, selectorSettings.showRole)}</strong>
                   <small>

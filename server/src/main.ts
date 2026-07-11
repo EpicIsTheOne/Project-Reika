@@ -8,7 +8,7 @@ import { CommandDispatcher } from './modules/commands/dispatcher.js';
 import { ArtStore } from './modules/art/artStore.js';
 import { FileStore, publicFile } from './modules/file/fileStore.js';
 import { NotificationStore } from './modules/notification/notificationStore.js';
-import { getProviderHistoryMessages, listProviderHistorySessions, runProviderChat, type ProviderChatEvent, type ProviderChatMessage, type ProviderHistoryMessage, type ProviderHistorySession } from './modules/provider/providerRuntime.js';
+import { findProvider, getProviderHistoryMessages, listProviderHistorySessions, runProviderChat, type ProviderChatEvent, type ProviderChatMessage, type ProviderHistoryMessage, type ProviderHistorySession } from './modules/provider/providerRuntime.js';
 import { SettingsStore } from './modules/settings/settingsStore.js';
 import { SessionStore, type ChatMessageRecord, type ChatSessionRecord } from './modules/session/sessionStore.js';
 import { RelayClient } from './modules/uplink/relayClient.js';
@@ -584,13 +584,33 @@ function emitChatEvent(event: ProviderChatEvent, session?: ChatSession) {
   events.emit(`chat.${event.type}`, { sessionId: session?.id, ...event.data });
 }
 
+const chatTurnQueues = new Map<string, Promise<unknown>>();
+
+function enqueueChatTurn<T>(sessionId: string, task: () => Promise<T>): Promise<T> {
+  const previous = chatTurnQueues.get(sessionId) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(task);
+  chatTurnQueues.set(sessionId, current);
+  void current.finally(() => {
+    if (chatTurnQueues.get(sessionId) === current) chatTurnQueues.delete(sessionId);
+  }).catch(() => undefined);
+  return current;
+}
+
 async function runChatTurn(input: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; model?: string; title?: string; metadata?: Record<string, unknown>; fileIds?: unknown }, onEvent?: (event: ProviderChatEvent) => void) {
   const session = getOrCreateSession(input);
+  return enqueueChatTurn(session.id, () => executeChatTurn(session, input, onEvent));
+}
+
+async function executeChatTurn(session: ChatSession, input: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; model?: string; title?: string; metadata?: Record<string, unknown>; fileIds?: unknown }, onEvent?: (event: ProviderChatEvent) => void) {
+  const providers = state.snapshot().providers;
+  const requestedProviderId = input.providerId || session.providerId;
+  const provider = findProvider(providers, requestedProviderId);
+  if (!provider) throw new Error(`Provider not found: ${requestedProviderId}`);
+  if (provider.status === 'offline' || provider.status === 'error') throw new Error(`${provider.name} is ${provider.status}: ${provider.error || provider.notes}`);
+  if (requestedProviderId === 'mock-local' && !settings.get().mockEnabled) throw new Error('Mock provider is disabled in AgentHub settings.');
   const attachedFiles = filesPayload(input.fileIds);
   const context = attachmentContext(input.fileIds);
   const userMessage = appendMessage(session, 'user', input.message, { providerId: session.providerId, agent: session.agent, files: attachedFiles });
-  const providers = state.snapshot().providers;
-  if (input.providerId === 'mock-local' && !settings.get().mockEnabled) throw new Error('Mock provider is disabled in AgentHub settings.');
   const handler = (event: ProviderChatEvent) => {
     emitChatEvent(event, session);
     onEvent?.(event);

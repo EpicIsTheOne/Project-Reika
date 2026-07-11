@@ -1,4 +1,4 @@
-const DEFAULT_REIKA_RELAY_DEVICE_URL = "wss://relay.techexplore.us/v1/device";
+const DEFAULT_REIKA_RELAY_DEVICE_URL = "ws://127.0.0.1:8790/v1/device";
 const INSTALL_SCRIPT_URL = "https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh";
 
 export const defaultReikaRelayDeviceUrl = readRelayDeviceUrl();

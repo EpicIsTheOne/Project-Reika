@@ -44,7 +44,6 @@ export async function ensureLocalAgent(options: LocalAgentOptions = {}): Promise
     cwd: userDataPath,
     env: {
       ...process.env,
-      HOME: process.env.HOME || userDataPath,
       XDG_DATA_HOME: process.env.XDG_DATA_HOME || join(userDataPath, "data"),
       REIKA_AGENT_HOST: host,
       REIKA_AGENT_PORT: String(port),

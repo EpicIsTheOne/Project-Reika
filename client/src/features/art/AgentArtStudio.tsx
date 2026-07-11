@@ -502,7 +502,7 @@ export function AgentArtStudio({
                   setSelectedProfileId(profile.id);
                   setSelectedCategoryId(profile.categories[0]?.id ?? "");
                 }}>
-                  <img src={artRuntime.profileAvatar(profile, "studio-profile")} alt="" />
+                  <img src={artRuntime.profileAvatar(profile, "studio-profile")} alt="" loading="lazy" decoding="async" />
                   <span>
                     <strong>{profile.name}</strong>
                     <small>{profile.subtitle}</small>
@@ -633,7 +633,7 @@ export function AgentArtStudio({
                   {selectedCategory.assets.map((item) => (
                     <div className={cx("art-image-tile", item.id === selectedCategory.selectedAssetId && "selected")} key={item.id}>
                       <button type="button" onClick={() => chooseAsset(item.id)} title={`Select ${item.name}`}>
-                        <img src={resolveArtAssetUrl(item)} alt="" style={assetPlacementStyle(item)} />
+                        <img src={resolveArtAssetUrl(item)} alt="" style={assetPlacementStyle(item)} loading="lazy" decoding="async" />
                         {item.id === selectedCategory.selectedAssetId ? <Check size={15} /> : null}
                       </button>
                       {manageAssets ? (
@@ -684,7 +684,7 @@ export function AgentArtStudio({
                   {selectedCategory.assets.map((item) => (
                     <div className={cx("art-image-tile", selectedCategory.referenceAssetIds.includes(item.id) && "active")} key={item.id}>
                       <button type="button" onClick={() => toggleReference(item.id)} title={selectedCategory.referenceAssetIds.includes(item.id) ? `Stop using ${item.name} as a reference` : `Use ${item.name} as a reference`}>
-                        <img src={resolveArtAssetUrl(item)} alt="" style={assetPlacementStyle(item)} />
+                        <img src={resolveArtAssetUrl(item)} alt="" style={assetPlacementStyle(item)} loading="lazy" decoding="async" />
                         {selectedCategory.referenceAssetIds.includes(item.id) ? <Check size={15} /> : null}
                       </button>
                       {manageReferences && selectedCategory.referenceAssetIds.includes(item.id) ? (
@@ -817,7 +817,7 @@ function ArtCategoryCard({ category, active, onClick, motionIndex = 0 }: { categ
     <button className={cx("art-category-card motion-card", active && "active")} type="button" onClick={onClick} style={motionDelay(motionIndex, 36)}>
       <strong>{category.name}</strong>
       <div className={preview.length > 1 ? "art-card-preview multi" : "art-card-preview"}>
-        {preview.length > 0 ? preview.map((item) => <img src={resolveArtAssetUrl(item)} alt="" key={item.id} style={assetPlacementStyle(item)} />) : <span>No art yet</span>}
+        {preview.length > 0 ? preview.map((item) => <img src={resolveArtAssetUrl(item)} alt="" key={item.id} style={assetPlacementStyle(item)} loading="lazy" decoding="async" />) : <span>No art yet</span>}
       </div>
       <footer>
         <span>

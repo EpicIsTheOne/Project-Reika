@@ -836,7 +836,7 @@ img {
   min-height: 100vh;
   background:
     linear-gradient(90deg, rgba(3, 8, 19, 0.96), rgba(4, 10, 24, 0.72)),
-    url("../assets/agenthub_phase1_generated/decorative/subtle_noise_texture_alpha.png");
+    url("../assets/agenthub_phase1_webp/decorative/subtle_noise_texture_alpha.webp");
 }
 
 .sidebar {
@@ -1743,6 +1743,80 @@ img {
   transform-origin: center;
 }
 
+.chat-drawer-toggle,
+.chat-drawer-close,
+.chat-drawer-backdrop {
+  display: none;
+}
+
+@media (min-width: 1180px) and (max-width: 1600px) {
+  .chat-screen {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat-profile {
+    position: fixed;
+    z-index: 60;
+    inset: 0 auto 0 244px;
+    width: min(360px, calc(100vw - 48px));
+    transform: translateX(-110%);
+    transition: transform 180ms ease;
+    box-shadow: 24px 0 60px rgba(0, 0, 0, 0.5);
+  }
+
+  .chat-profile.drawer-open {
+    transform: translateX(0);
+  }
+
+  .chat-drawer-backdrop {
+    display: block;
+    position: fixed;
+    z-index: 55;
+    inset: 0;
+    border: 0;
+    background: rgba(0, 4, 13, 0.68);
+  }
+
+  .chat-drawer-toggle,
+  .chat-drawer-close {
+    display: inline-flex;
+  }
+
+  .chat-drawer-close {
+    position: absolute;
+    z-index: 2;
+    top: 18px;
+    right: 18px;
+  }
+
+  .chat-main {
+    padding: 20px 22px 16px;
+  }
+
+  .chat-header {
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+    margin-bottom: 18px;
+  }
+
+  .chat-header > img {
+    width: 48px;
+    height: 48px;
+  }
+
+  .chat-header h1 {
+    max-width: min(42vw, 520px);
+    overflow: hidden;
+    font-size: 1.55rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .conversation-panel {
+    height: calc(100vh - 102px);
+    padding: 20px 20px 14px;
+  }
+}
+
 .chat-header h1 {
   display: flex;
   align-items: center;
@@ -1812,6 +1886,22 @@ img {
 .chat-message {
   display: grid;
   gap: 0.6rem;
+}
+
+.message-body p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.message-body pre {
+  max-width: 100%;
+  margin: 0.65rem 0 0;
+  padding: 0.85rem;
+  overflow: auto;
+  border: 1px solid rgba(87, 148, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(0, 5, 14, 0.82);
+  white-space: pre;
 }
 
 .chat-message.agent {
@@ -5711,5 +5801,13 @@ img {
     opacity: 1 !important;
     transform: none !important;
     filter: none !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }

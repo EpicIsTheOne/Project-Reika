@@ -105,6 +105,7 @@ async function main() {
   });
 
   await page.evaluate((id) => document.querySelector(`[data-testid="agent-row-${id}"]`)?.click(), namespacedAgentId(astraId));
+  await verifyLaptopChatDrawer(page);
   log("sending Astra relay chat");
   await sendAndAssert(page, "Astra", `smoke hello astra ${smokeId}`, `Astra Relay Smoke received: smoke hello astra ${smokeId}`);
   log("Astra relay chat verified");
@@ -124,6 +125,18 @@ async function main() {
   log("persistence verified");
 }
 
+async function verifyLaptopChatDrawer(page) {
+  await waitFor(page, () => {
+    const toggle = document.querySelector('.chat-drawer-toggle');
+    return Boolean(toggle && getComputedStyle(toggle).display !== 'none');
+  }, 10000);
+  await page.evaluate(() => document.querySelector('.chat-drawer-toggle')?.click());
+  await waitFor(page, () => document.querySelector('.chat-profile')?.classList.contains('drawer-open'), 5000);
+  await page.evaluate(() => document.querySelector('.chat-drawer-close')?.click());
+  await waitFor(page, () => !document.querySelector('.chat-profile')?.classList.contains('drawer-open'), 5000);
+  log("laptop chat drawer verified");
+}
+
 async function selectRelayAgent(page, optionAgentId, routeAgentId) {
   await page.evaluate((agentId) => {
     const select = document.querySelector('[data-testid="relay-agent-select"]');
@@ -132,7 +145,10 @@ async function selectRelayAgent(page, optionAgentId, routeAgentId) {
     setter.call(select, option.value);
     select.dispatchEvent(new Event("change", { bubbles: true }));
   }, optionAgentId);
-  await waitFor(page, (agentId) => document.body.innerText.includes(`/ ${agentId}`), 10000, routeAgentId);
+  await waitFor(page, (agentId) => {
+    const select = document.querySelector('[data-testid="relay-agent-select"]');
+    return Boolean(select?.value.endsWith(`::${agentId}`));
+  }, 10000, optionAgentId);
 }
 
 async function sendAndAssert(page, agentName, message, expectedResponse) {

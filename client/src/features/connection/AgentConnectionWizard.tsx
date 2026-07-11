@@ -66,6 +66,7 @@ export function AgentConnectionWizard({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const [copyNotice, setCopyNotice] = useState("");
   const requestedAfterApproval = useRef<string | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
   const relayRows = useMemo(() => relayDevices.map((record) => mapRelayDeviceRecord(record, relayUrl)), [relayDevices, relayUrl]);
   const localRows = useMemo(() => localDevices.map((device) => ({
     id: device.id,
@@ -98,6 +99,38 @@ export function AgentConnectionWizard({
     setCopyNotice("");
     if (relayRows.length > 0 && !selectedDeviceId) setSelectedDeviceId(relayRows[0].id);
   }, [open, relayRows, selectedDeviceId]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    const focusable = () => Array.from(dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]') ?? []);
+    window.setTimeout(() => focusable()[0]?.focus(), 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, [onClose, open]);
 
   useEffect(() => {
     if (!open || !approvedDeviceId || requestedAfterApproval.current === approvedDeviceId) return;
@@ -144,7 +177,7 @@ export function AgentConnectionWizard({
 
   return (
     <div className="connection-wizard-backdrop" role="presentation">
-      <section className="connection-wizard" role="dialog" aria-modal="true" aria-labelledby="connection-wizard-title">
+      <section ref={dialogRef} className="connection-wizard" role="dialog" aria-modal="true" aria-labelledby="connection-wizard-title">
         <header className="connection-wizard-header">
           <span>
             <Radio size={22} />

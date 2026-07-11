@@ -51,12 +51,12 @@ export function AppShell({
         <div className="account-card">
           <img src={artRuntime.agentAvatar("reika", "account-card")} alt="" />
           <span>
-            <strong>Epic</strong>
-            <small>epic@agenthub.dev</small>
+            <strong>Local profile</strong>
+            <small>Stored on this device</small>
           </span>
           <button className="plan-button" disabled title="Plans are not wired in this local build.">
             <Crown size={14} />
-            Local Build
+            Local only
           </button>
         </div>
 

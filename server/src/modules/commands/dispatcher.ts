@@ -1,16 +1,19 @@
 import type { StateStore } from '../../core/stateStore.js';
 import { createEnvelope, type AgentHubEndpoint, type AgentHubEnvelope } from '../../shared/protocol/envelope.js';
-import type { AgentActivityPayload, AgentChatRequestPayload, AgentChatResponsePayload, AgentRosterSnapshotPayload, CommandRejectedPayload, DeviceStateSnapshotPayload, ProviderSnapshotPayload } from '../../shared/protocol/messages.js';
+import type { AgentActivityPayload, AgentChatRequestPayload, AgentChatResponsePayload, AgentRosterSnapshotPayload, CommandRejectedPayload, CommandStatusPayload, CommandStatusRequestPayload, DeliveryState, DeviceStateSnapshotPayload, ProviderSnapshotPayload } from '../../shared/protocol/messages.js';
+import { IdempotencyLedger, type IdempotencyRecord } from './idempotencyLedger.js';
 
 export type AgentChatHandler = (payload: AgentChatRequestPayload) => Promise<AgentChatResponsePayload>;
-export type AgentActivitySink = (envelope: AgentHubEnvelope<AgentActivityPayload>) => void;
+export type AgentOutboundSink = (envelope: AgentHubEnvelope) => void;
 
 export class CommandDispatcher {
+  private readonly idempotency = new IdempotencyLedger();
+
   constructor(
     private readonly state: StateStore,
     private readonly deviceEndpoint: AgentHubEndpoint,
     private readonly chatHandler?: AgentChatHandler,
-    private readonly activitySink?: AgentActivitySink
+    private readonly outboundSink?: AgentOutboundSink
   ) {}
 
   async dispatch(envelope: AgentHubEnvelope): Promise<AgentHubEnvelope[]> {
@@ -24,6 +27,8 @@ export class CommandDispatcher {
         return [this.agentRoster(envelope)];
       case 'agent.chat.request':
         return this.agentChat(envelope);
+      case 'command.status.request':
+        return this.commandStatus(envelope);
       default:
         return [this.reject(envelope, 'UNSUPPORTED_COMMAND', 'This command is not supported by this device agent.')];
     }
@@ -78,6 +83,12 @@ export class CommandDispatcher {
       return [this.reject(request, 'INVALID_PAYLOAD', 'agent.chat.request requires payload.message.')];
     }
 
+    const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : '';
+    const existing = this.idempotency.get(request.id, this.deviceEndpoint.id, sessionId);
+    if (existing) return this.responsesForExisting(request, existing);
+    const record = this.idempotency.begin(request.id, this.deviceEndpoint.id, sessionId, payload.delivery?.statusMetadataVersion !== 1);
+    this.emitDeliveryStatus(request, record, 'delivered', 'Request delivered to device authority.');
+
     const chatPayload: AgentChatRequestPayload = {
       providerId: typeof payload.providerId === 'string' ? payload.providerId : undefined,
       agent: typeof payload.agent === 'string' ? payload.agent : undefined,
@@ -86,8 +97,11 @@ export class CommandDispatcher {
       message: payload.message,
       model: typeof payload.model === 'string' ? payload.model : undefined,
       fileIds: Array.isArray(payload.fileIds) ? payload.fileIds.map(String) : undefined
+      ,delivery: payload.delivery?.statusMetadataVersion === 1 ? payload.delivery : undefined
     };
 
+    this.idempotency.update(record, 'executing');
+    this.emitDeliveryStatus(request, record, 'executing', 'Request execution started.');
     this.emitActivity(request, chatPayload, 'thinking');
 
     try {
@@ -105,20 +119,59 @@ export class CommandDispatcher {
         sessionId: result.sessionId,
         metadata: { runtime: result.runtime }
       });
-      return [createEnvelope<AgentChatResponsePayload>({
+      const response = createEnvelope<AgentChatResponsePayload>({
         type: 'agent.chat.response',
         source: this.deviceEndpoint,
         target: request.source,
         replyTo: request.id,
         correlationId: request.correlationId || request.id,
         payload: result
-      })];
+      });
+      const completed = this.deliveryStatus(request, record, 'completed', 'Request completed.', true);
+      const responses = [completed, response];
+      this.idempotency.update(record, 'completed', responses);
+      return responses;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.emitActivity(request, chatPayload, 'error', { message });
       this.emitActivity(request, chatPayload, 'idle');
-      return [this.reject(request, 'INTERNAL_ERROR', message)];
+      const rejected = this.reject(request, 'INTERNAL_ERROR', message);
+      const failed = this.deliveryStatus(request, record, 'failed', message, false);
+      const responses = [failed, rejected];
+      this.idempotency.update(record, 'failed', responses, message);
+      return responses;
     }
+  }
+
+  private commandStatus(request: AgentHubEnvelope) {
+    const payload = request.payload as Partial<CommandStatusRequestPayload>;
+    const requestId = typeof payload.requestId === 'string' ? payload.requestId : '';
+    const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : '';
+    if (!requestId) return [this.reject(request, 'INVALID_PAYLOAD', 'command.status.request requires payload.requestId.')];
+    const record = this.idempotency.get(requestId, this.deviceEndpoint.id, sessionId);
+    if (!record) return [this.reject(request, 'INVALID_PAYLOAD', 'No idempotency record exists for that request scope.')];
+    if (record.responses?.length) return record.responses;
+    return [this.deliveryStatus(request, record, record.state, `Request is ${record.state}.`, record.state === 'completed')];
+  }
+
+  private responsesForExisting(request: AgentHubEnvelope, record: IdempotencyRecord) {
+    if (record.responses?.length) return record.responses;
+    return [this.deliveryStatus(request, record, record.state, `Duplicate request was not re-executed; existing state is ${record.state}.`, record.state === 'completed')];
+  }
+
+  private deliveryStatus(request: AgentHubEnvelope, record: IdempotencyRecord, state: DeliveryState, message: string, ok = state !== 'failed') {
+    return createEnvelope<CommandStatusPayload>({
+      type: 'command.status',
+      source: this.deviceEndpoint,
+      target: request.source,
+      replyTo: request.id,
+      correlationId: request.correlationId || request.id,
+      payload: { ok, message, state, requestId: record.requestId, legacy: record.legacy }
+    });
+  }
+
+  private emitDeliveryStatus(request: AgentHubEnvelope, record: IdempotencyRecord, state: DeliveryState, message: string) {
+    this.outboundSink?.(this.deliveryStatus(request, record, state, message));
   }
 
   private emitActivity(
@@ -127,12 +180,12 @@ export class CommandDispatcher {
     status: AgentActivityPayload['status'],
     overrides: Partial<AgentActivityPayload> = {}
   ) {
-    if (!this.activitySink) return;
+    if (!this.outboundSink) return;
     const snapshot = this.state.snapshot();
     const providerId = overrides.providerId || payload.providerId || snapshot.activeProviderId;
     const activeProvider = snapshot.providers.find((provider) => provider.id === providerId) || snapshot.providers[0];
     const agent = overrides.agent || payload.agent || activeProvider?.agents?.[0]?.id || 'unknown';
-    this.activitySink(createEnvelope<AgentActivityPayload>({
+    this.outboundSink(createEnvelope<AgentActivityPayload>({
       type: 'agent.activity',
       source: this.deviceEndpoint,
       target: request.source,

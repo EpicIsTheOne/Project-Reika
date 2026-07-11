@@ -183,7 +183,7 @@ function NotificationDetailPanel({
     return (
       <aside className="notification-detail-panel motion-surface">
         <section className="notification-detail-content">
-          <img className="empty-state-art" src={artRuntime.agentArt("reika", "chibi-small", artRuntime.globalArt("global-empty-states", assets.empty.noChat, "notifications-empty-global"), "notifications-empty")} alt="" />
+          <img className="empty-state-art" src={artRuntime.agentArt("reika", "chibi-small", artRuntime.globalArt("global-empty-states", assets.empty.noChat, "notifications-empty-global"), "notifications-empty")} alt="" loading="lazy" decoding="async" />
           <h2>No notification selected</h2>
           <p>The inbox is quiet.</p>
         </section>
@@ -210,7 +210,7 @@ function NotificationDetailPanel({
           <DetailRow label="Type" value={notificationTag(item)} icon={Bot} />
           <DetailRow label="Time" value={absoluteTime(item.createdAt)} icon={Activity} />
           <DetailRow label="Source" value={item.source} icon={Box} />
-          <button onClick={onOpenChat}>View Profile</button>
+          <button onClick={onOpenChat}>Open Chat</button>
         </div>
 
         <section className="quick-actions">

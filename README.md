@@ -1,5 +1,7 @@
 # Project Reika
 
+> Current implementation and safety status: see [`docs/CURRENT_ARCHITECTURE.md`](docs/CURRENT_ARCHITECTURE.md) and [`AUDIT_FIX_CHECKLIST.md`](AUDIT_FIX_CHECKLIST.md). Older phase plans are historical context, not current release constraints.
+
 Project Reika is the workspace for Reika's multi-device AgentHub system.
 
 The repo is split into clear lanes so Astra and Codex can work in parallel without turning the architecture into soup.

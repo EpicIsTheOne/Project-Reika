@@ -207,6 +207,7 @@ export async function sendRelayChat(
       return await sendRelayChatOverSocket(url, request, timeoutMs);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+      if ((lastError as Error & { requestSent?: boolean }).requestSent) break;
     }
   }
   throw lastError ?? new Error("Relay app socket could not connect for chat.");
@@ -220,6 +221,8 @@ function sendRelayChatOverSocket(
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(socketUrl);
     let settled = false;
+    let requestSent = false;
+    const transportError = (message: string) => Object.assign(new Error(message), { requestSent });
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
@@ -233,6 +236,7 @@ function sendRelayChatOverSocket(
 
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify(request));
+      requestSent = true;
     });
 
     socket.addEventListener("message", (event) => {
@@ -258,13 +262,17 @@ function sendRelayChatOverSocket(
     });
 
     socket.addEventListener("error", () => {
-      finish(() => reject(new Error("Relay app socket could not connect for chat.")));
+      finish(() => reject(transportError("Relay app socket could not connect for chat.")));
     });
 
     socket.addEventListener("close", () => {
-      if (!settled) finish(() => reject(new Error("Relay app socket closed before chat completed.")));
+      if (!settled) finish(() => reject(transportError("Relay app socket closed before chat completed.")));
     });
   });
+  request.payload = {
+    ...request.payload,
+    delivery: { idempotencyKey: request.id, statusMetadataVersion: 1 }
+  };
 }
 
 async function readWebSocketMessage(data: MessageEvent["data"]) {

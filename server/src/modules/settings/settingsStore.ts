@@ -40,7 +40,7 @@ const defaultSettings: ReikaSettings = {
   version: 1,
   language: 'English',
   startupView: 'home',
-  relayUrl: process.env.REIKA_RELAY_URL || 'wss://relay.techexplore.us/v1/device',
+  relayUrl: process.env.REIKA_RELAY_URL || 'ws://127.0.0.1:8790/v1/device',
   theme: 'dark',
   minimizeToTray: true,
   mockEnabled: true,
