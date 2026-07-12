@@ -8,6 +8,7 @@ import { assets } from "../../data/assets";
 import { approveRelayPairingCode, claimRelayPairingCode, createRelayPairingCode, getRelayPairingCode, listRelayDevices, requestRelayDevice, type RelayDeviceRecord, type RelayPairing } from "../../data/relay";
 import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "../../data/startup";
 import { filterDeviceRows, formatMetric, formatRelativeTime, getAgentAvatar, mapLocalDeviceRecord, mapRelayDeviceRecord, nextDeviceFilter, startupMatchesDevice, titleCase, type DevicePageRow } from "../../domain/reikaMappers";
+import { mergeLocalAndRelayPresence } from "../../domain/presence";
 import { AgentConnectionWizard } from "../connection/AgentConnectionWizard";
 import type { ArtRuntime } from "../../lib/artRuntime";
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
@@ -48,17 +49,14 @@ export function DevicesView({
   const activeRelayUrl = normalizeRelayDeviceUrl(relayUrl);
   const relayRows = useMemo(() => relayDevices.map((record) => mapRelayDeviceRecord(record, activeRelayUrl)), [relayDevices, activeRelayUrl]);
   const localRows = useMemo(() => localDevices.map(mapLocalDeviceRecord), [localDevices]);
-  const sourceRows = relayRows.length > 0 ? relayRows : localRows;
+  const sourceRows = useMemo(() => mergeLocalAndRelayPresence(localRows, relayRows), [localRows, relayRows]);
   const displayRows = useMemo(
     () => filterDeviceRows(sourceRows, deviceSearch, deviceFilter),
     [sourceRows, deviceSearch, deviceFilter]
   );
-  const deviceSourceLabel =
-    relayRows.length > 0
-      ? `${relayRows.length} paired ${relayRows.length === 1 ? "device" : "devices"}`
-      : localRows.length > 0
-        ? "Local server device"
-        : "No devices connected";
+  const deviceSourceLabel = sourceRows.length > 0
+    ? `${sourceRows.length} observed ${sourceRows.length === 1 ? "device" : "devices"}`
+    : "No devices connected";
   const selectedDevice = displayRows.find((device) => device.id === selectedId) ?? displayRows[0];
   const onlineCount = displayRows.filter((device) => device.status === "online").length;
   const idleCount = displayRows.filter((device) => device.status === "busy" || device.statusLabel === "Idle").length;

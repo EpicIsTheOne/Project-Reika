@@ -130,7 +130,8 @@ export function mapReikaMessage(message: ReikaChatMessage): ChatMessage {
     id: message.id,
     sender: message.role === "assistant" ? "agent" : message.role,
     body: message.text,
-    time: formatClock(message.timestamp)
+    time: formatClock(message.timestamp),
+    meta: message.meta
   };
 }
 

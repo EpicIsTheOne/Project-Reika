@@ -11,6 +11,8 @@ export type ServerEventType =
   | 'chat.accepted'
   | 'chat.thinking'
   | 'chat.response'
+  | 'chat.tool'
+  | 'chat.delegation'
   | 'chat.error'
   | 'chat.done'
   | 'chat.history.imported'

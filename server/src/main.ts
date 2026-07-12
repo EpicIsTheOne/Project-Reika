@@ -8,6 +8,9 @@ import { CommandDispatcher } from './modules/commands/dispatcher.js';
 import { ArtStore } from './modules/art/artStore.js';
 import { FileStore, publicFile } from './modules/file/fileStore.js';
 import { NotificationStore } from './modules/notification/notificationStore.js';
+import { MemoryMeshStore } from './modules/memoryMesh/memoryMeshStore.js';
+import { ReikaMemoryToolRuntime, createReikaToolCall, reikaMemoryToolDefinitions, toCommandCenterToolSchemas, toHermesToolManifest, toOpenAiToolSchemas } from './modules/memoryMesh/toolRuntime.js';
+import type { MemoryAccessContext, MemoryRecord, MeshAgent, MeshDevice, MeshProject, ReikaMemoryToolName, RouteDecision, RoutingTask } from './modules/memoryMesh/types.js';
 import { findProvider, getProviderHistoryMessages, listProviderHistorySessions, runProviderChat, type ProviderChatEvent, type ProviderChatMessage, type ProviderHistoryMessage, type ProviderHistorySession } from './modules/provider/providerRuntime.js';
 import { SettingsStore } from './modules/settings/settingsStore.js';
 import { SessionStore, type ChatMessageRecord, type ChatSessionRecord } from './modules/session/sessionStore.js';
@@ -178,6 +181,7 @@ const files = new FileStore();
 const art = new ArtStore();
 const settings = new SettingsStore();
 const notifications = new NotificationStore();
+const memoryMesh = new MemoryMeshStore();
 const deviceEndpoint = { kind: 'device' as const, id: serverConfig.uplink.deviceId };
 const appEndpoint = { kind: 'app' as const, id: 'local-simulator' };
 const dispatcher = new CommandDispatcher(state, deviceEndpoint, async (payload) => {
@@ -231,6 +235,7 @@ async function boot() {
   events.emit('file.store.loaded', files.snapshot());
   events.emit('art.store.loaded', art.snapshot());
   await state.refreshProviders({ mockEnabled: settings.get().mockEnabled });
+  syncLocalStateToMemoryMesh();
   events.emit('provider.state', state.snapshot().providers);
   relayClient.start();
   if (cli.mode === 'pair') {
@@ -255,6 +260,7 @@ function fullSnapshot() {
     sessionStore: sessions.snapshot(),
     fileStore: files.snapshot(),
     artStore: art.snapshot(),
+    memoryMesh: memoryMesh.snapshot(),
     uplink: relayClient.snapshot()
   };
 }
@@ -345,6 +351,105 @@ async function relayFetch<T = unknown>(baseUrl: string, path: string, method = '
   const payload = await response.json().catch(() => undefined) as T & { error?: string; ok?: boolean };
   if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `Relay request failed (${response.status}).`);
   return payload as T;
+}
+
+function meshStatus(value: unknown): MeshDevice['status'] {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'online' || normalized === 'ready' || normalized === 'available' || normalized === 'preferred') return 'online';
+  if (normalized === 'busy' || normalized === 'thinking' || normalized === 'responding') return 'busy';
+  if (normalized === 'offline' || normalized === 'error') return 'offline';
+  return 'unknown';
+}
+
+function discoveredAgentId(deviceId: string, providerId: string, providerAgentId: string) {
+  return `${deviceId}:${providerId}:${providerAgentId}`;
+}
+
+function syncLocalStateToMemoryMesh() {
+  const snapshot = state.snapshot();
+  const now = new Date().toISOString();
+  memoryMesh.registerDevice({
+    id: snapshot.device.id,
+    name: snapshot.device.name,
+    operatingSystem: snapshot.device.platform,
+    status: meshStatus(snapshot.device.status),
+    availableProviders: snapshot.providers.map((provider) => provider.id),
+    availableTools: Array.from(new Set(snapshot.providers.flatMap((provider) => provider.capabilities.map((capability) => capability.id)))),
+    relayEndpoint: settings.get().relayUrl,
+    lastSeenAt: now
+  });
+  for (const provider of snapshot.providers) {
+    for (const agent of provider.agents) {
+      memoryMesh.registerAgent({
+        id: discoveredAgentId(snapshot.device.id, provider.id, agent.id),
+        displayName: agent.name,
+        description: agent.label || `${agent.name} discovered through ${provider.name}.`,
+        capabilities: provider.capabilities.filter((capability) => !capability.planned).map((capability) => capability.id),
+        providerId: provider.id,
+        providerAgentId: agent.id,
+        deviceId: snapshot.device.id,
+        status: meshStatus(provider.status),
+        supportedTools: provider.capabilities.filter((capability) => !capability.planned).map((capability) => capability.id),
+        permissions: ['local-discovery'],
+        relayEndpoint: settings.get().relayUrl,
+        lastSeenAt: now
+      });
+    }
+  }
+}
+
+async function syncMemoryMeshDiscovery() {
+  syncLocalStateToMemoryMesh();
+  const baseUrl = relayApiBaseUrl(settings.get().relayUrl);
+  if (!baseUrl) return { syncedLocal: true, syncedRelayDevices: 0, warning: 'Relay URL is not usable for HTTP discovery.' };
+  try {
+    const response = await relayFetch<{ devices?: Array<{ device?: Record<string, unknown>; socketConnected?: boolean; lastHeartbeatAt?: string }> }>(baseUrl, '/devices');
+    let syncedRelayDevices = 0;
+    for (const record of response.devices || []) {
+      const device = record.device || {};
+      const deviceId = String(device.id || '').trim();
+      if (!deviceId) continue;
+      const providers = Array.isArray(device.providers) ? device.providers.filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object')) : [];
+      memoryMesh.registerDevice({
+        id: deviceId,
+        name: String(device.name || deviceId),
+        operatingSystem: String(device.platform || device.type || 'unknown'),
+        status: record.socketConnected ? 'online' : meshStatus(device.status),
+        availableProviders: providers.map((provider) => String(provider.id || '')).filter(Boolean),
+        availableTools: Array.from(new Set(providers.flatMap((provider) => Array.isArray(provider.capabilities) ? provider.capabilities.map(String) : []))),
+        relayEndpoint: settings.get().relayUrl,
+        lastSeenAt: String(record.lastHeartbeatAt || device.lastSeenAt || '') || undefined
+      });
+      for (const provider of providers) {
+        const providerId = String(provider.id || '').trim();
+        if (!providerId) continue;
+        const providerCapabilities = Array.isArray(provider.capabilities) ? provider.capabilities.map(String) : [];
+        const agents = Array.isArray(provider.agents) ? provider.agents.filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object')) : [];
+        for (const agent of agents) {
+          const providerAgentId = String(agent.id || agent.name || '').trim();
+          if (!providerAgentId) continue;
+          memoryMesh.registerAgent({
+            id: discoveredAgentId(deviceId, providerId, providerAgentId),
+            displayName: String(agent.name || providerAgentId),
+            description: String(agent.role || `Agent discovered through ${String(provider.name || providerId)}.`),
+            capabilities: Array.isArray(agent.capabilities) ? agent.capabilities.map(String) : providerCapabilities,
+            providerId,
+            providerAgentId,
+            deviceId,
+            status: record.socketConnected ? meshStatus(agent.status || 'online') : 'offline',
+            supportedTools: Array.isArray(agent.capabilities) ? agent.capabilities.map(String) : providerCapabilities,
+            permissions: ['relay-discovery'],
+            relayEndpoint: settings.get().relayUrl,
+            lastSeenAt: String(record.lastHeartbeatAt || device.lastSeenAt || '') || undefined
+          });
+        }
+      }
+      syncedRelayDevices += 1;
+    }
+    return { syncedLocal: true, syncedRelayDevices };
+  } catch (error) {
+    return { syncedLocal: true, syncedRelayDevices: 0, warning: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 function summarizeUpdateFiles(files: { path: string }[]) {
@@ -601,6 +706,36 @@ async function runChatTurn(input: { sessionId?: string; providerSessionId?: stri
   return enqueueChatTurn(session.id, () => executeChatTurn(session, input, onEvent));
 }
 
+function naturalProjectReference(message: string) {
+  const normalized = message.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!normalized) return { status: 'not_found' as const, projects: [] as MeshProject[] };
+  const matched = memoryMesh.listProjects().filter((project) => [project.name, ...project.aliases].some((label) => {
+    const phrase = label.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!phrase) return false;
+    return new RegExp(`(?:^|[^a-z0-9])${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^a-z0-9])`, 'i').test(normalized);
+  }));
+  if (!matched.length) return { status: 'not_found' as const, projects: matched };
+  if (matched.length > 1) return { status: 'ambiguous' as const, projects: matched };
+  return { status: 'resolved' as const, projects: matched, project: matched[0] };
+}
+
+function looksLikeProjectWork(message: string) {
+  return /\b(?:fix|update|change|add|remove|build|implement|test|check|inspect|investigate|debug|refactor|deploy|run|work\s+on|review|repair|create|modify|finish|continue|handle|can\s+you|could\s+you|please)\b/i.test(message);
+}
+
+function currentMeshAgentId(providerId: string, providerAgentId: string) {
+  return memoryMesh.listAgents().find((agent) => agent.deviceId === state.device.id && agent.providerId === providerId && agent.providerAgentId === providerAgentId)?.id;
+}
+
+function routeExplanation(task: RoutingTask) {
+  const decision = task.decision;
+  if (task.status === 'completed') return `${decision.agent?.displayName || 'The selected agent'} completed the task for ${decision.project?.name || 'the project'}.\n\n${task.result || 'The task completed without a text result.'}`;
+  if (task.status === 'cancelled') return `The delegated task for ${decision.project?.name || 'the project'} was cancelled.`;
+  if (task.status === 'failed') return `The delegated task for ${decision.project?.name || 'the project'} failed: ${task.error || 'unknown remote error'}`;
+  const details = decision.considered.flatMap((candidate) => candidate.reasons.map((reason) => `${candidate.agentId}: ${reason}`)).slice(0, 6);
+  return [`I could not route this task for ${decision.project?.name || 'that project'}.`, ...decision.reasons, ...details].join('\n');
+}
+
 async function executeChatTurn(session: ChatSession, input: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; model?: string; title?: string; metadata?: Record<string, unknown>; fileIds?: unknown }, onEvent?: (event: ProviderChatEvent) => void) {
   const providers = state.snapshot().providers;
   const requestedProviderId = input.providerId || session.providerId;
@@ -616,6 +751,35 @@ async function executeChatTurn(session: ChatSession, input: { sessionId?: string
     onEvent?.(event);
   };
   try {
+    const projectReference = input.metadata?.skipMemoryMeshRouting === true || !looksLikeProjectWork(input.message) ? { status: 'not_found' as const, projects: [] as MeshProject[] } : naturalProjectReference(input.message);
+    if (projectReference.status === 'ambiguous') {
+      const candidates = projectReference.projects.map((project) => project.name);
+      const lifecycle = [{ stage: 'resolving', at: new Date().toISOString() }, { stage: 'clarification_required', at: new Date().toISOString(), candidates }];
+      handler({ type: 'delegation', data: { stage: 'clarification_required', candidates } });
+      const text = `I found multiple matching projects: ${candidates.join(', ')}. Which one did you mean?`;
+      const assistantMessage = appendMessage(session, 'assistant', text, { providerId: session.providerId, agent: session.agent, runtime: 'memory-mesh', memoryMesh: { status: 'ambiguous', lifecycle, candidates } });
+      return { session, userMessage, assistantMessage, result: { providerId: session.providerId, agentId: session.agent, sessionId: session.id, runtime: 'memory-mesh' as const, text, metadata: { memoryMesh: assistantMessage.meta?.memoryMesh } } };
+    }
+    if (projectReference.status === 'resolved' && projectReference.project) {
+      const lifecycle: Array<Record<string, unknown>> = [];
+      const sourceAgentId = currentMeshAgentId(input.providerId || session.providerId, input.agent || session.agent);
+      const task = await executeMemoryMeshTask({
+        projectQuery: projectReference.project.name,
+        task: input.message,
+        currentAgentId: sourceAgentId,
+        currentDeviceId: state.device.id,
+        recentProjectIds: Array.isArray(session.metadata.recentProjectIds) ? session.metadata.recentProjectIds.map(String) : []
+      }, (stage, data) => {
+        const item = { stage, at: new Date().toISOString(), ...data };
+        lifecycle.push(item);
+        handler({ type: 'delegation', data: item });
+      });
+      session.metadata.recentProjectIds = [projectReference.project.id, ...(Array.isArray(session.metadata.recentProjectIds) ? session.metadata.recentProjectIds.map(String) : []).filter((id) => id !== projectReference.project!.id)].slice(0, 5);
+      const text = routeExplanation(task);
+      const meshMeta = { taskId: task.id, status: task.status, projectId: task.projectId, targetAgentId: task.targetAgentId, targetDeviceId: task.targetDeviceId, reasons: task.decision.reasons, lifecycle };
+      const assistantMessage = appendMessage(session, 'assistant', text, { providerId: session.providerId, agent: session.agent, runtime: 'memory-mesh', memoryMesh: meshMeta });
+      return { session, userMessage, assistantMessage, result: { providerId: session.providerId, agentId: session.agent, sessionId: session.id, runtime: 'memory-mesh' as const, text, metadata: { memoryMesh: meshMeta } } };
+    }
     const result = await runProviderChat({
       providerId: input.providerId || session.providerId,
       agentId: input.agent || session.agent,
@@ -661,6 +825,172 @@ async function executeChatTurn(session: ChatSession, input: { sessionId?: string
   }
 }
 
+function memoryActor(req: http.IncomingMessage): MemoryAccessContext {
+  const agentHeader = req.headers['x-reika-agent-id'];
+  const deviceHeader = req.headers['x-reika-device-id'];
+  const agentId = Array.isArray(agentHeader) ? agentHeader[0] : agentHeader;
+  const deviceId = Array.isArray(deviceHeader) ? deviceHeader[0] : deviceHeader;
+  return agentId ? { agentId, deviceId, isUser: false } : { isUser: true };
+}
+
+function compactTaskContext(decision: RouteDecision, task: string) {
+  if (!decision.project || !decision.agent || !decision.device) return task;
+  const actor = { agentId: decision.agent.id, deviceId: decision.device.id, isUser: false };
+  const memories = memoryMesh.getRelevantMemories({
+    task,
+    projectId: decision.project.id,
+    agentId: decision.agent.id,
+    deviceId: decision.device.id,
+    limit: 8
+  }, actor);
+  const contextLines = memories.map((memory) => `- [${memory.scope}; source=${memory.source}] ${memory.content.slice(0, 600)}`);
+  return [
+    `Project: ${decision.project.name}`,
+    decision.localPath ? `Device-specific project path: ${decision.localPath}` : '',
+    `Task: ${task}`,
+    contextLines.length ? `Relevant Memory Mesh context:\n${contextLines.join('\n')}` : '',
+    'Return a concise result describing the work, verification, and any blockers. Do not assume paths from another device are valid.'
+  ].filter(Boolean).join('\n\n');
+}
+
+async function relaySocketText(data: unknown) {
+  if (typeof data === 'string') return data;
+  if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
+  if (data && typeof data === 'object' && 'text' in data && typeof (data as { text?: unknown }).text === 'function') return (data as { text: () => Promise<string> }).text();
+  return String(data);
+}
+
+function relayAppUrl(relayDeviceUrl: string) {
+  const url = new URL(relayDeviceUrl);
+  url.pathname = url.pathname.replace(/\/device\/?$/u, '/app');
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
+async function sendRemoteMemoryMeshTask(decision: RouteDecision, message: string, timeoutMs = 120_000, signal?: AbortSignal) {
+  if (!decision.device || !decision.agent || !decision.providerId) throw new Error('Route decision is incomplete.');
+  const request = createEnvelope({
+    type: 'agent.chat.request',
+    source: { kind: 'app', id: 'reika-memory-mesh' },
+    target: { kind: 'device', id: decision.device.id },
+    deviceId: decision.device.id,
+    payload: {
+      providerId: decision.providerId,
+      agent: decision.agent.providerAgentId,
+      sessionId: `mesh_${crypto.randomUUID()}`,
+      message,
+      delivery: { idempotencyKey: crypto.randomUUID(), statusMetadataVersion: 1 as const }
+    }
+  });
+  const socket = new WebSocket(relayAppUrl(decision.agent.relayEndpoint || settings.get().relayUrl));
+  return new Promise<{ text: string; sessionId?: string }>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      socket.close();
+      callback();
+    };
+    const abort = () => finish(() => reject(new Error('Memory Mesh task was cancelled.')));
+    const timer = setTimeout(() => finish(() => reject(new Error('Memory Mesh relay task timed out.'))), timeoutMs);
+    if (signal?.aborted) return abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    socket.addEventListener('open', () => socket.send(JSON.stringify(request)));
+    socket.addEventListener('message', (event) => void (async () => {
+      try {
+        const envelope = JSON.parse(await relaySocketText(event.data)) as { type?: string; replyTo?: string; correlationId?: string; payload?: Record<string, unknown> };
+        if (envelope.replyTo !== request.id && envelope.correlationId !== request.id) return;
+        if (envelope.type === 'agent.chat.response') {
+          finish(() => resolve({ text: String(envelope.payload?.text || ''), sessionId: String(envelope.payload?.sessionId || '') || undefined }));
+        } else if (envelope.type === 'command.rejected' || envelope.type === 'command.failed') {
+          finish(() => reject(new Error(String(envelope.payload?.message || 'Memory Mesh relay task failed.'))));
+        }
+      } catch {
+        // Ignore unrelated relay broadcasts and malformed messages.
+      }
+    })());
+    socket.addEventListener('error', () => finish(() => reject(new Error('Memory Mesh could not connect to the relay app socket.'))));
+    socket.addEventListener('close', () => {
+      if (!settled) finish(() => reject(new Error('Memory Mesh relay socket closed before the task completed.')));
+    });
+  });
+}
+
+const activeMemoryMeshTasks = new Map<string, AbortController>();
+
+async function executeMemoryMeshTask(input: { projectQuery: string; task: string; requiredCapabilities?: string[]; currentAgentId?: string; currentDeviceId?: string; recentProjectIds?: string[] }, onLifecycle?: (stage: string, data: Record<string, unknown>) => void) {
+  const currentDeviceId = input.currentDeviceId || state.device.id;
+  onLifecycle?.('resolving', { projectQuery: input.projectQuery });
+  const decision = memoryMesh.routeTask({ ...input, currentDeviceId });
+  onLifecycle?.('route_planned', { decision });
+  const task = memoryMesh.createRoutingTask({
+    request: input.task,
+    requiredCapabilities: input.requiredCapabilities,
+    sourceAgentId: input.currentAgentId,
+    sourceDeviceId: currentDeviceId,
+    decision
+  });
+  if (decision.status !== 'selected' || !decision.agent || !decision.device || !decision.project) return task;
+  const controller = new AbortController();
+  activeMemoryMeshTasks.set(task.id, controller);
+  memoryMesh.updateRoutingTask(task.id, { status: 'running' });
+  onLifecycle?.('delegating', { taskId: task.id, agent: decision.agent, device: decision.device, executeLocally: decision.executeLocally, reasons: decision.reasons });
+  try {
+    const prompt = compactTaskContext(decision, input.task);
+    if (controller.signal.aborted || memoryMesh.getRoutingTask(task.id)?.status === 'cancelled') return memoryMesh.getRoutingTask(task.id)!;
+    onLifecycle?.('working', { taskId: task.id, targetAgentId: decision.agent.id, targetDeviceId: decision.device.id });
+    let result: string;
+    if (decision.executeLocally) {
+      const turn = await runChatTurn({
+        sessionId: `mesh_${task.id}`,
+        providerId: decision.providerId,
+        agent: decision.agent.providerAgentId,
+        message: prompt,
+        title: `${decision.project.name}: routed task`,
+        metadata: { memoryMeshTaskId: task.id, projectId: decision.project.id, skipMemoryMeshRouting: true }
+      });
+      result = turn.result.text;
+    } else {
+      result = (await sendRemoteMemoryMeshTask(decision, prompt, 120_000, controller.signal)).text;
+    }
+    if (controller.signal.aborted || memoryMesh.getRoutingTask(task.id)?.status === 'cancelled') return memoryMesh.getRoutingTask(task.id)!;
+    const completed = memoryMesh.updateRoutingTask(task.id, { status: 'completed', result })!;
+    memoryMesh.addMemory({
+      content: `Task: ${input.task}\nResult: ${result}`,
+      scope: 'project',
+      projectId: decision.project.id,
+      createdBy: decision.agent.id,
+      source: `routing-task:${task.id}`,
+      tags: ['routed-task', 'completed'],
+      confidence: 0.9,
+      importance: 0.7,
+      permissions: { visibility: 'project', access: 'read_write' }
+    }, { isUser: true });
+    onLifecycle?.('memory_updated', { taskId: task.id, projectId: decision.project.id });
+    onLifecycle?.('completed', { taskId: task.id, result });
+    return completed;
+  } catch (error) {
+    const cancelled = controller.signal.aborted || memoryMesh.getRoutingTask(task.id)?.status === 'cancelled';
+    const failed = cancelled
+      ? memoryMesh.updateRoutingTask(task.id, { status: 'cancelled', error: 'Cancelled by request.' })!
+      : memoryMesh.updateRoutingTask(task.id, { status: 'failed', error: error instanceof Error ? error.message : String(error) })!;
+    onLifecycle?.(cancelled ? 'cancelled' : 'failed', { taskId: task.id, error: failed.error });
+    return failed;
+  } finally {
+    activeMemoryMeshTasks.delete(task.id);
+  }
+}
+
+function cancelMemoryMeshTask(taskId: string) {
+  activeMemoryMeshTasks.get(taskId)?.abort();
+  return memoryMesh.cancelRoutingTask(taskId);
+}
+
+const memoryMeshTools = new ReikaMemoryToolRuntime(memoryMesh, { delegateTask: executeMemoryMeshTask, cancelTask: cancelMemoryMeshTask });
+
 function writeSse(res: http.ServerResponse, event: string, data: unknown) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -691,6 +1021,269 @@ const server = http.createServer(async (req, res) => {
       const html = pairingPage(state.device, relayClient.snapshot(), await getStartupStatus());
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(html);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/memory-mesh/overview') {
+      sendJson(res, 200, {
+        ok: true,
+        storage: memoryMesh.snapshot(),
+        agents: memoryMesh.listAgents(),
+        devices: memoryMesh.listDevices(),
+        projects: memoryMesh.listProjects(),
+        memories: memoryMesh.searchMemory({ limit: 40 }, memoryActor(req)),
+        routingTasks: memoryMesh.listRoutingTasks(40)
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/memory-mesh/discovery/sync') {
+      const discovery = await syncMemoryMeshDiscovery();
+      sendJson(res, 200, { ok: true, discovery, storage: memoryMesh.snapshot() });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/memory-mesh/tools') {
+      const format = url.searchParams.get('format') || 'canonical';
+      const tools = format === 'openai'
+        ? toOpenAiToolSchemas()
+        : format === 'commandcenter'
+          ? toCommandCenterToolSchemas()
+          : format === 'hermes'
+            ? toHermesToolManifest()
+            : reikaMemoryToolDefinitions;
+      sendJson(res, 200, { ok: true, format, tools });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/memory-mesh/tools/execute') {
+      const body = await readJson(req);
+      const name = String(body.name || '') as ReikaMemoryToolName;
+      if (!reikaMemoryToolDefinitions.some((definition) => definition.name === name)) {
+        sendJson(res, 400, { ok: false, error: `Unknown Memory Mesh tool: ${name || '(missing)'}` });
+        return;
+      }
+      const actor = memoryActor(req);
+      const result = await memoryMeshTools.execute(createReikaToolCall(name, body.arguments && typeof body.arguments === 'object' ? body.arguments as Record<string, unknown> : {}), {
+        actor,
+        sessionId: typeof body.sessionId === 'string' ? body.sessionId : undefined,
+        currentAgentId: actor.agentId,
+        currentDeviceId: actor.deviceId || state.device.id
+      });
+      sendJson(res, result.ok ? 200 : 403, result);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/memory-mesh/agents') {
+      sendJson(res, 200, { ok: true, agents: memoryMesh.listAgents() });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/memory-mesh/agents') {
+      const body = await readJson(req);
+      const agent = memoryMesh.registerAgent(body as unknown as Partial<MeshAgent> & Pick<MeshAgent, 'id' | 'displayName'>);
+      sendJson(res, 201, { ok: true, agent });
+      return;
+    }
+
+    const meshAgentMatch = url.pathname.match(/^\/memory-mesh\/agents\/([^/]+)$/u);
+    if (req.method === 'PATCH' && meshAgentMatch) {
+      const id = decodeURIComponent(meshAgentMatch[1]);
+      const current = memoryMesh.getAgent(id);
+      if (!current) { sendJson(res, 404, { ok: false, error: 'Memory Mesh agent not found.' }); return; }
+      const body = await readJson(req);
+      const agent = memoryMesh.registerAgent({ ...current, ...body, id, displayName: String(body.displayName || current.displayName) });
+      sendJson(res, 200, { ok: true, agent });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/memory-mesh/devices') {
+      sendJson(res, 200, { ok: true, devices: memoryMesh.listDevices() });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/memory-mesh/devices') {
+      const body = await readJson(req);
+      const device = memoryMesh.registerDevice(body as unknown as Partial<MeshDevice> & Pick<MeshDevice, 'id' | 'name'>);
+      sendJson(res, 201, { ok: true, device });
+      return;
+    }
+
+    const meshDeviceMatch = url.pathname.match(/^\/memory-mesh\/devices\/([^/]+)$/u);
+    if (req.method === 'PATCH' && meshDeviceMatch) {
+      const id = decodeURIComponent(meshDeviceMatch[1]);
+      const current = memoryMesh.getDevice(id);
+      if (!current) { sendJson(res, 404, { ok: false, error: 'Memory Mesh device not found.' }); return; }
+      const body = await readJson(req);
+      const device = memoryMesh.registerDevice({ ...current, ...body, id, name: String(body.name || current.name) });
+      sendJson(res, 200, { ok: true, device });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/memory-mesh/projects') {
+      sendJson(res, 200, { ok: true, projects: memoryMesh.listProjects() });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/memory-mesh/projects') {
+      const body = await readJson(req);
+      const project = memoryMesh.createProject(body as unknown as Partial<MeshProject> & Pick<MeshProject, 'name'>);
+      sendJson(res, 201, { ok: true, project });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/memory-mesh/projects/resolve') {
+      const resolution = memoryMesh.resolveProject(url.searchParams.get('q') || '', {
+        agentId: url.searchParams.get('agentId') || undefined,
+        recentProjectIds: (url.searchParams.get('recentProjectIds') || '').split(',').filter(Boolean)
+      });
+      sendJson(res, resolution.status === 'not_found' ? 404 : resolution.status === 'ambiguous' ? 409 : 200, { ok: resolution.status === 'resolved', resolution });
+      return;
+    }
+
+    const meshProjectMatch = url.pathname.match(/^\/memory-mesh\/projects\/([^/]+)$/u);
+    if (req.method === 'PATCH' && meshProjectMatch) {
+      const id = decodeURIComponent(meshProjectMatch[1]);
+      const body = await readJson(req);
+      const project = memoryMesh.updateProject(id, body as Partial<MeshProject>);
+      if (!project) { sendJson(res, 404, { ok: false, error: 'Memory Mesh project not found.' }); return; }
+      sendJson(res, 200, { ok: true, project });
+      return;
+    }
+
+    if (req.method === 'DELETE' && meshProjectMatch) {
+      const deleted = memoryMesh.deleteProject(decodeURIComponent(meshProjectMatch[1]));
+      sendJson(res, deleted ? 200 : 404, { ok: deleted });
+      return;
+    }
+
+    const meshProjectAgentsMatch = url.pathname.match(/^\/memory-mesh\/projects\/([^/]+)\/agents$/u);
+    if (req.method === 'POST' && meshProjectAgentsMatch) {
+      const body = await readJson(req);
+      const project = memoryMesh.assignAgentToProject(decodeURIComponent(meshProjectAgentsMatch[1]), String(body.agentId || ''), {
+        role: body.role === 'primary' ? 'primary' : 'collaborator',
+        access: body.access === 'read_only' ? 'read_only' : 'read_write'
+      });
+      sendJson(res, 200, { ok: true, project });
+      return;
+    }
+
+    const meshProjectAgentMatch = url.pathname.match(/^\/memory-mesh\/projects\/([^/]+)\/agents\/([^/]+)$/u);
+    if (req.method === 'DELETE' && meshProjectAgentMatch) {
+      const project = memoryMesh.unassignAgentFromProject(decodeURIComponent(meshProjectAgentMatch[1]), decodeURIComponent(meshProjectAgentMatch[2]));
+      sendJson(res, project ? 200 : 404, { ok: Boolean(project), project });
+      return;
+    }
+
+    const meshProjectDevicesMatch = url.pathname.match(/^\/memory-mesh\/projects\/([^/]+)\/devices$/u);
+    if (req.method === 'POST' && meshProjectDevicesMatch) {
+      const body = await readJson(req);
+      const project = memoryMesh.assignDeviceToProject(decodeURIComponent(meshProjectDevicesMatch[1]), String(body.deviceId || ''), {
+        isPrimary: body.isPrimary === true,
+        path: typeof body.path === 'string' ? body.path : undefined
+      });
+      sendJson(res, 200, { ok: true, project });
+      return;
+    }
+
+    const meshProjectDeviceMatch = url.pathname.match(/^\/memory-mesh\/projects\/([^/]+)\/devices\/([^/]+)$/u);
+    if (req.method === 'DELETE' && meshProjectDeviceMatch) {
+      const project = memoryMesh.unassignDeviceFromProject(decodeURIComponent(meshProjectDeviceMatch[1]), decodeURIComponent(meshProjectDeviceMatch[2]));
+      sendJson(res, project ? 200 : 404, { ok: Boolean(project), project });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/memory-mesh/memories') {
+      const memories = memoryMesh.searchMemory({
+        q: url.searchParams.get('q') || undefined,
+        scope: (url.searchParams.get('scope') || undefined) as MemoryRecord['scope'] | undefined,
+        projectId: url.searchParams.get('projectId') || undefined,
+        agentId: url.searchParams.get('agentId') || undefined,
+        deviceId: url.searchParams.get('deviceId') || undefined,
+        sessionId: url.searchParams.get('sessionId') || undefined,
+        tags: (url.searchParams.get('tags') || '').split(',').filter(Boolean),
+        limit: Number(url.searchParams.get('limit') || 50)
+      }, memoryActor(req));
+      sendJson(res, 200, { ok: true, memories });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/memory-mesh/memories') {
+      const body = await readJson(req);
+      const actor = memoryActor(req);
+      const memory = memoryMesh.addMemory(body as unknown as Partial<MemoryRecord> & Pick<MemoryRecord, 'content' | 'scope' | 'createdBy' | 'source'>, actor);
+      sendJson(res, 201, { ok: true, memory });
+      return;
+    }
+
+    const meshMemoryMatch = url.pathname.match(/^\/memory-mesh\/memories\/([^/]+)$/u);
+    if (req.method === 'PATCH' && meshMemoryMatch) {
+      const body = await readJson(req);
+      const memory = memoryMesh.updateMemory(decodeURIComponent(meshMemoryMatch[1]), body as Partial<MemoryRecord>, memoryActor(req));
+      if (!memory) { sendJson(res, 404, { ok: false, error: 'Memory not found or not visible to this actor.' }); return; }
+      sendJson(res, 200, { ok: true, memory });
+      return;
+    }
+
+    if (req.method === 'DELETE' && meshMemoryMatch) {
+      const deleted = memoryMesh.deleteMemory(decodeURIComponent(meshMemoryMatch[1]), memoryActor(req));
+      sendJson(res, deleted ? 200 : 404, { ok: deleted });
+      return;
+    }
+
+    const promoteMemoryMatch = url.pathname.match(/^\/memory-mesh\/memories\/([^/]+)\/promote$/u);
+    if (req.method === 'POST' && promoteMemoryMatch) {
+      const body = await readJson(req);
+      const memory = memoryMesh.promoteSessionMemory(decodeURIComponent(promoteMemoryMatch[1]), body as { scope: Exclude<MemoryRecord['scope'], 'session'>; agentId?: string; projectId?: string; deviceId?: string }, memoryActor(req));
+      if (!memory) { sendJson(res, 404, { ok: false, error: 'Session memory not found or not visible.' }); return; }
+      sendJson(res, 200, { ok: true, memory });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/memory-mesh/routing/preview') {
+      const body = await readJson(req);
+      const decision = memoryMesh.routeTask({
+        projectQuery: String(body.projectQuery || ''),
+        task: String(body.task || ''),
+        requiredCapabilities: Array.isArray(body.requiredCapabilities) ? body.requiredCapabilities.map(String) : [],
+        currentAgentId: typeof body.currentAgentId === 'string' ? body.currentAgentId : undefined,
+        currentDeviceId: typeof body.currentDeviceId === 'string' ? body.currentDeviceId : state.device.id,
+        recentProjectIds: Array.isArray(body.recentProjectIds) ? body.recentProjectIds.map(String) : []
+      });
+      sendJson(res, 200, { ok: true, routable: decision.status === 'selected', decision });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/memory-mesh/tasks') {
+      sendJson(res, 200, { ok: true, tasks: memoryMesh.listRoutingTasks(Number(url.searchParams.get('limit') || 50)) });
+      return;
+    }
+
+    const meshTaskMatch = url.pathname.match(/^\/memory-mesh\/tasks\/([^/]+)$/u);
+    if (req.method === 'GET' && meshTaskMatch) {
+      const task = memoryMesh.getRoutingTask(decodeURIComponent(meshTaskMatch[1]));
+      sendJson(res, task ? 200 : 404, { ok: Boolean(task), task });
+      return;
+    }
+
+    const meshTaskCancelMatch = url.pathname.match(/^\/memory-mesh\/tasks\/([^/]+)\/cancel$/u);
+    if (req.method === 'POST' && meshTaskCancelMatch) {
+      const task = cancelMemoryMeshTask(decodeURIComponent(meshTaskCancelMatch[1]));
+      sendJson(res, task ? 200 : 404, { ok: Boolean(task), task });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/memory-mesh/tasks') {
+      const body = await readJson(req);
+      const task = await executeMemoryMeshTask({
+        projectQuery: String(body.projectQuery || ''),
+        task: String(body.task || ''),
+        requiredCapabilities: Array.isArray(body.requiredCapabilities) ? body.requiredCapabilities.map(String) : [],
+        currentAgentId: typeof body.currentAgentId === 'string' ? body.currentAgentId : undefined,
+        currentDeviceId: typeof body.currentDeviceId === 'string' ? body.currentDeviceId : undefined,
+        recentProjectIds: Array.isArray(body.recentProjectIds) ? body.recentProjectIds.map(String) : []
+      });
+      sendJson(res, 200, { ok: true, executed: task.status === 'completed', task });
       return;
     }
 
@@ -1446,6 +2039,14 @@ const server = http.createServer(async (req, res) => {
         'POST /cache/clear',
         'GET /security/sessions',
         'GET /memory/reika',
+        'GET /memory-mesh/overview',
+        'POST /memory-mesh/discovery/sync',
+        'GET|POST /memory-mesh/agents',
+        'GET|POST /memory-mesh/devices',
+        'GET|POST /memory-mesh/projects',
+        'GET|POST /memory-mesh/memories',
+        'POST /memory-mesh/routing/preview',
+        'GET|POST /memory-mesh/tasks',
         'GET /updates/status',
         'POST /updates/check',
         'POST /updates/apply',

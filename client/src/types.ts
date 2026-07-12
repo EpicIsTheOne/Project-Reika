@@ -69,6 +69,7 @@ export interface ChatMessage {
   sender: "user" | "agent" | "system";
   body: string;
   time: string;
+  meta?: Record<string, unknown>;
 }
 
-export type View = "loading" | "home" | "chat" | "devices" | "notifications" | "agentArt" | "settings";
+export type View = "loading" | "home" | "chat" | "devices" | "notifications" | "memory" | "agentArt" | "settings";

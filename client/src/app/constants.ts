@@ -1,4 +1,4 @@
-import { Bell, Home, MessageCircle, Monitor, Settings, WandSparkles } from "lucide-react";
+import { Bell, BrainCircuit, Home, MessageCircle, Monitor, Settings, WandSparkles } from "lucide-react";
 import { defaultReikaRelayDeviceUrl } from "../config/relay";
 import type { ReikaSettings } from "../lib/reikaApi";
 import type { Device, Status } from "../types";
@@ -18,6 +18,7 @@ export const navItems = [
   { key: "chat", route: "chat" as const, label: "Chats", icon: MessageCircle },
   { key: "devices", route: "devices" as const, label: "Devices", icon: Monitor },
   { key: "notifications", route: "notifications" as const, label: "Notifications", icon: Bell },
+  { key: "memory", route: "memory" as const, label: "Memory", icon: BrainCircuit },
   { key: "agent-art", route: "agentArt" as const, label: "Agent Art", icon: WandSparkles },
   { key: "settings", route: "settings" as const, label: "Settings", icon: Settings }
 ];

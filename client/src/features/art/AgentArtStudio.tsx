@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties, ChangeEvent, ElementType } from "react";
-import { Activity, Bell, Box, Check, ChevronDown, Copy, Gift, Grid2X2, Heart, Images, Info, KeyRound, Layers, Link2, List, Monitor, Plus, Sparkles, Trash2, TriangleAlert, Upload, UserRound, WandSparkles, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, ChangeEvent, ElementType, PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
+import { Activity, ArrowLeft, Bell, Box, Check, ChevronDown, Copy, Gift, Grid2X2, Heart, Images, Info, KeyRound, Layers, Link2, List, Minus, Monitor, Move, Plus, RotateCcw, Search, Sparkles, Trash2, TriangleAlert, Upload, UserRound, WandSparkles, X } from "lucide-react";
 import {
   connectArtOAuth,
   createArtCategory,
@@ -61,6 +62,8 @@ export function AgentArtStudio({
   const [placementDraft, setPlacementDraft] = useState<ReikaArtPlacement>(defaultPlacement);
   const [placementPreview, setPlacementPreview] = useState<"chat" | "avatar" | "banner">("chat");
   const [positionEditorOpen, setPositionEditorOpen] = useState(false);
+  const [discardPlacementOpen, setDiscardPlacementOpen] = useState(false);
+  const placementDrag = useRef<{ pointerId: number; startX: number; startY: number; placementX: number; placementY: number } | null>(null);
   const [promptDraft, setPromptDraft] = useState("");
   const [systemPromptDraft, setSystemPromptDraft] = useState("");
   const [linkName, setLinkName] = useState("");
@@ -102,6 +105,8 @@ export function AgentArtStudio({
   const selectedCategory = categories.find((category) => category.id === selectedCategoryId) ?? categories[0] ?? null;
   const selectedAsset = selectedCategory?.assets.find((item) => item.id === selectedCategory.selectedAssetId) ?? selectedCategory?.assets[0] ?? null;
   const selectedAssetUrl = selectedAsset ? resolveArtAssetUrl(selectedAsset) : "";
+  const savedPlacement = readAssetPlacement(selectedAsset);
+  const placementDirty = placementDraft.scale !== savedPlacement.scale || placementDraft.x !== savedPlacement.x || placementDraft.y !== savedPlacement.y;
   const selectedPreviewUrl = selectedAsset ? resolveArtAssetUrl(selectedAsset) : "";
   const selectedReferences = selectedCategory?.referenceAssetIds
     .map((id) => selectedCategory.assets.find((item) => item.id === id))
@@ -279,6 +284,8 @@ export function AgentArtStudio({
 
   const savePlacement = () => {
     if (!selectedProfile || !selectedCategory || !selectedAsset) return;
+    setDiscardPlacementOpen(false);
+    setPositionEditorOpen(false);
     runAction(
       "asset-placement",
       () => updateArtAsset(selectedProfile.id, selectedCategory.id, selectedAsset.id, { placement: placementDraft }),
@@ -287,13 +294,65 @@ export function AgentArtStudio({
   };
 
   const resetPlacement = () => {
-    if (!selectedProfile || !selectedCategory || !selectedAsset) return;
     setPlacementDraft(defaultPlacement);
-    runAction(
-      "asset-placement",
-      () => updateArtAsset(selectedProfile.id, selectedCategory.id, selectedAsset.id, { placement: null }),
-      () => "Image placement reset."
-    );
+  };
+
+  const openPositionEditor = () => {
+    setPlacementDraft(readAssetPlacement(selectedAsset));
+    setDiscardPlacementOpen(false);
+    setPositionEditorOpen(true);
+  };
+
+  const discardAndClosePositionEditor = () => {
+    setPlacementDraft(readAssetPlacement(selectedAsset));
+    setDiscardPlacementOpen(false);
+    setPositionEditorOpen(false);
+  };
+
+  const requestClosePositionEditor = () => {
+    if (placementDirty) {
+      setDiscardPlacementOpen(true);
+      return;
+    }
+    discardAndClosePositionEditor();
+  };
+
+  useEffect(() => {
+    if (!positionEditorOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      if (discardPlacementOpen) setDiscardPlacementOpen(false);
+      else requestClosePositionEditor();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [discardPlacementOpen, placementDirty, positionEditorOpen]);
+
+  const nudgePlacement = (key: keyof ReikaArtPlacement, delta: number) => {
+    setPlacementDraft((current) => ({
+      ...current,
+      [key]: Math.min(key === "scale" ? 3 : 100, Math.max(key === "scale" ? 1 : -100, current[key] + delta))
+    }));
+  };
+
+  const startPlacementDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!selectedAsset) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    placementDrag.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, placementX: placementDraft.x, placementY: placementDraft.y };
+  };
+
+  const movePlacementDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = placementDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const x = Math.max(-100, Math.min(100, drag.placementX + ((event.clientX - drag.startX) / bounds.width) * 100));
+    const y = Math.max(-100, Math.min(100, drag.placementY + ((event.clientY - drag.startY) / bounds.height) * 100));
+    setPlacementDraft((current) => ({ ...current, x: Math.round(x), y: Math.round(y) }));
+  };
+
+  const stopPlacementDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (placementDrag.current?.pointerId === event.pointerId) placementDrag.current = null;
   };
 
   const generateMore = () => {
@@ -602,7 +661,7 @@ export function AgentArtStudio({
               </div>
 
               <section className="art-detail-section art-position-editor">
-                <button className="art-position-toggle" type="button" onClick={() => setPositionEditorOpen(true)} aria-haspopup="dialog" aria-expanded={positionEditorOpen}>
+                <button className="art-position-toggle" type="button" onClick={openPositionEditor} aria-haspopup="dialog" aria-expanded={positionEditorOpen}>
                   <span>
                     <strong>Position Editor</strong>
                     <small>{selectedAsset?.name ?? "No image"} - {Math.round(placementDraft.scale * 100)}%, X {placementDraft.x}, Y {placementDraft.y}</small>
@@ -739,67 +798,111 @@ export function AgentArtStudio({
           )}
         </aside>
       </div>
-      {positionEditorOpen ? (
-        <div className="art-position-modal-backdrop" role="presentation" onMouseDown={() => setPositionEditorOpen(false)}>
+      {positionEditorOpen ? createPortal((
+        <div className="art-position-modal-backdrop" role="presentation" onMouseDown={requestClosePositionEditor}>
           <section className="art-position-modal" role="dialog" aria-modal="true" aria-label="Position Editor" onMouseDown={(event) => event.stopPropagation()}>
             <header>
               <span>
                 <h2>Position Editor</h2>
                 <p>{selectedProfile?.name ?? "Agent"} - {selectedCategory?.name ?? "Art"} - {selectedAsset?.name ?? "No image selected"}</p>
               </span>
-              <button className="icon-button compact" type="button" onClick={() => setPositionEditorOpen(false)} aria-label="Close position editor">
+              <button className="icon-button compact" type="button" onClick={requestClosePositionEditor} aria-label="Close position editor">
                 <X size={17} />
               </button>
             </header>
             <div className="art-position-modal-grid">
-              <div className="art-position-source-panel">
-                <span>Full Image</span>
-                <div className="art-position-source-preview">
-                  {selectedAssetUrl ? <img src={selectedAssetUrl} alt="" /> : <small>No artwork yet</small>}
+              <div className="art-page-preview-panel">
+                <span className="art-live-preview-label"><i /> Live page preview</span>
+                <div className={cx("art-page-preview", `mode-${placementPreview}`)}>
+                  <aside className="art-preview-portrait">
+                    <button type="button" tabIndex={-1}><ArrowLeft size={14} /> Back</button>
+                    {selectedAssetUrl ? (
+                      <div className="art-preview-drag-surface" onPointerDown={startPlacementDrag} onPointerMove={movePlacementDrag} onPointerUp={stopPlacementDrag} onPointerCancel={stopPlacementDrag}>
+                        <img src={selectedAssetUrl} alt="" draggable={false} style={placementStyle(placementDraft)} />
+                        <span><Move size={15} /> Drag to reposition</span>
+                      </div>
+                    ) : <small>No artwork yet</small>}
+                    <div className="art-preview-profile-card">
+                      <strong>{selectedProfile?.name ?? "Agent"}</strong>
+                      <small>{selectedProfile?.subtitle ?? "Your local AI agent"}</small>
+                      <span><i /> Online</span>
+                    </div>
+                  </aside>
+                  <section className="art-preview-chat">
+                    <header><span><strong>{selectedProfile?.name ?? "Agent"}</strong><small><i /> Online</small></span><Search size={16} /></header>
+                    <div className="art-preview-messages">
+                      <p>Good evening. How can I assist you tonight?</p>
+                      <p className="outgoing">Can you analyze this and summarize the findings?</p>
+                      <p>Certainly. I’ll highlight the key insights for you.</p>
+                    </div>
+                    <div className="art-preview-composer">Message {selectedProfile?.name ?? "Agent"}… <button type="button" tabIndex={-1}><ArrowLeft size={14} /></button></div>
+                  </section>
                 </div>
               </div>
-              <div className="art-position-crop-panel">
+              <aside className="art-position-crop-panel">
+                <h3>{placementPreview === "chat" ? "Chat Portrait" : placementPreview === "avatar" ? "Avatar" : "Banner"}</h3>
                 <div className="art-position-presets" role="tablist" aria-label="Preview shape">
-                  <button className={placementPreview === "chat" ? "active" : ""} type="button" onClick={() => setPlacementPreview("chat")}>Chat</button>
-                  <button className={placementPreview === "avatar" ? "active" : ""} type="button" onClick={() => setPlacementPreview("avatar")}>Avatar</button>
-                  <button className={placementPreview === "banner" ? "active" : ""} type="button" onClick={() => setPlacementPreview("banner")}>Banner</button>
+                  <button role="tab" aria-selected={placementPreview === "chat"} className={placementPreview === "chat" ? "active" : ""} type="button" onClick={() => setPlacementPreview("chat")}>Chat</button>
+                  <button role="tab" aria-selected={placementPreview === "avatar"} className={placementPreview === "avatar" ? "active" : ""} type="button" onClick={() => setPlacementPreview("avatar")}>Avatar</button>
+                  <button role="tab" aria-selected={placementPreview === "banner"} className={placementPreview === "banner" ? "active" : ""} type="button" onClick={() => setPlacementPreview("banner")}>Banner</button>
                 </div>
-                <div className={cx("art-position-preview large", `mode-${placementPreview}`)}>
-                  {selectedAssetUrl ? <img src={selectedAssetUrl} alt="" style={placementStyle(placementDraft)} /> : <span>No artwork yet</span>}
+                <details className="art-position-source" open>
+                  <summary>Source image <ChevronDown size={15} /></summary>
+                  <div>{selectedAssetUrl ? <img src={selectedAssetUrl} alt="" /> : <small>No artwork yet</small>}</div>
+                </details>
+                <p className="art-position-hint"><Move size={14} /> Drag the image in the preview to reposition</p>
+                <div className="art-position-controls modal-controls">
+                  <PositionControl label="Zoom" value={`${Math.round(placementDraft.scale * 100)}%`} onDecrease={() => nudgePlacement("scale", -0.05)} onIncrease={() => nudgePlacement("scale", 0.05)} />
+                  <input aria-label="Zoom" type="range" min="1" max="3" step="0.01" value={placementDraft.scale} onChange={(event) => setPlacementDraft((current) => ({ ...current, scale: Number(event.target.value) }))} disabled={!selectedAsset} />
+                  <PositionControl label="X" value={`${placementDraft.x}%`} onDecrease={() => nudgePlacement("x", -1)} onIncrease={() => nudgePlacement("x", 1)} />
+                  <input aria-label="Horizontal position" type="range" min="-100" max="100" step="1" value={placementDraft.x} onChange={(event) => setPlacementDraft((current) => ({ ...current, x: Number(event.target.value) }))} disabled={!selectedAsset} />
+                  <PositionControl label="Y" value={`${placementDraft.y}%`} onDecrease={() => nudgePlacement("y", -1)} onIncrease={() => nudgePlacement("y", 1)} />
+                  <input aria-label="Vertical position" type="range" min="-100" max="100" step="1" value={placementDraft.y} onChange={(event) => setPlacementDraft((current) => ({ ...current, y: Number(event.target.value) }))} disabled={!selectedAsset} />
                 </div>
-              </div>
-            </div>
-            <div className="art-position-controls modal-controls">
-              <label>
-                <span>Size</span>
-                <input type="range" min="1" max="3" step="0.01" value={placementDraft.scale} onChange={(event) => setPlacementDraft((current) => ({ ...current, scale: Number(event.target.value) }))} disabled={!selectedAsset} />
-                <b>{Math.round(placementDraft.scale * 100)}%</b>
-              </label>
-              <label>
-                <span>X</span>
-                <input type="range" min="-100" max="100" step="1" value={placementDraft.x} onChange={(event) => setPlacementDraft((current) => ({ ...current, x: Number(event.target.value) }))} disabled={!selectedAsset} />
-                <b>{placementDraft.x}</b>
-              </label>
-              <label>
-                <span>Y</span>
-                <input type="range" min="-100" max="100" step="1" value={placementDraft.y} onChange={(event) => setPlacementDraft((current) => ({ ...current, y: Number(event.target.value) }))} disabled={!selectedAsset} />
-                <b>{placementDraft.y}</b>
-              </label>
+                <div className="art-position-quick-actions">
+                  <button type="button" onClick={() => setPlacementDraft((current) => ({ ...current, x: 0, y: 0 }))}><Move size={15} /> Center</button>
+                  <button type="button" onClick={resetPlacement}><RotateCcw size={15} /> Reset</button>
+                </div>
+              </aside>
             </div>
             <footer>
-              <button className="secondary-action small" type="button" onClick={resetPlacement} disabled={!selectedAsset || busy !== null}>
-                <X size={16} />
-                Reset
+              {placementDirty ? <span className="art-position-unsaved">Unsaved position changes</span> : null}
+              <button className="secondary-action small" type="button" onClick={requestClosePositionEditor}>
+                Cancel
               </button>
               <button className="primary-action small" type="button" onClick={savePlacement} disabled={!selectedAsset || busy !== null}>
                 <Check size={16} />
                 Save Position
               </button>
             </footer>
+            {discardPlacementOpen ? (
+              <div className="art-position-discard-backdrop" role="presentation" onMouseDown={() => setDiscardPlacementOpen(false)}>
+                <section className="art-position-discard" role="alertdialog" aria-modal="true" aria-labelledby="discard-position-title" onMouseDown={(event) => event.stopPropagation()}>
+                  <TriangleAlert size={22} />
+                  <div>
+                    <h3 id="discard-position-title">Discard position changes?</h3>
+                    <p>Your current zoom and placement edits have not been saved.</p>
+                  </div>
+                  <footer>
+                    <button className="secondary-action small" type="button" onClick={() => setDiscardPlacementOpen(false)}>Keep editing</button>
+                    <button className="danger-action small" type="button" onClick={discardAndClosePositionEditor}>Discard changes</button>
+                  </footer>
+                </section>
+              </div>
+            ) : null}
           </section>
         </div>
-      ) : null}
+      ), document.body) : null}
     </main>
+  );
+}
+
+function PositionControl({ label, value, onDecrease, onIncrease }: { label: string; value: string; onDecrease: () => void; onIncrease: () => void }) {
+  return (
+    <div className="art-position-stepper">
+      <span>{label}</span>
+      <div><button type="button" onClick={onDecrease} aria-label={`Decrease ${label}`}><Minus size={14} /></button><b>{value}</b><button type="button" onClick={onIncrease} aria-label={`Increase ${label}`}><Plus size={14} /></button></div>
+    </div>
   );
 }
 

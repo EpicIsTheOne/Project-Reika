@@ -47,7 +47,7 @@ export interface ProviderChatRequest {
 }
 
 export interface ProviderChatEvent {
-  type: 'accepted' | 'thinking' | 'response' | 'error' | 'done';
+  type: 'accepted' | 'thinking' | 'response' | 'tool' | 'delegation' | 'error' | 'done';
   data: Record<string, unknown>;
 }
 
@@ -55,7 +55,7 @@ export interface ProviderChatResult {
   providerId: string;
   agentId: string;
   sessionId: string;
-  runtime: 'commandcenter' | 'openclaw' | 'hermes' | 'mock';
+  runtime: 'commandcenter' | 'openclaw' | 'hermes' | 'mock' | 'memory-mesh';
   text: string;
   raw?: string;
   metadata?: Record<string, unknown>;

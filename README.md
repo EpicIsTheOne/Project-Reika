@@ -43,6 +43,9 @@ Implemented:
 - disabled-by-default outbound relay/uplink client
 - local development endpoints for health/state/providers/uplink/events
 - local Agent Art Studio endpoints for art profiles, categories, prompts, uploads, references, saved image auth, and OpenAI-backed image generation
+- SQLite-backed Memory Mesh registries, scoped memory permissions, project resolution, and explainable local/relay task routing
+- provider-independent `reika.*` memory/discovery/routing tools with OpenAI, Command Center, and Hermes schema adapters
+- natural chat delegation with visible lifecycle, cancellation, result correlation, and sourced project-memory writeback
 - tested outbound connection against the dev relay
 
 See:
@@ -50,6 +53,8 @@ See:
 ```text
 server/README.md
 server/docs/CONNECTION-PLAN.md
+docs/REIKA_MEMORY_MESH.md
+docs/REIKA_MEMORY_MESH_NATIVE_TOOLS.md
 ```
 
 ### `client/`
@@ -68,6 +73,7 @@ Implemented:
 - working notification preferences, theme selection, cache controls, security/session status, and update status
 - relay-backed device presence, provider snapshots, active provider, and agent roster display
 - safe controls only: request state, refresh providers, request agent roster, and paired-device chat envelopes
+- Memory Mesh UI for readable memory cards, agent/device/project relationships, correction, search, and routing history
 
 See:
 
@@ -269,6 +275,6 @@ reika-agent-server updates disable client
 
 ## Guardrails
 
-Phase 1 intentionally does not include chat routing, file operations, shell commands, provider mutation, service control, or generic remote administration.
+Memory Mesh routes project tasks only through the existing provider chat transport. It does not add arbitrary file operations, shell commands, provider mutation, service control, or generic remote administration.
 
 The relay routes allowed envelopes. The device server performs local detection and answers safe requests. Keep command scope narrow until presence, pairing, and state sync are boringly reliable.

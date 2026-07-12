@@ -1,4 +1,4 @@
-export type ReikaProviderKind = "commandcenter" | "openclaw" | "hermes" | "mock";
+export type ReikaProviderKind = "commandcenter" | "openclaw" | "hermes" | "mock" | "memory-mesh";
 export type ReikaProviderStatus = "preferred" | "available" | "planned" | "offline" | "error";
 export type ReikaMessageRole = "user" | "assistant" | "system";
 
@@ -47,6 +47,117 @@ export interface ReikaDeviceSnapshot {
   startedAt?: string;
   status?: string;
   [key: string]: unknown;
+}
+
+export type MemoryMeshScope = "global" | "agent" | "project" | "device" | "session";
+export type MemoryMeshStatus = "online" | "offline" | "busy" | "unknown";
+
+export interface MemoryMeshAgent {
+  id: string;
+  displayName: string;
+  description: string;
+  capabilities: string[];
+  providerId: string;
+  providerAgentId: string;
+  deviceId: string;
+  status: MemoryMeshStatus;
+  supportedTools: string[];
+  permissions: string[];
+  relayEndpoint?: string;
+  lastSeenAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemoryMeshDevice {
+  id: string;
+  name: string;
+  operatingSystem: string;
+  status: MemoryMeshStatus;
+  availableProviders: string[];
+  availableTools: string[];
+  relayEndpoint?: string;
+  lastSeenAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemoryMeshProject {
+  id: string;
+  name: string;
+  aliases: string[];
+  description: string;
+  status: string;
+  repositoryUrl?: string;
+  technologyStack: string[];
+  permissions: string[];
+  primaryAgentId?: string;
+  primaryDeviceId?: string;
+  paths: Array<{ projectId: string; deviceId: string; path: string; isPrimary: boolean }>;
+  agentAssignments: Array<{ projectId: string; agentId: string; role: "primary" | "collaborator"; access: "read_only" | "read_write" }>;
+  deviceAssignments: Array<{ projectId: string; deviceId: string; isPrimary: boolean }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MemoryMeshMemory {
+  id: string;
+  content: string;
+  scope: MemoryMeshScope;
+  agentId?: string;
+  projectId?: string;
+  deviceId?: string;
+  sessionId?: string;
+  createdBy: string;
+  source: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  confidence: number;
+  importance: number;
+  permissions: { visibility: "global" | "private_agent" | "private_device" | "project" | "user_only"; access: "read_only" | "read_write" };
+  expiresAt?: string;
+  version: number;
+}
+
+export interface MemoryMeshRouteDecision {
+  status: "selected" | "unavailable" | "project_not_found" | "ambiguous_project";
+  project?: MemoryMeshProject;
+  agent?: MemoryMeshAgent;
+  device?: MemoryMeshDevice;
+  providerId?: string;
+  localPath?: string;
+  executeLocally: boolean;
+  score?: number;
+  reasons: string[];
+  considered: Array<{ agentId: string; eligible: boolean; score: number; reasons: string[] }>;
+}
+
+export interface MemoryMeshRoutingTask {
+  id: string;
+  projectId?: string;
+  sourceAgentId?: string;
+  sourceDeviceId?: string;
+  targetAgentId?: string;
+  targetDeviceId?: string;
+  request: string;
+  requiredCapabilities: string[];
+  status: "queued" | "running" | "completed" | "failed" | "unavailable" | "cancelled";
+  decision: MemoryMeshRouteDecision;
+  result?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export interface MemoryMeshOverview {
+  storage: { path: string; schemaVersion: number; agentCount: number; deviceCount: number; projectCount: number; memoryCount: number; taskCount: number };
+  agents: MemoryMeshAgent[];
+  devices: MemoryMeshDevice[];
+  projects: MemoryMeshProject[];
+  memories: MemoryMeshMemory[];
+  routingTasks: MemoryMeshRoutingTask[];
 }
 
 export interface ReikaSessionSummary {
@@ -381,6 +492,59 @@ export class ReikaApiError extends Error {
 }
 
 const API_BASE = "/agent";
+
+export async function getMemoryMeshOverview() {
+  return request<{ ok: true } & MemoryMeshOverview>("/memory-mesh/overview");
+}
+
+export async function syncMemoryMeshDiscovery() {
+  return request<{ ok: true; discovery: { syncedLocal: boolean; syncedRelayDevices: number; warning?: string }; storage: MemoryMeshOverview["storage"] }>("/memory-mesh/discovery/sync", { method: "POST" });
+}
+
+export async function createMemoryMeshProject(input: { name: string; aliases?: string[]; description?: string; repositoryUrl?: string; technologyStack?: string[] }) {
+  return request<{ ok: true; project: MemoryMeshProject }>("/memory-mesh/projects", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function updateMemoryMeshProject(id: string, input: Partial<MemoryMeshProject>) {
+  return request<{ ok: true; project: MemoryMeshProject }>(`/memory-mesh/projects/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export async function assignMemoryMeshAgent(projectId: string, input: { agentId: string; role: "primary" | "collaborator"; access: "read_only" | "read_write" }) {
+  return request<{ ok: true; project: MemoryMeshProject }>(`/memory-mesh/projects/${encodeURIComponent(projectId)}/agents`, { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function assignMemoryMeshDevice(projectId: string, input: { deviceId: string; isPrimary: boolean; path?: string }) {
+  return request<{ ok: true; project: MemoryMeshProject }>(`/memory-mesh/projects/${encodeURIComponent(projectId)}/devices`, { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function createMemoryMeshMemory(input: Partial<MemoryMeshMemory> & Pick<MemoryMeshMemory, "content" | "scope" | "createdBy" | "source">) {
+  return request<{ ok: true; memory: MemoryMeshMemory }>("/memory-mesh/memories", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function searchMemoryMeshMemories(input: { q?: string; scope?: MemoryMeshScope; projectId?: string; agentId?: string; deviceId?: string; limit?: number } = {}) {
+  const params = compactParams(input);
+  return request<{ ok: true; memories: MemoryMeshMemory[] }>(`/memory-mesh/memories${params}`);
+}
+
+export async function updateMemoryMeshMemory(id: string, input: Partial<MemoryMeshMemory>) {
+  return request<{ ok: true; memory: MemoryMeshMemory }>(`/memory-mesh/memories/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export async function deleteMemoryMeshMemory(id: string) {
+  return request<{ ok: true }>(`/memory-mesh/memories/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function previewMemoryMeshRoute(input: { projectQuery: string; task: string; requiredCapabilities?: string[]; currentAgentId?: string; currentDeviceId?: string }) {
+  return request<{ ok: true; routable: boolean; decision: MemoryMeshRouteDecision }>("/memory-mesh/routing/preview", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function executeMemoryMeshTask(input: { projectQuery: string; task: string; requiredCapabilities?: string[]; currentAgentId?: string; currentDeviceId?: string }) {
+  return request<{ ok: true; executed: boolean; task: MemoryMeshRoutingTask }>("/memory-mesh/tasks", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function cancelMemoryMeshTask(taskId: string) {
+  return request<{ ok: true; task: MemoryMeshRoutingTask }>(`/memory-mesh/tasks/${encodeURIComponent(taskId)}/cancel`, { method: "POST", body: "{}" });
+}
 
 export async function getHealth() {
   return request<ReikaHealthResponse>("/health");

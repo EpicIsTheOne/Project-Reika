@@ -27,6 +27,7 @@ import { NotificationsView } from "../features/notifications/NotificationsView";
 import { DevicesView } from "../features/devices/DevicesView";
 import { ChatView } from "../features/chat/ChatView";
 import { AgentArtStudio } from "../features/art/AgentArtStudio";
+import { MemoryView } from "../features/memory/MemoryView";
 import { applyRelayEnvelope, connectRelayApp, listRelayDevices, sendRelayChat, type RelayDeviceRecord } from "../data/relay";
 import { normalizeRelayDeviceUrl } from "../config/relay";
 import { type AgentChatRequestPayload, type AgentHubEnvelope } from "../shared/protocol";
@@ -37,6 +38,7 @@ import {
   mapRelayRecordToDevice,
   mapRelayRecordsToProviderState
 } from "../domain/reikaMappers";
+import { excludeLocallyObservedRelayRecords, mergeLocalAndRelayPresence } from "../domain/presence";
 
 export function App() {
   const [view, setView] = useState<View>("loading");
@@ -204,9 +206,12 @@ export function App() {
 
   const presentationDevices = useMemo(() => {
     const relayMapped = relayDevices.map(mapRelayRecordToDevice);
-    return buildPresentationDevices(relayMapped.length > 0 ? relayMapped : appDevices);
+    return buildPresentationDevices(mergeLocalAndRelayPresence(appDevices, relayMapped));
   }, [appDevices, relayDevices]);
-  const relayProviderState = useMemo(() => mapRelayRecordsToProviderState(relayDevices), [relayDevices]);
+  const relayProviderState = useMemo(
+    () => mapRelayRecordsToProviderState(excludeLocallyObservedRelayRecords(appDevices, relayDevices)),
+    [appDevices, relayDevices]
+  );
 
   const selectedAgent = useMemo(() => {
     if (selectedAgentOverride && selectedAgentOverride.id === selectedAgentId) return selectedAgentOverride;
@@ -314,6 +319,7 @@ export function App() {
             }}
           />
         )}
+        {view === "memory" && <MemoryView />}
         {view === "agentArt" && <AgentArtStudio initialLibrary={artLibrary} devices={presentationDevices} artRuntime={artRuntime} onLibraryChange={setArtLibrary} />}
         {view === "settings" && (
           <SettingsView

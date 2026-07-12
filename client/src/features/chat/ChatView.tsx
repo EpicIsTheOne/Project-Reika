@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { Activity, ArrowLeft, Heart, Link2, MessageCircle, PanelLeft, Plus, Search, Send, Trash2, X } from "lucide-react";
+import { Activity, ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Download, Heart, Link2, MessageCircle, PanelLeft, Plus, Search, Send, Trash2, X } from "lucide-react";
 import { assets } from "../../data/assets";
 import {
   appendRelayChatMessages,
@@ -9,15 +9,14 @@ import {
   listRelayChatSessions
 } from "../../data/relay";
 import {
-  chat,
   createSession,
   getSessionMessages,
   getState,
   linkFile,
   listSessions,
-  postSessionMessage,
   refreshProviders,
   searchSessions,
+  streamChat,
   uploadFiles,
   type ReikaFileItem,
   type ReikaAgentSelectorSettings,
@@ -68,6 +67,7 @@ export function ChatView({
   const [linkUrl, setLinkUrl] = useState("");
   const [linkName, setLinkName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [delegationActivity, setDelegationActivity] = useState<Array<Record<string, unknown>>>([]);
   const [status, setStatus] = useState("Connecting to Reika server...");
   const [stateError, setStateError] = useState<string | null>(null);
   const [sessionListError, setSessionListError] = useState<string | null>(null);
@@ -75,6 +75,10 @@ export function ChatView({
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [agentSelectionDirty, setAgentSelectionDirty] = useState(false);
   const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false);
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
+  const [conversationSearch, setConversationSearch] = useState("");
+  const [activeConversationMatch, setActiveConversationMatch] = useState(0);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const suppressedRelaySessionLoadRef = useRef<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const followLatestRef = useRef(true);
@@ -460,19 +464,35 @@ export function ChatView({
         return;
       }
 
-      const result = selectedSessionId
-        ? await postSessionMessage(selectedSessionId, { message, fileIds: selectedFileIds })
-        : await chat({
-            providerId: selectedProvider?.id,
-            agent: selectedLiveAgent?.id ?? selectedAgentKey,
-            message,
-            fileIds: selectedFileIds
-          });
-      setSelectedSessionId(result.session.id);
-      const refreshed = await getSessionMessages(result.session.id);
+      let completedSessionId = selectedSessionId;
+      let streamError = "";
+      setDelegationActivity([]);
+      await streamChat({
+        providerId: selectedProvider?.id,
+        agent: selectedLiveAgent?.id ?? selectedAgentKey,
+        sessionId: selectedSessionId ?? undefined,
+        message,
+        fileIds: selectedFileIds
+      }, (streamEvent) => {
+        if (streamEvent.type === "delegation" && streamEvent.data && typeof streamEvent.data === "object") {
+          setDelegationActivity((current) => [...current, streamEvent.data as Record<string, unknown>]);
+        }
+        if (streamEvent.type === "error" && streamEvent.data && typeof streamEvent.data === "object") {
+          streamError = String((streamEvent.data as { error?: unknown }).error || "Message failed.");
+        }
+        if (streamEvent.type === "done" && streamEvent.data && typeof streamEvent.data === "object") {
+          const session = (streamEvent.data as { session?: { id?: unknown } }).session;
+          if (typeof session?.id === "string") completedSessionId = session.id;
+        }
+      }, selectedSessionId ? `/sessions/${encodeURIComponent(selectedSessionId)}/messages/stream` : "/chat/stream");
+      if (streamError) throw new Error(streamError);
+      if (!completedSessionId) throw new Error("Reika completed the turn without returning a session ID.");
+      setSelectedSessionId(completedSessionId);
+      const refreshed = await getSessionMessages(completedSessionId);
       setMessages(refreshed.messages.map(mapReikaMessage));
       await loadSessionRows("", selectedProvider?.id, selectedLiveAgent?.id);
-      setStatus(`Routed through ${result.result.runtime}`);
+      const latestRuntime = refreshed.messages.at(-1)?.meta?.runtime;
+      setStatus(`Routed through ${typeof latestRuntime === "string" ? latestRuntime : selectedProvider?.name ?? "Reika"}`);
       setFiles((current) => current.filter((file) => !selectedFileIds.includes(file.id)));
       setSelectedFileIds([]);
       setSendError(null);
@@ -481,6 +501,7 @@ export function ChatView({
     } finally {
       suppressedRelaySessionLoadRef.current = null;
       setBusy(false);
+      setDelegationActivity([]);
     }
   };
 
@@ -535,6 +556,52 @@ export function ChatView({
   };
 
   const visibleMessages = messages.slice(-500);
+  const conversationMatches = useMemo(() => {
+    const query = conversationSearch.trim().toLowerCase();
+    if (!query) return [];
+    return visibleMessages.filter((message) => message.sender !== "system" && message.body.toLowerCase().includes(query)).map((message) => message.id);
+  }, [conversationSearch, visibleMessages]);
+
+  const showConversationMatch = (nextIndex: number) => {
+    if (conversationMatches.length === 0) return;
+    const normalized = (nextIndex + conversationMatches.length) % conversationMatches.length;
+    setActiveConversationMatch(normalized);
+    document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(conversationMatches[normalized])}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  const copyMessage = async (message: ChatMessage) => {
+    await navigator.clipboard.writeText(message.body);
+    setCopiedMessageId(message.id);
+    window.setTimeout(() => setCopiedMessageId((current) => current === message.id ? null : current), 1400);
+  };
+
+  const exportConversation = () => {
+    const transcript = visibleMessages
+      .filter((message) => message.sender !== "system")
+      .map((message) => `## ${message.sender === "user" ? "You" : displayAgentName} — ${message.time}\n\n${message.body}`)
+      .join("\n\n---\n\n");
+    const header = `# Conversation with ${displayAgentName}\n\nExported ${new Date().toLocaleString()}\n\n`;
+    const url = URL.createObjectURL(new Blob([header, transcript || "No messages yet."], { type: "text/markdown;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${displayAgentName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "agent"}-conversation.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  useEffect(() => {
+    const handleChatShortcuts = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        setConversationSearchOpen(true);
+      } else if (event.key === "Escape" && conversationSearchOpen) {
+        setConversationSearchOpen(false);
+        setConversationSearch("");
+      }
+    };
+    window.addEventListener("keydown", handleChatShortcuts);
+    return () => window.removeEventListener("keydown", handleChatShortcuts);
+  }, [conversationSearchOpen]);
 
   useEffect(() => {
     if (!followLatestRef.current) return;
@@ -651,12 +718,24 @@ export function ChatView({
               </p>
             )}
           </div>
-          <button className="icon-button" data-testid="chat-refresh-providers" onClick={() => void handleRefreshProviders()} disabled={busy} aria-label="Refresh providers">
-            <Activity size={22} />
-          </button>
+          <div className="chat-header-actions">
+            <button className="icon-button" type="button" onClick={() => setConversationSearchOpen((current) => !current)} aria-label="Search this conversation" title="Search conversation (Ctrl+Shift+F)"><Search size={20} /></button>
+            <button className="icon-button" type="button" onClick={exportConversation} aria-label="Export conversation as Markdown" title="Export as Markdown"><Download size={20} /></button>
+            <button className="icon-button" data-testid="chat-refresh-providers" onClick={() => void handleRefreshProviders()} disabled={busy} aria-label="Refresh providers"><Activity size={22} /></button>
+          </div>
         </header>
 
         <section className="conversation-panel">
+          {conversationSearchOpen ? (
+            <div className="conversation-search-bar">
+              <Search size={17} />
+              <input autoFocus value={conversationSearch} onChange={(event) => { setConversationSearch(event.target.value); setActiveConversationMatch(0); }} placeholder="Search this conversation…" aria-label="Search this conversation" />
+              <span>{conversationSearch.trim() ? `${conversationMatches.length ? activeConversationMatch + 1 : 0} / ${conversationMatches.length}` : "Ctrl+Shift+F"}</span>
+              <button type="button" onClick={() => showConversationMatch(activeConversationMatch - 1)} disabled={conversationMatches.length === 0} aria-label="Previous match"><ArrowUp size={16} /></button>
+              <button type="button" onClick={() => showConversationMatch(activeConversationMatch + 1)} disabled={conversationMatches.length === 0} aria-label="Next match"><ArrowDown size={16} /></button>
+              <button type="button" onClick={() => { setConversationSearchOpen(false); setConversationSearch(""); }} aria-label="Close conversation search"><X size={16} /></button>
+            </div>
+          ) : null}
           <div className="day-divider">
             <span />
             {status}
@@ -678,7 +757,7 @@ export function ChatView({
           >
             {messages.length > visibleMessages.length ? <div className="chat-inline-note">Showing the latest {visibleMessages.length} messages.</div> : null}
             {visibleMessages.map((message, index) => (
-              <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={displayAgentName} motionIndex={index} />
+              <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={displayAgentName} motionIndex={index} searchMatch={conversationMatches.includes(message.id)} activeSearchMatch={conversationMatches[activeConversationMatch] === message.id} copied={copiedMessageId === message.id} onCopy={() => void copyMessage(message)} />
             ))}
             {!busy && visibleMessages.length === 0 && !sendError && (!stateError || selectedIsRelayProvider) ? (
               <div className="chat-empty-state">
@@ -687,13 +766,15 @@ export function ChatView({
               </div>
             ) : null}
             {busy ? (
-              <div className="typing-row" data-testid="thinking-row">
-                <img src={chatAvatar.src} alt="" style={chatAvatar.style} />
-                <span>{displayAgentName} is thinking</span>
-                <i />
-                <i />
-                <i />
-              </div>
+              delegationActivity.length ? <DelegationActivityCard activity={delegationActivity} /> : (
+                <div className="typing-row" data-testid="thinking-row">
+                  <img src={chatAvatar.src} alt="" style={chatAvatar.style} />
+                  <span>{displayAgentName} is thinking</span>
+                  <i />
+                  <i />
+                  <i />
+                </div>
+              )
             ) : null}
           </div>
 
@@ -751,12 +832,12 @@ export function ChatView({
   );
 }
 
-function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex = 0 }: { message: ChatMessage; agentAvatar?: ArtRenderAsset; agentName?: string; motionIndex?: number }) {
+function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex = 0, searchMatch = false, activeSearchMatch = false, copied = false, onCopy }: { message: ChatMessage; agentAvatar?: ArtRenderAsset; agentName?: string; motionIndex?: number; searchMatch?: boolean; activeSearchMatch?: boolean; copied?: boolean; onCopy?: () => void }) {
   if (message.sender === "system") return null;
   const isUser = message.sender === "user";
 
   return (
-    <article className={cx("chat-message motion-message", isUser ? "user" : "agent")} data-testid={isUser ? "chat-message-user" : "chat-message-agent"} style={motionDelay(Math.min(motionIndex, 8), 28)}>
+    <article className={cx("chat-message motion-message", isUser ? "user" : "agent", searchMatch && "search-match", activeSearchMatch && "active-search-match")} data-message-id={message.id} data-testid={isUser ? "chat-message-user" : "chat-message-agent"} style={motionDelay(Math.min(motionIndex, 8), 28)}>
       {!isUser ? <img src={agentAvatar?.src ?? assets.reika.avatar} alt="" style={agentAvatar?.style} /> : null}
       <div className="message-content">
         {!isUser ? (
@@ -766,6 +847,8 @@ function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex 
           </header>
         ) : null}
         <MessageBody text={message.body} />
+        {!isUser && message.meta?.memoryMesh && typeof message.meta.memoryMesh === "object" ? <DelegationSummaryCard value={message.meta.memoryMesh as Record<string, unknown>} /> : null}
+        <button className="message-copy-action" type="button" onClick={onCopy} aria-label={copied ? "Message copied" : "Copy message"} title={copied ? "Copied" : "Copy message"}>{copied ? <Check size={14} /> : <Copy size={14} />}</button>
         {!isUser ? null : (
           <time>{message.time}</time>
         )}
@@ -796,6 +879,41 @@ function getRelayProviderId(provider: ReikaProviderRecord) {
 function getRelayAgentId(agent: ReikaProviderRecord["agents"][number] | undefined) {
   if (!agent) return undefined;
   return typeof agent.relayAgentId === "string" && agent.relayAgentId ? agent.relayAgentId : agent.id;
+}
+
+const delegationStageLabels: Record<string, string> = {
+  resolving: "Resolving project",
+  route_planned: "Selecting agent and device",
+  delegating: "Delegating task",
+  working: "Remote agent working",
+  memory_updated: "Project memory updated",
+  completed: "Result returned",
+  failed: "Delegation failed",
+  cancelled: "Task cancelled",
+  clarification_required: "Clarification required"
+};
+
+function DelegationActivityCard({ activity }: { activity: Array<Record<string, unknown>> }) {
+  const current = activity.at(-1) ?? {};
+  const stage = String(current.stage || "working");
+  const agent = current.agent && typeof current.agent === "object" ? String((current.agent as { displayName?: unknown }).displayName || "") : "";
+  const device = current.device && typeof current.device === "object" ? String((current.device as { name?: unknown }).name || "") : "";
+  return <div className="delegation-card live" data-testid="delegation-activity"><Activity size={16} /><div><strong>{delegationStageLabels[stage] || stage}</strong>{agent || device ? <span>{[agent, device].filter(Boolean).join(" on ")}</span> : null}</div></div>;
+}
+
+function DelegationSummaryCard({ value }: { value: Record<string, unknown> }) {
+  const lifecycle = Array.isArray(value.lifecycle) ? value.lifecycle.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object")) : [];
+  const reasons = Array.isArray(value.reasons) ? value.reasons.map(String).slice(0, 2) : [];
+  return (
+    <details className="delegation-card summary" data-testid="delegation-summary">
+      <summary><Activity size={15} /><span>Memory Mesh · {String(value.status || "routed")}</span></summary>
+      <div className="delegation-timeline">
+        {lifecycle.map((item, index) => <span key={`${String(item.stage)}-${index}`}><i />{delegationStageLabels[String(item.stage)] || String(item.stage)}</span>)}
+        {reasons.map((reason) => <small key={reason}>{reason}</small>)}
+        {value.taskId ? <code>Task {String(value.taskId).slice(0, 8)}</code> : null}
+      </div>
+    </details>
+  );
 }
 
 function MessageBody({ text }: { text: string }) {
