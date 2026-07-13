@@ -29,7 +29,7 @@ export async function scanProjects(deviceId: string, settings: ProjectDiscoveryS
   const excluded = new Set(settings.excludeDirectories.map((name) => name.toLowerCase()));
   const seenPaths = new Set<string>();
   const skippedPaths: string[] = [];
-  const queue: Array<{ path: string; depth: number }> = [];
+  const queue: Array<{ path: string; depth: number; nestedRepositoriesOnly: boolean }> = [];
   const deadline = Date.now() + 12_000;
   const maxDirectories = 4_000;
   let scannedDirectories = 0;
@@ -51,28 +51,33 @@ export async function scanProjects(deviceId: string, settings: ProjectDiscoveryS
       skippedPaths.push(resolve(configuredRoot));
       continue;
     }
-    queue.push({ path: root, depth: 0 });
+    queue.push({ path: root, depth: 0, nestedRepositoriesOnly: false });
   }
 
   while (queue.length > 0 && projects.length < 500 && scannedDirectories < maxDirectories && Date.now() < deadline) {
     const batch = queue.splice(0, 12).filter((item) => !seenPaths.has(item.path));
     for (const item of batch) seenPaths.add(item.path);
     scannedDirectories += batch.length;
-    const results = await Promise.all(batch.map(async ({ path, depth }) => {
+    const results = await Promise.all(batch.map(async ({ path, depth, nestedRepositoriesOnly }) => {
       const listing = await readDirectory(path, warnings);
-      if (!listing) return { complete: true, skippedPath: path, children: [] as Array<{ path: string; depth: number }> };
+      if (!listing) return { complete: true, skippedPath: path, children: [] as Array<{ path: string; depth: number; nestedRepositoriesOnly: boolean }> };
       const { entries, truncated } = listing;
       const names = new Set(entries.map((entry) => entry.name.toLowerCase()));
       const explicit = names.has('.reika') ? await readExplicitProject(path) : undefined;
       const git = names.has('.git');
       const markers = Array.from(names).filter((name) => descriptorNames.has(name) || name.endsWith('.sln') || name.endsWith('.csproj'));
-      if (explicit || git || markers.length > 0) {
-        return { complete: true, project: await describeProject(path, deviceId, scannedAt, explicit, git, markers), children: [] as Array<{ path: string; depth: number }> };
+      const isProject = Boolean(explicit || git || (!nestedRepositoriesOnly && markers.length > 0));
+      if (isProject) {
+        const children = depth === 0 && depth < settings.maxDepth ? entries
+          .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && !excluded.has(entry.name.toLowerCase()))
+          .map((entry) => ({ path: join(path, entry.name), depth: depth + 1, nestedRepositoriesOnly: true }))
+          : [];
+        return { complete: true, project: await describeProject(path, deviceId, scannedAt, explicit, git, markers), children };
       }
       if (truncated) warnings.push(`Skipped descending into large non-project directory with more than 1000 entries: ${path}`);
       const children = depth >= settings.maxDepth ? [] : entries
         .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && !excluded.has(entry.name.toLowerCase()))
-        .map((entry) => ({ path: join(path, entry.name), depth: depth + 1 }));
+        .map((entry) => ({ path: join(path, entry.name), depth: depth + 1, nestedRepositoriesOnly }));
       return { complete: true, skippedPath: truncated ? path : undefined, children: truncated ? [] : children };
     }));
     for (const result of results) {

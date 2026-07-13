@@ -6,6 +6,10 @@ import { scanProjects } from '../src/modules/projectDiscovery/projectScanner.js'
 
 const root = mkdtempSync(join(tmpdir(), 'reika-project-discovery-'));
 try {
+  mkdirSync(join(root, '.git'), { recursive: true });
+  writeFileSync(join(root, '.git', 'config'), '[remote "origin"]\n  url = git@example.test:Epic/Workspace.git\n');
+  writeFileSync(join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+
   const gitProject = join(root, 'shared-app');
   mkdirSync(join(gitProject, '.git'), { recursive: true });
   writeFileSync(join(gitProject, '.git', 'config'), '[remote "origin"]\n  url = https://secret@example.test/Epic/Shared.git\n');
@@ -21,7 +25,8 @@ try {
   const result = await scanProjects('device-a', {
     enabled: true, roots: [root], excludeDirectories: ['node_modules', '.git'], maxDepth: 4, scanIntervalMinutes: 15
   });
-  assert.equal(result.snapshot.projects.length, 2, 'scanner finds bounded project roots and skips dependency trees');
+  assert.equal(result.snapshot.projects.length, 3, 'scanner finds nested repositories beneath a configured project root and skips dependency trees');
+  assert.ok(result.snapshot.projects.some((project) => project.identityKey === 'git:example.test/epic/workspace'), 'configured project root is retained');
   const git = result.snapshot.projects.find((project) => project.name === 'shared-app')!;
   assert.equal(git.branch, 'main');
   assert.equal(git.repositoryUrl, 'https://example.test/Epic/Shared.git', 'repository credentials are removed from manifests');
