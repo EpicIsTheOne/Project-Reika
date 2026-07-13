@@ -5,6 +5,8 @@ import {
   isAgentHubEnvelope,
   type AgentChatRequestPayload,
   type AgentChatResponsePayload,
+  type AgentVoiceRequestPayload,
+  type AgentVoiceResponsePayload,
   type AgentHubEnvelope,
   type AgentHubEnvelopeType,
   type DeviceStateSnapshotPayload
@@ -273,6 +275,57 @@ function sendRelayChatOverSocket(
     ...request.payload,
     delivery: { idempotencyKey: request.id, statusMetadataVersion: 1 }
   };
+}
+
+export async function sendRelayVoice(
+  deviceId: string,
+  payload: AgentVoiceRequestPayload,
+  relayUrl?: string,
+  timeoutMs = 60000
+): Promise<AgentVoiceResponsePayload> {
+  const request = createEnvelope("agent.voice.request", payload, {
+    deviceId, source: { kind: "app", id: "reika-client" }, target: { kind: "device", id: deviceId }
+  });
+  const urls = [...new Set([sameOriginRelayAppWebSocketUrl(), getRelayAppWebSocketUrl(relayUrl)].filter((url): url is string => Boolean(url)))];
+  let lastError: Error | undefined;
+  for (const url of urls) {
+    try {
+      return await sendRelayVoiceOverSocket(url, request, timeoutMs);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  throw lastError ?? new Error("Relay app socket could not connect for voice synthesis.");
+}
+
+function sendRelayVoiceOverSocket(socketUrl: string, request: AgentHubEnvelope<AgentVoiceRequestPayload>, timeoutMs: number) {
+  return new Promise<AgentVoiceResponsePayload>((resolve, reject) => {
+    const socket = new WebSocket(socketUrl);
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      socket.close();
+      callback();
+    };
+    const timer = window.setTimeout(() => finish(() => reject(new Error("Remote voice synthesis timed out."))), timeoutMs);
+    socket.addEventListener("open", () => socket.send(JSON.stringify(request)));
+    socket.addEventListener("message", (event) => void (async () => {
+      try {
+        const envelope = JSON.parse(await readWebSocketMessage(event.data)) as unknown;
+        if (!isAgentHubEnvelope(envelope) || (envelope.replyTo !== request.id && envelope.correlationId !== request.id)) return;
+        if (envelope.type === "agent.voice.response") finish(() => resolve(envelope.payload as AgentVoiceResponsePayload));
+        if (envelope.type === "command.rejected" || envelope.type === "command.failed") {
+          finish(() => reject(new Error(String((envelope.payload as { message?: unknown }).message || "Remote voice synthesis failed."))));
+        }
+      } catch {
+        // Ignore unrelated or malformed relay messages.
+      }
+    })());
+    socket.addEventListener("error", () => finish(() => reject(new Error("Relay app socket could not connect for voice synthesis."))));
+    socket.addEventListener("close", () => { if (!settled) finish(() => reject(new Error("Relay app socket closed before voice synthesis completed."))); });
+  });
 }
 
 async function readWebSocketMessage(data: MessageEvent["data"]) {

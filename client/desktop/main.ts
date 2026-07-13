@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { startDesktopServer, type DesktopServer } from "./localServer.js";
 import { ensureLocalAgent, stopLocalAgent, type LocalAgentRuntime } from "./localAgent.js";
 import { migrateLegacyUserData } from "./userDataMigration.js";
+import { registerVoiceRuntime } from "./voiceRuntime.js";
 
 const isDev = (process.env.REIKA_DESKTOP_DEV ?? process.env.AGENTHUB_DESKTOP_DEV) === "1";
 
@@ -86,6 +87,7 @@ app.setName("Reika");
 
 app.whenReady().then(async () => {
   migrateLegacyUserData(app.getPath("appData"), app.getPath("userData"));
+  registerVoiceRuntime();
   await createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();

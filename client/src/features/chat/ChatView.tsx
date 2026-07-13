@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { Activity, ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Download, Heart, Link2, MessageCircle, PanelLeft, Plus, Search, Send, Trash2, X } from "lucide-react";
+import { Activity, ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Download, Heart, Link2, MessageCircle, Mic, MicOff, PanelLeft, Pause, Phone, PhoneOff, Play, Plus, Search, Send, Square, Trash2, Volume2, VolumeX, X } from "lucide-react";
 import { assets } from "../../data/assets";
 import {
   appendRelayChatMessages,
   createRelayChatSession,
   getRelayChatMessages,
-  listRelayChatSessions
+  listRelayChatSessions,
+  sendRelayVoice
 } from "../../data/relay";
 import {
   createSession,
@@ -21,6 +22,7 @@ import {
   type ReikaFileItem,
   type ReikaAgentSelectorSettings,
   type ReikaProviderRecord,
+  type ReikaSettings,
   type ReikaSessionSummary,
   type ReikaStateResponse
 } from "../../lib/reikaApi";
@@ -31,6 +33,19 @@ import { StatusDot } from "../../components/status";
 import { statusLabels } from "../../app/constants";
 import { formatClock, getReikaDeviceName, mapProviderStatus, mapReikaMessage, providerCanChat } from "../../domain/reikaMappers";
 import type { Agent, ChatMessage } from "../../types";
+import { agentVoiceContext, resolveAgentVoice, shouldSpeakAgentReply, speechPlayback, type PlaybackState } from "../../lib/voicePlayback";
+
+interface BrowserSpeechRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
 
 export function ChatView({
   agent,
@@ -39,6 +54,7 @@ export function ChatView({
   relayProviders = [],
   onRelayChat,
   selectorSettings,
+  settings,
   developerDiagnostics,
   artRuntime,
   onBack
@@ -49,6 +65,7 @@ export function ChatView({
   relayProviders?: ReikaProviderRecord[];
   onRelayChat: (deviceId: string, payload: AgentChatRequestPayload) => Promise<AgentChatResponsePayload>;
   selectorSettings: ReikaAgentSelectorSettings;
+  settings: ReikaSettings;
   developerDiagnostics: boolean;
   artRuntime: ArtRuntime;
   onBack: () => void;
@@ -79,6 +96,14 @@ export function ChatView({
   const [conversationSearch, setConversationSearch] = useState("");
   const [activeConversationMatch, setActiveConversationMatch] = useState(0);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [playback, setPlayback] = useState<PlaybackState>(() => speechPlayback.snapshot());
+  const [callOpen, setCallOpen] = useState(false);
+  const [callMuted, setCallMuted] = useState(false);
+  const [callState, setCallState] = useState<"idle" | "listening" | "processing" | "speaking" | "muted" | "error">("idle");
+  const [callTranscript, setCallTranscript] = useState("");
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const callActiveRef = useRef(false);
+  const callMutedRef = useRef(false);
   const suppressedRelaySessionLoadRef = useRef<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const followLatestRef = useRef(true);
@@ -171,6 +196,13 @@ export function ChatView({
   };
   const chatAvatar = artRuntime.agentAvatarRender(artAgent, artRerollSlot("chat-avatar", artInstanceKey));
   const chatPortraitArt = artRuntime.agentPortraitRender(artAgent, artRerollSlot("chat-profile-portrait", artInstanceKey));
+  const selectedVoiceContext = selectedProvider && selectedLiveAgent ? agentVoiceContext(selectedLiveAgent, selectedProvider.id) : undefined;
+  const resolvedVoice = selectedVoiceContext ? resolveAgentVoice(selectedVoiceContext, settings) : undefined;
+  const callAllowed = selectedVoiceContext ? settings.voice.agents[selectedVoiceContext.key]?.callEnabled !== false : false;
+
+  useEffect(() => speechPlayback.subscribe(setPlayback), []);
+  useEffect(() => () => { callActiveRef.current = false; recognitionRef.current?.abort(); void speechPlayback.stop(); }, []);
+  useEffect(() => { void speechPlayback.stop(); }, [selectedAgentOptionKey]);
 
   const normalizeChatError = (value: unknown, fallback = "Something went wrong.") => {
     const raw = value instanceof Error ? value.message : String(value || fallback);
@@ -392,12 +424,26 @@ export function ChatView({
     }
   };
 
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    const message = draft.trim();
+  const speakAgentMessage = async (message: ChatMessage, force = false) => {
+    if (!resolvedVoice || !selectedVoiceContext) return;
+    if (!force && !shouldSpeakAgentReply(selectedVoiceContext.key, settings)) return;
+    const remoteSynthesizer = relayRouteReady && selectedRelayDeviceId
+      ? async ({ requestId, text }: { requestId: string; text: string }) => sendRelayVoice(selectedRelayDeviceId, {
+          providerId: relayProviderId,
+          agent: relayAgentId,
+          text,
+          requestId
+        }, relayUrl)
+      : undefined;
+    await speechPlayback.speak({ messageId: message.id, text: message.body, voice: resolvedVoice, remoteSynthesizer, force });
+  };
+
+  const sendMessage = async (message: string, fromCall = false) => {
     if (!message || busy) return;
+    await speechPlayback.stop();
     setBusy(true);
     setDraft("");
+    if (fromCall && callActiveRef.current) setCallState("processing");
     const userMessage: ChatMessage = {
       id: `local-${Date.now()}`,
       sender: "user",
@@ -461,6 +507,9 @@ export function ChatView({
         setFiles((current) => current.filter((file) => !selectedFileIds.includes(file.id)));
         setSelectedFileIds([]);
         setSendError(null);
+        if (fromCall && callActiveRef.current) setCallState("speaking");
+        await speakAgentMessage(agentMessage, fromCall);
+        if (fromCall && callActiveRef.current && speechPlayback.snapshot().phase === "error") setCallState("error");
         return;
       }
 
@@ -489,13 +538,19 @@ export function ChatView({
       if (!completedSessionId) throw new Error("Reika completed the turn without returning a session ID.");
       setSelectedSessionId(completedSessionId);
       const refreshed = await getSessionMessages(completedSessionId);
-      setMessages(refreshed.messages.map(mapReikaMessage));
+      const refreshedMessages = refreshed.messages.map(mapReikaMessage);
+      setMessages(refreshedMessages);
       await loadSessionRows("", selectedProvider?.id, selectedLiveAgent?.id);
       const latestRuntime = refreshed.messages.at(-1)?.meta?.runtime;
       setStatus(`Routed through ${typeof latestRuntime === "string" ? latestRuntime : selectedProvider?.name ?? "Reika"}`);
       setFiles((current) => current.filter((file) => !selectedFileIds.includes(file.id)));
       setSelectedFileIds([]);
       setSendError(null);
+      const latestAgentMessage = [...refreshedMessages].reverse().find((item) => item.sender === "agent");
+      if (latestAgentMessage) {
+        if (fromCall && callActiveRef.current) setCallState("speaking");
+        await speakAgentMessage(latestAgentMessage, fromCall);
+      }
     } catch (sendError) {
       setSendError(normalizeChatError(sendError, "Message failed."));
     } finally {
@@ -503,6 +558,12 @@ export function ChatView({
       setBusy(false);
       setDelegationActivity([]);
     }
+  };
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    const message = draft.trim();
+    if (message) void sendMessage(message);
   };
 
   const handleAddLink = async () => {
@@ -588,6 +649,90 @@ export function ChatView({
     anchor.click();
     URL.revokeObjectURL(url);
   };
+
+  const startListening = () => {
+    if (!callActiveRef.current || callMutedRef.current || recognitionRef.current) return;
+    const Recognition = (window as unknown as { SpeechRecognition?: new () => BrowserSpeechRecognition; webkitSpeechRecognition?: new () => BrowserSpeechRecognition }).SpeechRecognition
+      ?? (window as unknown as { webkitSpeechRecognition?: new () => BrowserSpeechRecognition }).webkitSpeechRecognition;
+    if (!Recognition) {
+      setCallState("error");
+      setCallTranscript("Speech recognition is unavailable in this desktop runtime.");
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || "en-US";
+    recognition.onresult = (event) => {
+      let transcript = "";
+      let complete = false;
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        transcript += event.results[index][0]?.transcript ?? "";
+        complete ||= event.results[index].isFinal;
+      }
+      const cleaned = transcript.trim();
+      if (cleaned) setCallTranscript(cleaned);
+      if (complete && cleaned && callActiveRef.current) {
+        recognitionRef.current = null;
+        recognition.stop();
+        void sendMessage(cleaned, true);
+      }
+    };
+    recognition.onerror = (event) => {
+      recognitionRef.current = null;
+      if (!callActiveRef.current || event.error === "aborted") return;
+      setCallState("error");
+      setCallTranscript(event.error === "not-allowed" ? "Microphone permission was denied." : `Microphone error: ${event.error}`);
+    };
+    recognition.onend = () => { if (recognitionRef.current === recognition) recognitionRef.current = null; };
+    recognitionRef.current = recognition;
+    setCallTranscript("");
+    setCallState("listening");
+    try { recognition.start(); } catch (error) {
+      recognitionRef.current = null;
+      setCallState("error");
+      setCallTranscript(error instanceof Error ? error.message : "Could not start microphone capture.");
+    }
+  };
+
+  const startCall = async () => {
+    await speechPlayback.stop();
+    callActiveRef.current = true;
+    callMutedRef.current = false;
+    setCallOpen(true);
+    setCallMuted(false);
+    window.setTimeout(startListening, 0);
+  };
+
+  const endCall = async () => {
+    callActiveRef.current = false;
+    callMutedRef.current = false;
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    await speechPlayback.stop();
+    setCallOpen(false);
+    setCallState("idle");
+    setCallTranscript("");
+  };
+
+  const toggleCallMute = () => {
+    const muted = !callMuted;
+    callMutedRef.current = muted;
+    setCallMuted(muted);
+    if (muted) {
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+      setCallState("muted");
+    } else if (callActiveRef.current) {
+      window.setTimeout(startListening, 0);
+    }
+  };
+
+  useEffect(() => {
+    if (!callOpen || !callActiveRef.current || callMuted) return;
+    if (callState === "speaking" && playback.phase === "idle") window.setTimeout(startListening, 100);
+    if (callState === "speaking" && playback.phase === "error") setCallState("error");
+  }, [callOpen, callMuted, callState, playback.phase]);
 
   useEffect(() => {
     const handleChatShortcuts = (event: KeyboardEvent) => {
@@ -719,11 +864,28 @@ export function ChatView({
             )}
           </div>
           <div className="chat-header-actions">
+            <button className="icon-button" type="button" onClick={() => void (callOpen ? endCall() : startCall())} aria-label={callOpen ? "End voice call" : `Call ${displayAgentName}`} title={!callAllowed ? "Calls are disabled for this agent in Settings" : callOpen ? "End call" : `Call ${displayAgentName}`} disabled={!resolvedVoice?.available || !callAllowed}>{callOpen ? <PhoneOff size={20} /> : <Phone size={20} />}</button>
             <button className="icon-button" type="button" onClick={() => setConversationSearchOpen((current) => !current)} aria-label="Search this conversation" title="Search conversation (Ctrl+Shift+F)"><Search size={20} /></button>
             <button className="icon-button" type="button" onClick={exportConversation} aria-label="Export conversation as Markdown" title="Export as Markdown"><Download size={20} /></button>
             <button className="icon-button" data-testid="chat-refresh-providers" onClick={() => void handleRefreshProviders()} disabled={busy} aria-label="Refresh providers"><Activity size={22} /></button>
           </div>
         </header>
+
+        {callOpen ? (
+          <section className="voice-call-panel" aria-label={`Voice call with ${displayAgentName}`}>
+            <div>
+              <strong>{displayAgentName}</strong>
+              <span className={`voice-call-state ${callState}`}>{callState === "processing" ? "Thinking" : callState}</span>
+            </div>
+            <p>{callTranscript || (callState === "listening" ? "Listening..." : callState === "speaking" ? `${displayAgentName} is speaking...` : "Voice call active")}</p>
+            <small>{resolvedVoice?.voiceLabel} · {resolvedVoice?.source}</small>
+            <div>
+              <button type="button" onClick={toggleCallMute} aria-label={callMuted ? "Unmute microphone" : "Mute microphone"}>{callMuted ? <MicOff size={18} /> : <Mic size={18} />}{callMuted ? "Unmute" : "Mute"}</button>
+              {playback.phase === "speaking" || playback.phase === "loading" || playback.phase === "paused" ? <button type="button" onClick={() => void speechPlayback.stop()}><Square size={18} />Interrupt</button> : null}
+              <button type="button" className="danger" onClick={() => void endCall()}><PhoneOff size={18} />End call</button>
+            </div>
+          </section>
+        ) : null}
 
         <section className="conversation-panel">
           {conversationSearchOpen ? (
@@ -757,7 +919,7 @@ export function ChatView({
           >
             {messages.length > visibleMessages.length ? <div className="chat-inline-note">Showing the latest {visibleMessages.length} messages.</div> : null}
             {visibleMessages.map((message, index) => (
-              <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={displayAgentName} motionIndex={index} searchMatch={conversationMatches.includes(message.id)} activeSearchMatch={conversationMatches[activeConversationMatch] === message.id} copied={copiedMessageId === message.id} onCopy={() => void copyMessage(message)} />
+              <MessageBubble message={message} key={message.id} agentAvatar={chatAvatar} agentName={displayAgentName} motionIndex={index} searchMatch={conversationMatches.includes(message.id)} activeSearchMatch={conversationMatches[activeConversationMatch] === message.id} copied={copiedMessageId === message.id} onCopy={() => void copyMessage(message)} playback={playback.messageId === message.id ? playback : undefined} onPlay={() => void speakAgentMessage(message, true)} onPause={() => speechPlayback.pauseOrResume()} onStop={() => void speechPlayback.stop()} onMute={() => speechPlayback.setMuted(!playback.muted)} />
             ))}
             {!busy && visibleMessages.length === 0 && !sendError && (!stateError || selectedIsRelayProvider) ? (
               <div className="chat-empty-state">
@@ -832,7 +994,7 @@ export function ChatView({
   );
 }
 
-function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex = 0, searchMatch = false, activeSearchMatch = false, copied = false, onCopy }: { message: ChatMessage; agentAvatar?: ArtRenderAsset; agentName?: string; motionIndex?: number; searchMatch?: boolean; activeSearchMatch?: boolean; copied?: boolean; onCopy?: () => void }) {
+function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex = 0, searchMatch = false, activeSearchMatch = false, copied = false, onCopy, playback, onPlay, onPause, onStop, onMute }: { message: ChatMessage; agentAvatar?: ArtRenderAsset; agentName?: string; motionIndex?: number; searchMatch?: boolean; activeSearchMatch?: boolean; copied?: boolean; onCopy?: () => void; playback?: PlaybackState; onPlay?: () => void; onPause?: () => void; onStop?: () => void; onMute?: () => void }) {
   if (message.sender === "system") return null;
   const isUser = message.sender === "user";
 
@@ -848,7 +1010,14 @@ function MessageBubble({ message, agentAvatar, agentName = "Reika", motionIndex 
         ) : null}
         <MessageBody text={message.body} />
         {!isUser && message.meta?.memoryMesh && typeof message.meta.memoryMesh === "object" ? <DelegationSummaryCard value={message.meta.memoryMesh as Record<string, unknown>} /> : null}
-        <button className="message-copy-action" type="button" onClick={onCopy} aria-label={copied ? "Message copied" : "Copy message"} title={copied ? "Copied" : "Copy message"}>{copied ? <Check size={14} /> : <Copy size={14} />}</button>
+        <div className="message-actions">
+          {!isUser ? <button type="button" onClick={onPlay} aria-label={playback ? "Replay message" : "Play message"} title={playback ? "Replay" : "Play"}><Play size={14} /></button> : null}
+          {!isUser && playback && ["speaking", "paused"].includes(playback.phase) ? <button type="button" onClick={onPause} aria-label={playback.phase === "paused" ? "Resume speech" : "Pause speech"}>{playback.phase === "paused" ? <Play size={14} /> : <Pause size={14} />}</button> : null}
+          {!isUser && playback && playback.phase !== "idle" ? <button type="button" onClick={onStop} aria-label="Stop speech"><Square size={14} /></button> : null}
+          {!isUser ? <button type="button" onClick={onMute} aria-label={playback?.muted ? "Unmute speech" : "Mute speech"}>{playback?.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button> : null}
+          {!isUser && playback?.phase === "speaking" ? <span className="speaking-indicator">Speaking</span> : null}
+          <button type="button" onClick={onCopy} aria-label={copied ? "Message copied" : "Copy message"} title={copied ? "Copied" : "Copy message"}>{copied ? <Check size={14} /> : <Copy size={14} />}</button>
+        </div>
         {!isUser ? null : (
           <time>{message.time}</time>
         )}

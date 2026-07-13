@@ -288,6 +288,7 @@ export function App() {
             relayProviders={relayProviderState}
             onRelayChat={sendRelayChatThroughApp}
             selectorSettings={settings.agentSelector}
+            settings={settings}
             developerDiagnostics={settings.developerDiagnostics}
             artRuntime={artRuntime}
             onBack={() => setView("home")}
@@ -326,6 +327,7 @@ export function App() {
             settings={settings}
             backendMode={backendMode}
             backendError={backendError}
+            providers={[...(reikaState?.providers ?? []), ...relayProviderState]}
             artRuntime={artRuntime}
             onOpenDevices={() => setView("devices")}
             onSettingsChange={(nextSettings, nextState) => {

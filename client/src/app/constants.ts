@@ -53,6 +53,11 @@ export const defaultSettings: ReikaSettings = {
     maxDepth: 4,
     scanIntervalMinutes: 15
   },
+  voice: {
+    speakAgentReplies: false,
+    defaultVoice: { provider: "system", voiceId: "system-default", voiceLabel: "System default" },
+    agents: {}
+  },
   autoUpdateServer: false,
   autoUpdateClient: false,
   developerDiagnostics: false,

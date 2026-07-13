@@ -32,6 +32,11 @@ export interface AgentHubAgent {
   lastActivity?: string;
   capabilities: ProviderCapability[];
   updatedAt: string;
+  voiceProvider?: string;
+  voiceId?: string;
+  voiceLabel?: string;
+  voiceAvailable?: boolean;
+  voiceSettings?: Record<string, unknown>;
 }
 
 export interface AgentHubProvider {
@@ -101,6 +106,11 @@ export interface ProviderSnapshot {
       avatar?: string;
       capabilities?: ProviderCapability[];
       lastActivity?: string;
+      voiceProvider?: string;
+      voiceId?: string;
+      voiceLabel?: string;
+      voiceAvailable?: boolean;
+      voiceSettings?: Record<string, unknown>;
     }>;
     error?: string;
   }>;

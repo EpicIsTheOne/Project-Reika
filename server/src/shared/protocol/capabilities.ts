@@ -4,6 +4,7 @@ export const deviceAgentCapabilities = [
   'provider.snapshot.read',
   'agent.roster.read',
   'agent.chat',
+  'agent.voice',
   'agent.activity',
   'project.discovery'
 ] as const;

@@ -14,6 +14,8 @@ export const agentHubEnvelopeTypes = [
   "agent.roster.snapshot",
   "agent.chat.request",
   "agent.chat.response",
+  "agent.voice.request",
+  "agent.voice.response",
   "agent.activity",
   "command.status",
   "command.status.request",
@@ -91,6 +93,22 @@ export interface CommandStatusPayload {
   legacy?: boolean;
 }
 
+export interface AgentVoiceRequestPayload {
+  providerId?: string;
+  agent: string;
+  text: string;
+  requestId?: string;
+}
+
+export interface AgentVoiceResponsePayload {
+  provider: "commandcenter";
+  agent: string;
+  voiceId?: string;
+  contentType: string;
+  audioBase64: string;
+  requestId?: string;
+}
+
 export type ProjectDiscoverySource = "explicit" | "git" | "marker";
 export type ProjectDiscoveryConfidence = "explicit" | "high" | "medium";
 
@@ -162,6 +180,8 @@ export type AgentRosterRequestEnvelope = AgentHubEnvelope<Record<string, never>>
 export type AgentRosterSnapshotEnvelope = AgentHubEnvelope<AgentRosterSnapshotPayload> & { type: "agent.roster.snapshot" };
 export type AgentChatRequestEnvelope = AgentHubEnvelope<AgentChatRequestPayload> & { type: "agent.chat.request" };
 export type AgentChatResponseEnvelope = AgentHubEnvelope<AgentChatResponsePayload> & { type: "agent.chat.response" };
+export type AgentVoiceRequestEnvelope = AgentHubEnvelope<AgentVoiceRequestPayload> & { type: "agent.voice.request" };
+export type AgentVoiceResponseEnvelope = AgentHubEnvelope<AgentVoiceResponsePayload> & { type: "agent.voice.response" };
 export type AgentActivityEnvelope = AgentHubEnvelope<AgentActivityPayload> & { type: "agent.activity" };
 export type CommandAcceptedEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.accepted" };
 export type CommandStatusEnvelope = AgentHubEnvelope<CommandStatusPayload> & { type: "command.status" };
@@ -182,6 +202,8 @@ export type KnownAgentHubEnvelope =
   | AgentRosterSnapshotEnvelope
   | AgentChatRequestEnvelope
   | AgentChatResponseEnvelope
+  | AgentVoiceRequestEnvelope
+  | AgentVoiceResponseEnvelope
   | AgentActivityEnvelope
   | CommandStatusEnvelope
   | CommandStatusRequestEnvelope
@@ -219,7 +241,7 @@ export function isAgentHubEnvelope(value: unknown): value is KnownAgentHubEnvelo
 }
 
 export function isRelayRequestType(type: AgentHubEnvelopeType) {
-  return type === "device.state.request" || type === "provider.refresh.request" || type === "agent.roster.request" || type === "agent.chat.request" || type === "command.status.request";
+  return type === "device.state.request" || type === "provider.refresh.request" || type === "agent.roster.request" || type === "agent.chat.request" || type === "agent.voice.request" || type === "command.status.request";
 }
 
 export function createEnvelopeId(prefix = "env") {

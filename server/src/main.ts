@@ -210,8 +210,41 @@ const recoverAgentChat = async (input: { providerId: string; agent: string; sess
   if (!result) return undefined;
   return { providerId: input.providerId, agent: input.agent, sessionId: input.providerSessionId || input.sessionId, text: result.text, runtime: 'recovered-history' };
 };
-const dispatcher = new CommandDispatcher(state, deviceEndpoint, handleAgentChat, undefined, recoverAgentChat);
-const relayClient = new RelayClient(state, events, handleAgentChat, recoverAgentChat);
+const handleAgentVoice = async (payload: { providerId?: string; agent: string; text: string; requestId?: string }) => {
+  const provider = state.snapshot().providers.find((item) => item.id === payload.providerId || item.kind === payload.providerId)
+    || state.snapshot().providers.find((item) => item.kind === 'commandcenter');
+  if (!provider || provider.kind !== 'commandcenter' || provider.status === 'offline' || provider.status === 'error') {
+    throw new Error('Command Center voice provider is unavailable.');
+  }
+  const baseUrl = (process.env.COMMANDCENTER_LOCAL_API_BASE || 'http://127.0.0.1:3002/commandcenter/api/v1').replace(/\/api\/v1\/?$/u, '');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45_000);
+  try {
+    const [voiceResponse, audioResponse] = await Promise.all([
+      fetch(`${baseUrl}/api/v1/voice?agent=${encodeURIComponent(payload.agent)}`, { signal: controller.signal }),
+      fetch(`${baseUrl}/api/voice/speak`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+        body: JSON.stringify({ text: payload.text, agent: payload.agent })
+      })
+    ]);
+    if (!audioResponse.ok) throw new Error(`Command Center voice synthesis failed (${audioResponse.status}).`);
+    const audio = Buffer.from(await audioResponse.arrayBuffer());
+    if (!audio.length || audio.length > 16 * 1024 * 1024) throw new Error('Command Center returned invalid voice audio.');
+    const voice = voiceResponse.ok ? await voiceResponse.json().catch(() => ({})) as { resolved?: { voiceId?: string } } : {};
+    return {
+      provider: 'commandcenter' as const,
+      agent: payload.agent,
+      voiceId: voice.resolved?.voiceId,
+      contentType: audioResponse.headers.get('content-type') || 'audio/mpeg',
+      audioBase64: audio.toString('base64'),
+      requestId: payload.requestId
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+const dispatcher = new CommandDispatcher(state, deviceEndpoint, handleAgentChat, undefined, recoverAgentChat, handleAgentVoice);
+const relayClient = new RelayClient(state, events, handleAgentChat, recoverAgentChat, handleAgentVoice);
 let projectDiscoveryTimer: NodeJS.Timeout | undefined;
 let projectDiscoveryInFlight: Promise<Awaited<ReturnType<typeof scanProjects>>> | undefined;
 
@@ -1816,6 +1849,7 @@ const server = http.createServer(async (req, res) => {
         projectDiscovery: typeof body.projectDiscovery === 'object' && body.projectDiscovery
           ? body.projectDiscovery as typeof before.projectDiscovery
           : undefined,
+        voice: typeof body.voice === 'object' && body.voice ? body.voice as typeof before.voice : undefined,
         autoUpdateServer: typeof body.autoUpdateServer === 'boolean' ? body.autoUpdateServer : undefined,
         autoUpdateClient: typeof body.autoUpdateClient === 'boolean' ? body.autoUpdateClient : undefined,
         developerDiagnostics: typeof body.developerDiagnostics === 'boolean' ? body.developerDiagnostics : undefined

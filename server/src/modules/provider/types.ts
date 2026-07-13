@@ -13,6 +13,11 @@ export interface ProviderAgentSummary {
   label?: string;
   model?: string;
   source?: string;
+  voiceProvider?: string;
+  voiceId?: string;
+  voiceLabel?: string;
+  voiceAvailable?: boolean;
+  voiceSettings?: Record<string, unknown>;
 }
 
 export interface ProviderRecord {

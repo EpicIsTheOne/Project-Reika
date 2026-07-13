@@ -2032,6 +2032,17 @@ img {
 .chat-message:hover .message-copy-action,
 .message-copy-action:focus-visible { opacity: 1; }
 
+.message-actions { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.4rem; }
+.message-actions button { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid rgba(87, 148, 255, 0.16); border-radius: 7px; color: #afc4ec; background: rgba(5, 16, 37, 0.7); }
+.speaking-indicator { color: #77c7ff; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.voice-call-panel { display: grid; gap: 0.65rem; margin: 0.75rem 1rem 0; padding: 1rem; border: 1px solid rgba(71, 176, 255, 0.3); border-radius: 12px; background: rgba(6, 19, 42, 0.92); box-shadow: 0 0 24px rgba(25, 128, 255, 0.12); }
+.voice-call-panel > div { display: flex; align-items: center; gap: 0.65rem; }
+.voice-call-panel > div:first-child { justify-content: space-between; }
+.voice-call-panel p, .voice-call-panel small { margin: 0; color: var(--muted); }
+.voice-call-panel button { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 36px; padding: 0 0.75rem; border: 1px solid rgba(87, 148, 255, 0.2); border-radius: 8px; color: #eef4ff; background: rgba(9, 31, 66, 0.82); }
+.voice-call-panel button.danger { border-color: rgba(255, 98, 124, 0.38); color: #ff9bb0; }
+.voice-call-state { padding: 0.25rem 0.55rem; border-radius: 999px; color: #70c7ff; background: rgba(31, 129, 222, 0.14); text-transform: capitalize; }
+
 .chat-message.search-match .message-content { outline: 1px solid rgba(255, 194, 87, 0.52); border-radius: 13px; box-shadow: 0 0 0 4px rgba(255, 194, 87, 0.08); }
 .chat-message.active-search-match .message-content { outline-color: #ffc857; box-shadow: 0 0 0 5px rgba(255, 194, 87, 0.18), 0 14px 34px rgba(0, 0, 0, 0.22); }
 
@@ -5233,12 +5244,15 @@ img {
 }
 
 .relay-url-control.secret-control {
-  grid-template-columns: auto minmax(220px, 360px) auto auto;
+  grid-template-columns: auto minmax(220px, 360px) repeat(3, auto);
 }
 
 .relay-url-control.secret-control > svg {
   color: var(--blue-2);
 }
+
+.setting-row:has(.secret-control) { grid-template-columns: 1fr; align-items: start; padding: 1rem 0; }
+.setting-row:has(.secret-control) .secret-control { width: 100%; }
 
 .relay-url-control input {
   width: 100%;
@@ -5255,6 +5269,31 @@ img {
   border-color: rgba(0, 149, 255, 0.68);
   box-shadow: 0 0 0 3px rgba(0, 128, 255, 0.13);
 }
+
+.agent-voice-toolbar { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(180px, auto); gap: 0.75rem; margin: 1rem 0; }
+.agent-voice-toolbar label { display: flex; align-items: center; gap: 0.55rem; }
+.agent-voice-toolbar input, .agent-voice-toolbar select, .agent-voice-field input, .agent-voice-field select { width: 100%; min-height: 42px; padding: 0 0.75rem; border: 1px solid rgba(87, 148, 255, 0.18); border-radius: 8px; color: #eef4ff; background: rgba(8, 18, 39, 0.75); }
+.agent-voice-list { display: grid; gap: 0.65rem; }
+.agent-voice-card { border: 1px solid rgba(87, 148, 255, 0.14); border-radius: 11px; background: rgba(5, 15, 34, 0.58); }
+.agent-voice-card summary { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 0.75rem; padding: 0.85rem; cursor: pointer; list-style: none; }
+.agent-voice-card summary img { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; }
+.agent-voice-card summary span { display: grid; gap: 0.25rem; }
+.agent-voice-card summary small { color: var(--muted); }
+.voice-source { padding: 0.3rem 0.55rem; border-radius: 999px; color: #8bd5ff; background: rgba(29, 128, 212, 0.13); font-size: 0.75rem; }
+.voice-source.unavailable { color: #ff9ba9; background: rgba(191, 45, 70, 0.13); }
+.agent-voice-card-body { display: grid; gap: 0.8rem; padding: 0 0.9rem 0.9rem; }
+.agent-voice-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; margin: 0; }
+.agent-voice-card dl div { min-width: 0; padding: 0.55rem; border-radius: 8px; background: rgba(10, 26, 54, 0.58); }
+.agent-voice-card dt { color: var(--muted); font-size: 0.74rem; }
+.agent-voice-card dd { margin: 0.2rem 0 0; overflow-wrap: anywhere; }
+.agent-voice-actions { display: flex; gap: 0.55rem; }
+.agent-voice-field { display: grid; grid-template-columns: 170px minmax(0, 1fr); align-items: center; gap: 0.75rem; }
+.agent-voice-field > div { display: flex; gap: 0.55rem; }
+.fish-voice-results { display: grid; gap: 0.4rem; }
+.fish-voice-results button { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.7rem; padding: 0.65rem; border: 1px solid rgba(87, 148, 255, 0.14); border-radius: 8px; color: #eef4ff; text-align: left; background: rgba(8, 25, 52, 0.72); }
+.fish-voice-results span { display: grid; gap: 0.2rem; }
+.fish-voice-results small { color: var(--muted); }
+.fish-voice-results code { max-width: 180px; overflow: hidden; text-overflow: ellipsis; color: #78c7ff; }
 
 .select-button {
   gap: 0.65rem;

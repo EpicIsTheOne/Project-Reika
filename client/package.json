@@ -24,11 +24,12 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.5",
-    "typescript": "^5.6.3",
+    "fish-audio-tts-toolkit": "github:EpicIsTheOne/fish-audio-tts-toolkit#df7f36c918ab9c9bdeb7efc9f55bb728e93b31af",
+    "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "lucide-react": "^0.468.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.5",
     "ws": "^8.18.0"
   },
   "devDependencies": {

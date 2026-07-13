@@ -38,6 +38,11 @@ export interface Agent {
   characterId?: string;
   relayAgentId?: string;
   relayProviderId?: string;
+  voiceProvider?: string;
+  voiceId?: string;
+  voiceLabel?: string;
+  voiceAvailable?: boolean;
+  voiceSettings?: Record<string, unknown>;
 }
 
 export interface CharacterProfile {

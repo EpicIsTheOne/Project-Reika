@@ -259,7 +259,12 @@ export function mapRelayRecordsToProviderState(records: RelayDeviceRecord[]): Re
         deviceId: agent.deviceId || device.id,
         providerId: provider.id,
         relayAgentId: getRelayOriginalAgentId(agent),
-        relayProviderId: getRelayOriginalProviderId(provider)
+        relayProviderId: getRelayOriginalProviderId(provider),
+        voiceProvider: agent.voiceProvider,
+        voiceId: agent.voiceId,
+        voiceLabel: agent.voiceLabel,
+        voiceAvailable: agent.voiceAvailable,
+        voiceSettings: agent.voiceSettings
       })),
       notes: "Discovered through relay chat transport.",
       relayDeviceId: device.id,

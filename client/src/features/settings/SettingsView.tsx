@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Bell, Box, Brush, ChevronDown, ChevronRight, Code2, Globe2, Info, KeyRound, Monitor, Palette, Shield } from "lucide-react";
+import { Bell, Box, Brush, ChevronDown, ChevronRight, Code2, Globe2, Info, KeyRound, Monitor, Palette, Play, Search, Shield, Users, Volume2 } from "lucide-react";
 import { defaultReikaRelayDeviceUrl } from "../../config/relay";
 import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "../../data/startup";
 import { assets } from "../../data/assets";
+import { sendRelayVoice } from "../../data/relay";
 import {
   applyUpdates,
   checkForUpdates,
@@ -19,6 +20,7 @@ import {
   type ReikaArtOAuthStatus,
   type ReikaSecurityStatus,
   type ReikaSettings,
+  type ReikaProviderRecord,
   type ReikaStateResponse,
   type ReikaUpdateStatus
 } from "../../lib/reikaApi";
@@ -26,11 +28,13 @@ import { artRerollSlot, makeArtRuntimeSeed, type ArtRuntime } from "../../lib/ar
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
 import type { BackendMode } from "../../app/types";
 import { StatusDot, StatusPill, Toggle } from "../../components/status";
+import { agentVoiceContext, resolveAgentVoice, speechPlayback } from "../../lib/voicePlayback";
 
 export function SettingsView({
   settings,
   backendMode,
   backendError,
+  providers,
   artRuntime,
   onOpenDevices,
   onSettingsChange
@@ -38,6 +42,7 @@ export function SettingsView({
   settings: ReikaSettings;
   backendMode: BackendMode;
   backendError: string | null;
+  providers: ReikaProviderRecord[];
   artRuntime: ArtRuntime;
   onOpenDevices: () => void;
   onSettingsChange: (settings: ReikaSettings, state?: ReikaStateResponse) => void;
@@ -54,15 +59,27 @@ export function SettingsView({
   const [relayUrlDraft, setRelayUrlDraft] = useState(settings.relayUrl);
   const [artOauth, setArtOauth] = useState<ReikaArtOAuthStatus | null>(null);
   const [artApiKeyDraft, setArtApiKeyDraft] = useState("");
+  const [fishKeyDraft, setFishKeyDraft] = useState("");
+  const [fishStatus, setFishStatus] = useState<ReikaVoiceSecretStatus | null>(null);
+  const [fishBusy, setFishBusy] = useState(false);
+  const [agentSearch, setAgentSearch] = useState("");
+  const [agentProviderFilter, setAgentProviderFilter] = useState("all");
   const artInstanceKey = useMemo(() => makeArtRuntimeSeed(), []);
   const settingsTabs = [
     { title: "General", detail: "Basic preferences", icon: Brush },
     { title: "Devices", detail: "Manage your devices", icon: Monitor },
     { title: "Providers", detail: "Manage providers", icon: Box },
+    { title: "Agents", detail: "Voices, speech, calls", icon: Users },
+    { title: "Secrets", detail: "Secure API keys", icon: KeyRound },
     { title: "Notifications", detail: "Choose alerts", icon: Bell },
     { title: "Appearance", detail: "Theme, colors, layout", icon: Palette },
     { title: "Developer", detail: "Logs, diagnostics, tools", icon: Code2 }
   ];
+  const voiceAgents = useMemo(() => providers.flatMap((provider) => provider.agents.map((agent) => ({ provider, agent }))).filter(({ provider, agent }) => {
+    if (agentProviderFilter !== "all" && provider.id !== agentProviderFilter) return false;
+    const query = agentSearch.trim().toLowerCase();
+    return !query || `${agent.name} ${agent.id} ${provider.name}`.toLowerCase().includes(query);
+  }), [agentProviderFilter, agentSearch, providers]);
 
   useEffect(() => {
     let active = true;
@@ -91,6 +108,7 @@ export function SettingsView({
         if (active) setArtOauth(status.oauth);
       })
       .catch(() => undefined);
+    window.reikaDesktop?.voice.secretStatus().then((status) => { if (active) setFishStatus(status); }).catch(() => undefined);
     return () => {
       active = false;
     };
@@ -100,13 +118,38 @@ export function SettingsView({
     setRelayUrlDraft(settings.relayUrl);
   }, [settings.relayUrl]);
 
-  const updateSetting = (key: keyof Omit<ReikaSettings, "version" | "updatedAt">, value: string | boolean | ReikaSettings["notificationPreferences"] | ReikaSettings["agentSelector"]) => {
+  const updateSetting = (key: keyof Omit<ReikaSettings, "version" | "updatedAt">, value: string | boolean | ReikaSettings["notificationPreferences"] | ReikaSettings["agentSelector"] | ReikaSettings["voice"]) => {
     setBusySetting(key);
     setSettingsError(null);
     patchSettings({ [key]: value } as Partial<Omit<ReikaSettings, "version" | "updatedAt">>)
       .then(({ settings, state }) => onSettingsChange(settings, state))
       .catch((error) => setSettingsError(error instanceof Error ? error.message : String(error)))
       .finally(() => setBusySetting(null));
+  };
+
+  const updateVoice = (voice: ReikaSettings["voice"]) => updateSetting("voice", voice);
+
+  const runFishSecretAction = async (action: "save" | "test" | "remove") => {
+    if (!window.reikaDesktop?.voice) {
+      setSettingsError("Secure Fish Audio settings require the packaged Reika desktop app.");
+      return;
+    }
+    setFishBusy(true);
+    setSettingsError(null);
+    try {
+      const status = action === "save"
+        ? await window.reikaDesktop.voice.saveSecret(fishKeyDraft.trim())
+        : action === "test"
+          ? await window.reikaDesktop.voice.testSecret()
+          : await window.reikaDesktop.voice.removeSecret();
+      setFishStatus(status);
+      setFishKeyDraft("");
+      setSettingsError(action === "remove" ? "Fish Audio key removed." : "Fish Audio connection validated.");
+    } catch (error) {
+      setSettingsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFishBusy(false);
+    }
   };
 
   const updateNotificationPreference = (key: keyof ReikaSettings["notificationPreferences"], value: boolean) => {
@@ -262,7 +305,7 @@ export function SettingsView({
             {settingsTabs.map((item, index) => {
               const Icon = item.icon;
               return (
-                <button className={cx("settings-tab motion-row", activeTab === item.title && "active")} key={item.title} onClick={() => setActiveTab(item.title)} style={motionDelay(index, 38)}>
+                <button className={cx("settings-tab motion-row", activeTab === item.title && "active")} key={item.title} onClick={() => { setActiveTab(item.title); setSettingsError(null); }} style={motionDelay(index, 38)}>
                   <Icon size={26} />
                   <span>
                     <strong>{item.title}</strong>
@@ -357,6 +400,42 @@ export function SettingsView({
                     </button>
                   </div>
                 </SettingRow>
+              </>
+            ) : null}
+            {activeTab === "Agents" ? (
+              <>
+                <SettingRow title="Speak agent replies in chat" detail="Speak finalized assistant messages. Per-agent choices below can override this setting.">
+                  <Toggle checked={settings.voice.speakAgentReplies} disabled={busySetting === "voice"} onClick={() => updateVoice({ ...settings.voice, speakAgentReplies: !settings.voice.speakAgentReplies })} />
+                </SettingRow>
+                <SettingRow title="Global default voice" detail={`${settings.voice.defaultVoice.voiceLabel || "No voice selected"} · ${settings.voice.defaultVoice.provider}`}>
+                  <button className="secondary-action small" type="button" onClick={() => updateVoice({ ...settings.voice, defaultVoice: { provider: "system", voiceId: "system-default", voiceLabel: "System default" } })}>Use system voice</button>
+                </SettingRow>
+                <div className="agent-voice-toolbar">
+                  <label><Search size={16} /><input value={agentSearch} onChange={(event) => setAgentSearch(event.target.value)} placeholder="Search agents..." /></label>
+                  <select value={agentProviderFilter} onChange={(event) => setAgentProviderFilter(event.target.value)}>
+                    <option value="all">All providers</option>
+                    {providers.map((provider) => <option value={provider.id} key={provider.id}>{provider.name}</option>)}
+                  </select>
+                </div>
+                <div className="agent-voice-list">
+                  {voiceAgents.length ? voiceAgents.map(({ provider, agent }) => (
+                    <AgentVoiceCard key={`${provider.id}:${agent.id}`} provider={provider} agent={agent} settings={settings} relayUrl={settings.relayUrl} disabled={busySetting === "voice"} onUpdate={updateVoice} onNotice={setSettingsError} />
+                  )) : <p className="boot-note">No agents match this search. Refresh providers if the device is offline.</p>}
+                </div>
+              </>
+            ) : null}
+            {activeTab === "Secrets" ? (
+              <>
+                <SettingRow title="Fish Audio API key" detail={fishStatus?.configured ? `Configured securely${fishStatus.lastValidatedAt ? ` · validated ${new Date(fishStatus.lastValidatedAt).toLocaleString()}` : ""}` : fishStatus?.secureStorageAvailable === false ? "Secure operating-system storage is unavailable." : "Not configured."}>
+                  <div className="relay-url-control secret-control">
+                    <KeyRound size={18} />
+                    <input value={fishKeyDraft} onChange={(event) => setFishKeyDraft(event.target.value)} type="password" autoComplete="off" spellCheck={false} placeholder={fishStatus?.configured ? "Replace configured key" : "Fish Audio API key"} />
+                    <button className="primary-action small" onClick={() => void runFishSecretAction("save")} disabled={fishBusy || !fishKeyDraft.trim()}>Save</button>
+                    <button className="secondary-action small" onClick={() => void runFishSecretAction("test")} disabled={fishBusy || !fishStatus?.configured}>Test</button>
+                    <button className="secondary-action small" onClick={() => void runFishSecretAction("remove")} disabled={fishBusy || !fishStatus?.configured}>Remove</button>
+                  </div>
+                </SettingRow>
+                <p className="boot-note">The renderer can save, test, replace, or remove this key, but it cannot read it back. Fish requests run inside Reika's trusted desktop process.</p>
               </>
             ) : null}
             {activeTab === "Devices" ? (
@@ -459,6 +538,95 @@ export function SettingsView({
         </footer>
       </section>
     </main>
+  );
+}
+
+function AgentVoiceCard({ provider, agent, settings, relayUrl, disabled, onUpdate, onNotice }: {
+  provider: ReikaProviderRecord;
+  agent: ReikaProviderRecord["agents"][number];
+  settings: ReikaSettings;
+  relayUrl: string;
+  disabled: boolean;
+  onUpdate: (voice: ReikaSettings["voice"]) => void;
+  onNotice: (message: string | null) => void;
+}) {
+  const context = agentVoiceContext(agent, provider.id);
+  const resolved = resolveAgentVoice(context, settings);
+  const preference = settings.voice.agents[context.key] ?? { spokenChat: "global" as const, callEnabled: true };
+  const [voiceQuery, setVoiceQuery] = useState("");
+  const [manualId, setManualId] = useState(preference.override?.voiceId ?? "");
+  const [results, setResults] = useState<ReikaVoiceSearchItem[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    const query = voiceQuery.trim();
+    if (!query || !window.reikaDesktop?.voice) { setResults([]); return; }
+    const timer = window.setTimeout(() => {
+      setSearching(true);
+      window.reikaDesktop?.voice.search(query)
+        .then((response) => setResults(response.items))
+        .catch((error) => onNotice(error instanceof Error ? error.message : String(error)))
+        .finally(() => setSearching(false));
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [voiceQuery]);
+
+  const savePreference = (next: Partial<typeof preference>) => onUpdate({
+    ...settings.voice,
+    agents: { ...settings.voice.agents, [context.key]: { ...preference, ...next } }
+  });
+  const selectFishVoice = (voiceId: string, voiceLabel: string) => {
+    setManualId(voiceId);
+    savePreference({ override: { provider: "fish", voiceId, voiceLabel } });
+  };
+  const preview = async () => {
+    const messageId = `preview:${context.key}`;
+    try {
+      const relayDeviceId = typeof provider.relayDeviceId === "string" ? provider.relayDeviceId : agent.deviceId;
+      const remoteSynthesizer = resolved.transport === "commandcenter" && relayDeviceId
+        ? async ({ requestId, text }: { requestId: string; text: string }) => sendRelayVoice(relayDeviceId, {
+            providerId: provider.relayProviderId || provider.id,
+            agent: agent.relayAgentId || agent.id,
+            requestId,
+            text
+          }, relayUrl)
+        : undefined;
+      await speechPlayback.speak({ messageId, text: `Hello. This is ${agent.name}.`, voice: resolved, remoteSynthesizer, force: true });
+      if (speechPlayback.snapshot().phase === "error") onNotice(speechPlayback.snapshot().error ?? "Voice preview failed.");
+    } catch (error) {
+      onNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  return (
+    <details className="agent-voice-card">
+      <summary>
+        <img src={assets.reika.avatar} alt="" />
+        <span><strong>{agent.name}</strong><small>{agent.id} · {provider.name}</small></span>
+        <span className={`voice-source ${resolved.available ? "available" : "unavailable"}`}>{resolved.source}</span>
+      </summary>
+      <div className="agent-voice-card-body">
+        <dl>
+          <div><dt>Active provider</dt><dd>{provider.name}</dd></div>
+          <div><dt>Voice provider</dt><dd>{resolved.inheritedProvider ?? resolved.provider}</dd></div>
+          <div><dt>Voice name</dt><dd>{resolved.voiceLabel}</dd></div>
+          <div><dt>Voice ID</dt><dd><code>{resolved.voiceId}</code></dd></div>
+          <div><dt>Source</dt><dd>{resolved.source}</dd></div>
+          <div><dt>Availability</dt><dd>{resolved.available ? "Available" : `Unavailable; ${resolved.fallbackReason ?? "fallback will be used"}`}</dd></div>
+        </dl>
+        <div className="agent-voice-actions">
+          <button type="button" className="secondary-action small" disabled={disabled || !resolved.available} onClick={() => void preview()}><Play size={15} />Preview</button>
+          <button type="button" className="secondary-action small" disabled={disabled || !preference.override} onClick={() => savePreference({ override: undefined })}>Reset to provider default</button>
+        </div>
+        <label className="agent-voice-field"><span>Spoken chat</span><select value={preference.spokenChat} onChange={(event) => savePreference({ spokenChat: event.target.value as typeof preference.spokenChat })}><option value="global">Use global setting</option><option value="always">Always speak</option><option value="never">Never speak</option></select></label>
+        <label className="agent-voice-field"><span>Calls</span><Toggle checked={preference.callEnabled} disabled={disabled} onClick={() => savePreference({ callEnabled: !preference.callEnabled })} /></label>
+        <label className="agent-voice-field"><span>Find Fish Audio voice</span><input value={voiceQuery} onChange={(event) => setVoiceQuery(event.target.value)} placeholder="Search name or description..." /></label>
+        {searching ? <p className="boot-note">Searching Fish Audio…</p> : null}
+        {!searching && voiceQuery.trim() && !results.length ? <p className="boot-note">No Fish Audio voices found.</p> : null}
+        {results.length ? <div className="fish-voice-results">{results.slice(0, 6).map((item) => <button type="button" key={item.id} onClick={() => selectFishVoice(item.id, item.title)}><span><strong>{item.title}</strong><small>{item.description || item.tags.join(" · ") || item.languages.join(" · ")}</small></span><code>{item.id}</code></button>)}</div> : null}
+        <label className="agent-voice-field"><span>Manual Fish reference ID</span><div><input value={manualId} onChange={(event) => setManualId(event.target.value)} placeholder="Fish reference ID" /><button type="button" className="primary-action small" disabled={!manualId.trim()} onClick={() => selectFishVoice(manualId.trim(), "Manual Fish voice")}>Save</button></div></label>
+      </div>
+    </details>
   );
 }
 

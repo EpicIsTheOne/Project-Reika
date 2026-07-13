@@ -293,11 +293,19 @@ export interface ReikaSettings {
     scanIntervalMinutes: number;
     defaultAgentId?: string;
   };
+  voice: {
+    speakAgentReplies: boolean;
+    defaultVoice: ReikaVoiceSelection;
+    agents: Record<string, ReikaAgentVoicePreference>;
+  };
   autoUpdateServer: boolean;
   autoUpdateClient: boolean;
   developerDiagnostics: boolean;
   updatedAt: string;
 }
+
+export interface ReikaVoiceSelection { provider: "fish" | "system"; voiceId: string; voiceLabel: string; }
+export interface ReikaAgentVoicePreference { spokenChat: "global" | "always" | "never"; callEnabled: boolean; override?: ReikaVoiceSelection; }
 
 export interface ReikaAgentSelectorSettings {
   labelMode: "agent-provider" | "agent-only" | "agent-device";

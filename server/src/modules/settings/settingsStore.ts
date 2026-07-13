@@ -22,10 +22,24 @@ export interface ReikaSettings {
   notificationPreferences: NotificationPreferences;
   agentSelector: AgentSelectorSettings;
   projectDiscovery: ProjectDiscoverySettings;
+  voice: VoiceSettings;
   autoUpdateServer: boolean;
   autoUpdateClient: boolean;
   developerDiagnostics: boolean;
   updatedAt: string;
+}
+
+export type SpokenChatPreference = 'global' | 'always' | 'never';
+export interface VoiceSelection { provider: 'fish' | 'system'; voiceId: string; voiceLabel: string; }
+export interface AgentVoicePreference {
+  spokenChat: SpokenChatPreference;
+  callEnabled: boolean;
+  override?: VoiceSelection;
+}
+export interface VoiceSettings {
+  speakAgentReplies: boolean;
+  defaultVoice: VoiceSelection;
+  agents: Record<string, AgentVoicePreference>;
 }
 
 export type NotificationPreferenceKey = 'agent' | 'device' | 'provider' | 'chat' | 'file' | 'system' | 'warning';
@@ -79,6 +93,11 @@ const defaultSettings: ReikaSettings = {
     maxDepth: 4,
     scanIntervalMinutes: 15
   },
+  voice: {
+    speakAgentReplies: false,
+    defaultVoice: { provider: 'system', voiceId: 'system-default', voiceLabel: 'System default' },
+    agents: {}
+  },
   autoUpdateServer: false,
   autoUpdateClient: false,
   developerDiagnostics: false,
@@ -108,11 +127,41 @@ function normalizeSettings(input: Partial<ReikaSettings> = {}): ReikaSettings {
     notificationPreferences: normalizeNotificationPreferences(input.notificationPreferences),
     agentSelector: normalizeAgentSelector(input.agentSelector),
     projectDiscovery: normalizeProjectDiscovery(input.projectDiscovery),
+    voice: normalizeVoiceSettings(input.voice),
     autoUpdateServer: typeof input.autoUpdateServer === 'boolean' ? input.autoUpdateServer : defaultSettings.autoUpdateServer,
     autoUpdateClient: typeof input.autoUpdateClient === 'boolean' ? input.autoUpdateClient : defaultSettings.autoUpdateClient,
     developerDiagnostics: typeof input.developerDiagnostics === 'boolean' ? input.developerDiagnostics : defaultSettings.developerDiagnostics,
     updatedAt: typeof input.updatedAt === 'string' ? input.updatedAt : new Date().toISOString()
   };
+}
+
+function normalizeVoiceSettings(value: unknown): VoiceSettings {
+  const input = typeof value === 'object' && value ? value as Partial<VoiceSettings> : {};
+  const defaultVoice = normalizeVoiceSelection(input.defaultVoice) || defaultSettings.voice.defaultVoice;
+  const agents: Record<string, AgentVoicePreference> = {};
+  if (input.agents && typeof input.agents === 'object') {
+    for (const [rawKey, rawValue] of Object.entries(input.agents)) {
+      const key = rawKey.trim().slice(0, 240);
+      if (!key || !rawValue || typeof rawValue !== 'object') continue;
+      const item = rawValue as Partial<AgentVoicePreference>;
+      agents[key] = {
+        spokenChat: item.spokenChat === 'always' || item.spokenChat === 'never' ? item.spokenChat : 'global',
+        callEnabled: item.callEnabled !== false,
+        override: normalizeVoiceSelection(item.override)
+      };
+    }
+  }
+  return { speakAgentReplies: input.speakAgentReplies === true, defaultVoice, agents };
+}
+
+function normalizeVoiceSelection(value: unknown): VoiceSelection | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const input = value as Partial<VoiceSelection>;
+  const provider = input.provider === 'fish' ? 'fish' : input.provider === 'system' ? 'system' : undefined;
+  const voiceId = typeof input.voiceId === 'string' ? input.voiceId.trim().slice(0, 240) : '';
+  if (!provider || !voiceId) return undefined;
+  const voiceLabel = typeof input.voiceLabel === 'string' && input.voiceLabel.trim() ? input.voiceLabel.trim().slice(0, 240) : voiceId;
+  return { provider, voiceId, voiceLabel };
 }
 
 function defaultProjectDiscoveryRoots() {
@@ -236,6 +285,7 @@ export class SettingsStore {
       ...this.settings,
       ...cleanInput,
       projectDiscovery: cleanInput.projectDiscovery ? { ...this.settings.projectDiscovery, ...cleanInput.projectDiscovery } : this.settings.projectDiscovery,
+      voice: cleanInput.voice ? { ...this.settings.voice, ...cleanInput.voice, agents: cleanInput.voice.agents ?? this.settings.voice.agents } : this.settings.voice,
       updatedAt: new Date().toISOString()
     });
     this.queueSave();

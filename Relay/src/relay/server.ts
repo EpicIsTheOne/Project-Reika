@@ -491,7 +491,7 @@ deviceSocketServer.on("connection", (socket, request) => {
       return;
     }
 
-    if (parsed.type === "agent.chat.response" || parsed.type === "agent.activity" || parsed.type.startsWith("command.")) {
+    if (parsed.type === "agent.chat.response" || parsed.type === "agent.voice.response" || parsed.type === "agent.activity" || parsed.type.startsWith("command.")) {
       broadcastToApps(parsed);
       return;
     }
@@ -811,7 +811,7 @@ function normalizeProvider(deviceId: string, provider: ProviderSnapshot["provide
     capabilities,
     lastSeenAt: now,
     agents: (provider.agents ?? []).map((agent) => {
-      const sourceAgent = agent as typeof agent & { label?: string; source?: string };
+      const sourceAgent = agent as typeof agent & { label?: string; source?: string; voiceProvider?: string; voiceId?: string; voiceLabel?: string; voiceAvailable?: boolean; voiceSettings?: Record<string, unknown> };
       return {
       id: sourceAgent.id ?? `${providerId}-${slug(sourceAgent.name)}`,
       providerId,
@@ -823,6 +823,11 @@ function normalizeProvider(deviceId: string, provider: ProviderSnapshot["provide
       avatar: sourceAgent.avatar,
       capabilities: normalizeCapabilities(sourceAgent.capabilities ?? provider.capabilities),
       lastActivity: sourceAgent.lastActivity ?? "Discovered through relay",
+      voiceProvider: sourceAgent.voiceProvider,
+      voiceId: sourceAgent.voiceId,
+      voiceLabel: sourceAgent.voiceLabel,
+      voiceAvailable: sourceAgent.voiceAvailable,
+      voiceSettings: sourceAgent.voiceSettings,
       updatedAt: now
       };
     }),

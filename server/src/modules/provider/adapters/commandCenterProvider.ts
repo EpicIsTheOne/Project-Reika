@@ -9,6 +9,15 @@ interface CommandCenterAgent {
   model?: string;
   source?: string;
   bridge?: string;
+  voice?: string;
+}
+
+interface CommandCenterVoiceState {
+  provider?: string;
+  defaultVoiceId?: string;
+  fishVoiceId?: string;
+  elevenlabsAgentVoices?: Record<string, string>;
+  fishAgentVoices?: Record<string, string>;
 }
 
 export const commandCenterProvider: ProviderAdapter = {
@@ -19,7 +28,10 @@ export const commandCenterProvider: ProviderAdapter = {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 2500);
-      const response = await fetch(`${baseUrl}/agents`, { signal: controller.signal });
+      const [response, voiceResponse] = await Promise.all([
+        fetch(`${baseUrl}/agents`, { signal: controller.signal }),
+        fetch(`${baseUrl}/voice`, { signal: controller.signal }).catch(() => undefined)
+      ]);
       clearTimeout(timeout);
 
       if (!response.ok) {
@@ -29,13 +41,30 @@ export const commandCenterProvider: ProviderAdapter = {
       const body = await response.json() as { ok?: boolean; agents?: CommandCenterAgent[]; primaryAgentId?: string };
       if (!body.ok) return offline('CommandCenter returned ok=false');
 
-      const agents = (body.agents || []).map((agent) => ({
-        id: String(agent.id || agent.label || agent.name || 'unknown'),
+      const voiceBody = voiceResponse?.ok ? await voiceResponse.json().catch(() => ({})) as { settings?: CommandCenterVoiceState } : {};
+      const voiceSettings = voiceBody.settings || {};
+      const voiceProvider = voiceSettings.provider === 'fish' ? 'fish' : voiceSettings.provider === 'elevenlabs' ? 'elevenlabs' : 'commandcenter';
+
+      const agents = (body.agents || []).map((agent) => {
+        const id = String(agent.id || agent.label || agent.name || 'unknown');
+        const providerVoiceId = voiceProvider === 'fish'
+          ? voiceSettings.fishAgentVoices?.[id] || voiceSettings.fishVoiceId
+          : voiceProvider === 'elevenlabs'
+            ? voiceSettings.elevenlabsAgentVoices?.[id] || voiceSettings.defaultVoiceId
+            : agent.voice;
+        return ({
+        id,
         name: String(agent.name || agent.label || agent.id || 'Unknown agent'),
         label: agent.label,
         model: agent.model,
-        source: agent.source || agent.bridge
-      }));
+        source: agent.source || agent.bridge,
+        voiceProvider,
+        voiceId: String(providerVoiceId || '').trim() || undefined,
+        voiceLabel: String(agent.voice || providerVoiceId || '').trim() || undefined,
+        voiceAvailable: Boolean(providerVoiceId),
+        voiceSettings: { transport: 'commandcenter', inherited: true }
+      });
+      });
 
       return {
         id: this.id,

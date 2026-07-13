@@ -105,6 +105,22 @@ export interface AgentChatResponsePayload {
   runtime: string;
 }
 
+export interface AgentVoiceRequestPayload {
+  providerId?: string;
+  agent: string;
+  text: string;
+  requestId?: string;
+}
+
+export interface AgentVoiceResponsePayload {
+  provider: 'commandcenter';
+  agent: string;
+  voiceId?: string;
+  contentType: string;
+  audioBase64: string;
+  requestId?: string;
+}
+
 export type AgentActivityStatus = 'idle' | 'thinking' | 'responding' | 'tool_use' | 'error' | 'active';
 
 export interface AgentActivityPayload {

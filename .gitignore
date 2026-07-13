@@ -3,6 +3,12 @@ dist
 .env
 .env.*
 !.env.example
+secrets.json
+local-secrets.*
+.reika-voice-cache/
+generated-voice-audio/
+temporary-call-recordings/
+*.voice-audio
 *.tsbuildinfo
 .DS_Store
 

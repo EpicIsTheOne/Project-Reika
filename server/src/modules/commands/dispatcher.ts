@@ -1,9 +1,10 @@
 import type { StateStore } from '../../core/stateStore.js';
 import { createEnvelope, type AgentHubEndpoint, type AgentHubEnvelope } from '../../shared/protocol/envelope.js';
-import type { AgentActivityPayload, AgentChatRequestPayload, AgentChatResponsePayload, AgentRosterSnapshotPayload, CommandRejectedPayload, CommandStatusPayload, CommandStatusRequestPayload, DeliveryState, DeviceStateSnapshotPayload, ProviderSnapshotPayload } from '../../shared/protocol/messages.js';
+import type { AgentActivityPayload, AgentChatRequestPayload, AgentChatResponsePayload, AgentRosterSnapshotPayload, AgentVoiceRequestPayload, AgentVoiceResponsePayload, CommandRejectedPayload, CommandStatusPayload, CommandStatusRequestPayload, DeliveryState, DeviceStateSnapshotPayload, ProviderSnapshotPayload } from '../../shared/protocol/messages.js';
 import { IdempotencyLedger, type IdempotencyRecord } from './idempotencyLedger.js';
 
 export type AgentChatHandler = (payload: AgentChatRequestPayload) => Promise<AgentChatResponsePayload>;
+export type AgentVoiceHandler = (payload: AgentVoiceRequestPayload) => Promise<AgentVoiceResponsePayload>;
 export type AgentOutboundSink = (envelope: AgentHubEnvelope) => void;
 export type AgentChatRecoveryHandler = (input: {
   providerId: string;
@@ -21,7 +22,8 @@ export class CommandDispatcher {
     private readonly deviceEndpoint: AgentHubEndpoint,
     private readonly chatHandler?: AgentChatHandler,
     private readonly outboundSink?: AgentOutboundSink,
-    private readonly recoveryHandler?: AgentChatRecoveryHandler
+    private readonly recoveryHandler?: AgentChatRecoveryHandler,
+    private readonly voiceHandler?: AgentVoiceHandler
   ) {}
 
   async dispatch(envelope: AgentHubEnvelope): Promise<AgentHubEnvelope[]> {
@@ -35,6 +37,8 @@ export class CommandDispatcher {
         return [this.agentRoster(envelope)];
       case 'agent.chat.request':
         return this.agentChat(envelope);
+      case 'agent.voice.request':
+        return this.agentVoice(envelope);
       case 'command.status.request':
         return this.commandStatus(envelope);
       default:
@@ -156,6 +160,28 @@ export class CommandDispatcher {
       return responses;
     } finally {
       this.activeRequestKeys.delete(record.key);
+    }
+  }
+
+  private async agentVoice(request: AgentHubEnvelope) {
+    if (!this.voiceHandler) return [this.reject(request, 'UNSUPPORTED_COMMAND', 'Voice synthesis is not configured on this device agent.')];
+    const payload = request.payload as Partial<AgentVoiceRequestPayload>;
+    if (!payload || typeof payload.agent !== 'string' || !payload.agent.trim() || typeof payload.text !== 'string' || !payload.text.trim()) {
+      return [this.reject(request, 'INVALID_PAYLOAD', 'agent.voice.request requires payload.agent and payload.text.')];
+    }
+    try {
+      const result = await this.voiceHandler({
+        providerId: typeof payload.providerId === 'string' ? payload.providerId : undefined,
+        agent: payload.agent.trim(),
+        text: payload.text.slice(0, 2500),
+        requestId: typeof payload.requestId === 'string' ? payload.requestId : undefined
+      });
+      return [createEnvelope<AgentVoiceResponsePayload>({
+        type: 'agent.voice.response', source: this.deviceEndpoint, target: request.source,
+        replyTo: request.id, correlationId: request.correlationId || request.id, payload: result
+      })];
+    } catch (error) {
+      return [this.reject(request, 'INTERNAL_ERROR', error instanceof Error ? error.message : String(error))];
     }
   }
 
