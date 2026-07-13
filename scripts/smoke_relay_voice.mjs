@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { tagTtsText } from "fish-audio-tts-toolkit/src/tagging.js";
 
-const socketUrl = process.argv[2] || "ws://100.89.87.98:8790/v1/app";
+const socketUrl = process.argv[2] || process.env.REIKA_RELAY_APP_URL;
+if (!socketUrl) {
+  throw new Error("Pass a relay app WebSocket URL or set REIKA_RELAY_APP_URL.");
+}
 const deviceId = process.argv[3] || "linux-srv955268-local";
 const providerId = process.argv[4] || "commandcenter-local";
 const agent = process.argv[5] || "orchestrator";
