@@ -1087,7 +1087,7 @@ async function runPersistedMemoryMeshTask(taskId: string, onLifecycle?: (stage: 
       });
       result = turn.result.text;
     } else {
-      result = (await sendRemoteMemoryMeshTask(decision, context.prompt, 120_000, controller.signal)).text;
+      result = (await sendRemoteMemoryMeshTask(decision, context.prompt, 600_000, controller.signal)).text;
     }
     if (controller.signal.aborted || memoryMesh.getRoutingTask(task.id)?.status === 'cancelled') return memoryMesh.getRoutingTask(task.id)!;
     const writeback = memoryMesh.addMemory({
