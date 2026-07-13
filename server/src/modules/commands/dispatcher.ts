@@ -5,15 +5,23 @@ import { IdempotencyLedger, type IdempotencyRecord } from './idempotencyLedger.j
 
 export type AgentChatHandler = (payload: AgentChatRequestPayload) => Promise<AgentChatResponsePayload>;
 export type AgentOutboundSink = (envelope: AgentHubEnvelope) => void;
+export type AgentChatRecoveryHandler = (input: {
+  providerId: string;
+  agent: string;
+  sessionId: string;
+  providerSessionId: string;
+}) => Promise<AgentChatResponsePayload | undefined>;
 
 export class CommandDispatcher {
   private readonly idempotency = new IdempotencyLedger();
+  private readonly activeRequestKeys = new Set<string>();
 
   constructor(
     private readonly state: StateStore,
     private readonly deviceEndpoint: AgentHubEndpoint,
     private readonly chatHandler?: AgentChatHandler,
-    private readonly outboundSink?: AgentOutboundSink
+    private readonly outboundSink?: AgentOutboundSink,
+    private readonly recoveryHandler?: AgentChatRecoveryHandler
   ) {}
 
   async dispatch(envelope: AgentHubEnvelope): Promise<AgentHubEnvelope[]> {
@@ -83,12 +91,6 @@ export class CommandDispatcher {
       return [this.reject(request, 'INVALID_PAYLOAD', 'agent.chat.request requires payload.message.')];
     }
 
-    const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : '';
-    const existing = this.idempotency.get(request.id, this.deviceEndpoint.id, sessionId);
-    if (existing) return this.responsesForExisting(request, existing);
-    const record = this.idempotency.begin(request.id, this.deviceEndpoint.id, sessionId, payload.delivery?.statusMetadataVersion !== 1);
-    this.emitDeliveryStatus(request, record, 'delivered', 'Request delivered to device authority.');
-
     const chatPayload: AgentChatRequestPayload = {
       providerId: typeof payload.providerId === 'string' ? payload.providerId : undefined,
       agent: typeof payload.agent === 'string' ? payload.agent : undefined,
@@ -99,8 +101,20 @@ export class CommandDispatcher {
       fileIds: Array.isArray(payload.fileIds) ? payload.fileIds.map(String) : undefined
       ,delivery: payload.delivery?.statusMetadataVersion === 1 ? payload.delivery : undefined
     };
+    const sessionId = chatPayload.sessionId || '';
+    const existing = this.idempotency.get(request.id, this.deviceEndpoint.id, sessionId);
+    if (existing) return this.responsesForExisting(request, existing);
+    const record = this.idempotency.begin(
+      request.id,
+      this.deviceEndpoint.id,
+      sessionId,
+      payload.delivery?.statusMetadataVersion !== 1,
+      { providerId: chatPayload.providerId, agent: chatPayload.agent, providerSessionId: chatPayload.providerSessionId }
+    );
+    this.emitDeliveryStatus(request, record, 'delivered', 'Request delivered to device authority.');
 
     this.idempotency.update(record, 'executing');
+    this.activeRequestKeys.add(record.key);
     this.emitDeliveryStatus(request, record, 'executing', 'Request execution started.');
     this.emitActivity(request, chatPayload, 'thinking');
 
@@ -140,10 +154,12 @@ export class CommandDispatcher {
       const responses = [failed, rejected];
       this.idempotency.update(record, 'failed', responses, message);
       return responses;
+    } finally {
+      this.activeRequestKeys.delete(record.key);
     }
   }
 
-  private commandStatus(request: AgentHubEnvelope) {
+  private async commandStatus(request: AgentHubEnvelope) {
     const payload = request.payload as Partial<CommandStatusRequestPayload>;
     const requestId = typeof payload.requestId === 'string' ? payload.requestId : '';
     const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : '';
@@ -151,6 +167,35 @@ export class CommandDispatcher {
     const record = this.idempotency.get(requestId, this.deviceEndpoint.id, sessionId);
     if (!record) return [this.reject(request, 'INVALID_PAYLOAD', 'No idempotency record exists for that request scope.')];
     if (record.responses?.length) return record.responses;
+    if (
+      record.state === 'executing'
+      && !this.activeRequestKeys.has(record.key)
+      && this.recoveryHandler
+      && record.providerId
+      && record.agent
+      && record.providerSessionId
+    ) {
+      const recovered = await this.recoveryHandler({
+        providerId: record.providerId,
+        agent: record.agent,
+        sessionId: record.sessionId,
+        providerSessionId: record.providerSessionId
+      }).catch(() => undefined);
+      if (recovered?.text.trim()) {
+        const response = createEnvelope<AgentChatResponsePayload>({
+          type: 'agent.chat.response',
+          source: this.deviceEndpoint,
+          target: request.source,
+          replyTo: record.requestId,
+          correlationId: record.requestId,
+          payload: recovered
+        });
+        const completed = this.deliveryStatus(request, record, 'completed', 'Recovered completed provider result after device restart.', true);
+        const responses = [completed, response];
+        this.idempotency.update(record, 'completed', responses);
+        return responses;
+      }
+    }
     return [this.deliveryStatus(request, record, record.state, `Request is ${record.state}.`, record.state === 'completed')];
   }
 

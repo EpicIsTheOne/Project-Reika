@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import type { ProviderRecord } from './types.js';
 
@@ -435,17 +435,25 @@ function parseOpenClawSessionsList(output: string, providerId: string): Provider
   try {
     const parsed = JSON.parse(output) as { sessions?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
     const sessions = Array.isArray(parsed) ? parsed : parsed.sessions || [];
-    return sessions.map((session) => ({
+    return sessions.map((session) => {
+      const key = String(session.key || '');
+      const marker = ':reika:';
+      const providerSessionId = key.includes(marker) ? key.slice(key.indexOf(marker) + marker.length) : String(session.id || session.sessionId || '');
+      const updatedAt = typeof session.updatedAt === 'number'
+        ? new Date(session.updatedAt).toISOString()
+        : typeof session.updatedAt === 'string' ? session.updatedAt : undefined;
+      return ({
       providerId,
-      providerSessionId: String(session.id || session.sessionId || ''),
+      providerSessionId,
       agentId: String(session.agent || session.agentId || 'openclaw'),
-      title: String(session.title || session.preview || session.id || 'OpenClaw session'),
+      title: String(session.title || session.preview || providerSessionId || 'OpenClaw session'),
       createdAt: typeof session.createdAt === 'string' ? session.createdAt : undefined,
-      updatedAt: typeof session.updatedAt === 'string' ? session.updatedAt : undefined,
+      updatedAt,
       messageCount: typeof session.messageCount === 'number' ? session.messageCount : undefined,
       lastMessagePreview: typeof session.lastMessagePreview === 'string' ? session.lastMessagePreview : typeof session.preview === 'string' ? session.preview : undefined,
-      metadata: { openClawSessionId: String(session.id || session.sessionId || '') }
-    })).filter((session) => session.providerSessionId);
+      metadata: { openClawSessionId: String(session.sessionId || session.id || ''), openClawSessionKey: key }
+    });
+    }).filter((session) => session.providerSessionId);
   } catch {
     return output.split(/\r?\n/)
       .map((line) => line.trim())
@@ -481,6 +489,25 @@ function normalizeOpenClawMessages(output: string): ProviderHistoryMessage[] {
       };
     }).filter((message) => message.text);
   } catch {
+    const jsonl = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+      try {
+        const entry = JSON.parse(line) as Record<string, unknown>;
+        const raw = entry.message && typeof entry.message === 'object' ? entry.message as Record<string, unknown> : entry;
+        const rawRole = String(raw.role || '').toLowerCase();
+        if (rawRole !== 'user' && rawRole !== 'assistant' && rawRole !== 'system') return undefined;
+        const text = extractMessageText(raw.content ?? raw.text ?? raw.message);
+        if (!text) return undefined;
+        return {
+          id: typeof entry.id === 'string' ? entry.id : typeof raw.id === 'string' ? raw.id : undefined,
+          role: rawRole as ProviderHistoryMessage['role'],
+          text,
+          timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : typeof raw.timestamp === 'string' ? raw.timestamp : undefined
+        } satisfies ProviderHistoryMessage;
+      } catch {
+        return undefined;
+      }
+    }).filter(Boolean) as ProviderHistoryMessage[];
+    if (jsonl.length) return jsonl;
     return output.split(/\r?\n/).map((line, index) => {
       const match = line.match(/^(user|assistant|system|you|openclaw|agent)\s*:\s*(.+)$/i);
       if (!match) return undefined;
@@ -493,6 +520,34 @@ function normalizeOpenClawMessages(output: string): ProviderHistoryMessage[] {
       };
     }).filter(Boolean) as ProviderHistoryMessage[];
   }
+}
+
+interface OpenClawSessionIndex {
+  stores?: Array<{ agentId?: string; path?: string }>;
+  sessions?: Array<{ key?: string; sessionId?: string; agentId?: string }>;
+}
+
+async function readOpenClawSessionIndex() {
+  const { stdout } = await runCommand(openClawBin, ['sessions', '--all-agents', '--json'], 30000);
+  return JSON.parse(stdout) as OpenClawSessionIndex;
+}
+
+async function readOpenClawSessionTranscript(providerSessionId: string) {
+  const index = await readOpenClawSessionIndex();
+  const marker = `:reika:${providerSessionId}`;
+  const session = (index.sessions || []).find((candidate) => String(candidate.key || '').endsWith(marker))
+    || (index.sessions || []).find((candidate) => candidate.sessionId === providerSessionId || candidate.key === providerSessionId);
+  if (!session?.key || !session.agentId) throw new Error(`OpenClaw session not found: ${providerSessionId}`);
+  const store = (index.stores || []).find((candidate) => candidate.agentId === session.agentId);
+  if (!store?.path) throw new Error(`OpenClaw session store not found for agent: ${session.agentId}`);
+  const records = JSON.parse(await readFile(store.path, 'utf8')) as Record<string, { sessionFile?: string; sessionId?: string }>;
+  const record = records[session.key];
+  const transcriptPath = record?.sessionFile || (record?.sessionId ? join(dirname(store.path), `${record.sessionId}.jsonl`) : '');
+  if (!transcriptPath) throw new Error(`OpenClaw transcript not found: ${providerSessionId}`);
+  const allowedRoot = resolve(join(homedir(), '.openclaw', 'agents'));
+  const safePath = resolve(transcriptPath);
+  if (safePath !== allowedRoot && !safePath.startsWith(`${allowedRoot}${sep}`)) throw new Error('OpenClaw transcript path escaped the configured agent store.');
+  return readFile(safePath, 'utf8');
 }
 
 export async function listProviderHistorySessions(providerId: string, providers: ProviderRecord[], limit = 25): Promise<ProviderHistorySession[]> {
@@ -522,8 +577,8 @@ export async function listProviderHistorySessions(providerId: string, providers:
   }
 
   if (provider.kind === 'openclaw') {
-    const { stdout, stderr } = await runCommand(openClawBin, ['sessions', 'list', '--json', '--limit', String(limit)], 30000)
-      .catch(() => runCommand(openClawBin, ['sessions', 'list', '--limit', String(limit)], 30000));
+    const { stdout, stderr } = await runCommand(openClawBin, ['sessions', '--all-agents', '--json'], 30000)
+      .catch(() => runCommand(openClawBin, ['sessions', 'list', '--json', '--limit', String(limit)], 30000));
     return parseOpenClawSessionsList(stdout || stderr, provider.id).slice(0, limit);
   }
 
@@ -534,9 +589,13 @@ export async function getProviderHistoryMessages(providerId: string, providerSes
   const provider = findProvider(providers, providerId);
   if (!provider) throw new Error(`Provider not found: ${providerId}`);
   if (provider.kind === 'openclaw') {
-    const { stdout, stderr } = await runCommand(openClawBin, ['sessions', 'export', providerSessionId, '--json'], 30000)
-      .catch(() => runCommand(openClawBin, ['sessions', 'show', providerSessionId], 30000));
-    return normalizeOpenClawMessages(stdout || stderr);
+    const transcript = await readOpenClawSessionTranscript(providerSessionId)
+      .catch(async () => {
+        const { stdout, stderr } = await runCommand(openClawBin, ['sessions', 'export', providerSessionId, '--json'], 30000)
+          .catch(() => runCommand(openClawBin, ['sessions', 'show', providerSessionId], 30000));
+        return stdout || stderr;
+      });
+    return normalizeOpenClawMessages(transcript);
   }
   if (provider.kind !== 'commandcenter') return [];
   const response = await providerFetch(`${commandCenterBaseUrl}/sessions/${encodeURIComponent(providerSessionId)}/messages`);

@@ -184,7 +184,7 @@ const notifications = new NotificationStore();
 const memoryMesh = new MemoryMeshStore();
 const deviceEndpoint = { kind: 'device' as const, id: serverConfig.uplink.deviceId };
 const appEndpoint = { kind: 'app' as const, id: 'local-simulator' };
-const dispatcher = new CommandDispatcher(state, deviceEndpoint, async (payload) => {
+const handleAgentChat = async (payload: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; model?: string; fileIds?: string[] }) => {
   const result = await runChatTurn({
     sessionId: payload.sessionId,
     providerSessionId: payload.providerSessionId,
@@ -201,25 +201,15 @@ const dispatcher = new CommandDispatcher(state, deviceEndpoint, async (payload) 
     text: result.result.text,
     runtime: result.result.runtime
   };
-});
-const relayClient = new RelayClient(state, events, async (payload) => {
-  const result = await runChatTurn({
-    sessionId: payload.sessionId,
-    providerSessionId: payload.providerSessionId,
-    providerId: payload.providerId,
-    agent: payload.agent,
-    message: payload.message,
-    model: payload.model,
-    fileIds: payload.fileIds
-  });
-  return {
-    providerId: result.result.providerId,
-    agent: result.result.agentId,
-    sessionId: result.result.sessionId,
-    text: result.result.text,
-    runtime: result.result.runtime
-  };
-});
+};
+const recoverAgentChat = async (input: { providerId: string; agent: string; sessionId: string; providerSessionId: string }) => {
+  const messages = await getProviderHistoryMessages(input.providerId, input.providerSessionId, state.snapshot().providers);
+  const result = [...messages].reverse().find((message) => message.role === 'assistant' && message.text.trim());
+  if (!result) return undefined;
+  return { providerId: input.providerId, agent: input.agent, sessionId: input.providerSessionId || input.sessionId, text: result.text, runtime: 'recovered-history' };
+};
+const dispatcher = new CommandDispatcher(state, deviceEndpoint, handleAgentChat, undefined, recoverAgentChat);
+const relayClient = new RelayClient(state, events, handleAgentChat, recoverAgentChat);
 
 events.emit('server.boot', { serviceName: serverConfig.serviceName });
 
@@ -949,9 +939,12 @@ function compactTaskContext(decision: RouteDecision, task: string) {
   const contextLines = memories.map((memory) => `- [${memory.scope}; source=${memory.source}] ${memory.content.slice(0, 600)}`);
   return { prompt: [
     `Project: ${decision.project.name}`,
-    decision.localPath ? `Device-specific project path: ${decision.localPath}` : '',
+    decision.localPath ? `Authoritative device-scoped project checkout: ${decision.localPath}` : '',
+    decision.localPath ? 'Use that exact checkout when it exists. Do not substitute a similarly named workspace or stale clone. If it is missing, report the mismatch before touching another path.' : '',
     `Task: ${task}`,
     contextLines.length ? `Relevant Memory Mesh context:\n${contextLines.join('\n')}` : '',
+    'For service checks, inspect the running process and both system and user service scopes before declaring a service inactive.',
+    'If the task restarts the Reika relay or node carrying this action, preserve the dedicated provider session so Reika can recover the result after reconnect.',
     'Return a concise result describing the work, verification, and any blockers. Do not assume paths from another device are valid.'
   ].filter(Boolean).join('\n\n'), memoryIds: memories.map((memory) => memory.id) };
 }
@@ -971,8 +964,10 @@ function relayAppUrl(relayDeviceUrl: string) {
   return url.toString();
 }
 
-async function sendRemoteMemoryMeshTask(decision: RouteDecision, message: string, timeoutMs = 120_000, signal?: AbortSignal) {
+async function sendRemoteMemoryMeshTask(decision: RouteDecision, message: string, taskId: string, timeoutMs = 120_000, signal?: AbortSignal) {
   if (!decision.device || !decision.agent || !decision.providerId) throw new Error('Route decision is incomplete.');
+  const sessionId = `mesh_${taskId}`;
+  const providerSessionId = `memory_mesh_${taskId.replace(/[^a-zA-Z0-9_-]+/g, '_')}`;
   const request = createEnvelope({
     type: 'agent.chat.request',
     source: { kind: 'app', id: 'reika-memory-mesh' },
@@ -981,44 +976,86 @@ async function sendRemoteMemoryMeshTask(decision: RouteDecision, message: string
     payload: {
       providerId: decision.providerId,
       agent: decision.agent.providerAgentId,
-      sessionId: `mesh_${crypto.randomUUID()}`,
+      sessionId,
+      providerSessionId,
       message,
       delivery: { idempotencyKey: crypto.randomUUID(), statusMetadataVersion: 1 as const }
     }
   });
-  const socket = new WebSocket(relayAppUrl(decision.agent.relayEndpoint || settings.get().relayUrl));
+  const relayUrl = relayAppUrl(decision.agent.relayEndpoint || settings.get().relayUrl);
   return new Promise<{ text: string; sessionId?: string }>((resolve, reject) => {
     let settled = false;
+    let socket: WebSocket | undefined;
+    let initialRequestSent = false;
+    let reconnectDelayMs = 500;
+    let reconnectTimer: NodeJS.Timeout | undefined;
+    let pollTimer: NodeJS.Timeout | undefined;
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (pollTimer) clearInterval(pollTimer);
       signal?.removeEventListener('abort', abort);
-      socket.close();
+      socket?.close();
       callback();
     };
     const abort = () => finish(() => reject(new Error('Memory Mesh task was cancelled.')));
     const timer = setTimeout(() => finish(() => reject(new Error('Memory Mesh relay task timed out.'))), timeoutMs);
+    const sendStatusRequest = () => {
+      if (!socket || socket.readyState !== WebSocket.OPEN) return;
+      socket.send(JSON.stringify(createEnvelope({
+        type: 'command.status.request',
+        source: { kind: 'app', id: 'reika-memory-mesh' },
+        target: { kind: 'device', id: decision.device!.id },
+        deviceId: decision.device!.id,
+        payload: { requestId: request.id, sessionId }
+      })));
+    };
+    const scheduleReconnect = () => {
+      if (settled || reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = undefined;
+        connect();
+      }, reconnectDelayMs);
+      reconnectDelayMs = Math.min(reconnectDelayMs * 2, 5_000);
+    };
+    const connect = () => {
+      if (settled) return;
+      const next = new WebSocket(relayUrl);
+      socket = next;
+      next.addEventListener('open', () => {
+        reconnectDelayMs = 500;
+        if (!initialRequestSent) {
+          next.send(JSON.stringify(request));
+          initialRequestSent = true;
+        } else {
+          sendStatusRequest();
+        }
+        if (!pollTimer) pollTimer = setInterval(sendStatusRequest, 15_000);
+      });
+      next.addEventListener('message', (event) => void (async () => {
+        try {
+          const envelope = JSON.parse(await relaySocketText(event.data)) as { type?: string; replyTo?: string; correlationId?: string; payload?: Record<string, unknown> };
+          if (envelope.replyTo !== request.id && envelope.correlationId !== request.id) return;
+          if (envelope.type === 'agent.chat.response') {
+            finish(() => resolve({ text: String(envelope.payload?.text || ''), sessionId: String(envelope.payload?.sessionId || '') || undefined }));
+          } else if (envelope.type === 'command.rejected' || envelope.type === 'command.failed') {
+            finish(() => reject(new Error(String(envelope.payload?.message || 'Memory Mesh relay task failed.'))));
+          }
+        } catch {
+          // Ignore unrelated relay broadcasts and malformed messages.
+        }
+      })());
+      next.addEventListener('error', () => next.close());
+      next.addEventListener('close', () => {
+        if (socket === next) socket = undefined;
+        scheduleReconnect();
+      });
+    };
     if (signal?.aborted) return abort();
     signal?.addEventListener('abort', abort, { once: true });
-    socket.addEventListener('open', () => socket.send(JSON.stringify(request)));
-    socket.addEventListener('message', (event) => void (async () => {
-      try {
-        const envelope = JSON.parse(await relaySocketText(event.data)) as { type?: string; replyTo?: string; correlationId?: string; payload?: Record<string, unknown> };
-        if (envelope.replyTo !== request.id && envelope.correlationId !== request.id) return;
-        if (envelope.type === 'agent.chat.response') {
-          finish(() => resolve({ text: String(envelope.payload?.text || ''), sessionId: String(envelope.payload?.sessionId || '') || undefined }));
-        } else if (envelope.type === 'command.rejected' || envelope.type === 'command.failed') {
-          finish(() => reject(new Error(String(envelope.payload?.message || 'Memory Mesh relay task failed.'))));
-        }
-      } catch {
-        // Ignore unrelated relay broadcasts and malformed messages.
-      }
-    })());
-    socket.addEventListener('error', () => finish(() => reject(new Error('Memory Mesh could not connect to the relay app socket.'))));
-    socket.addEventListener('close', () => {
-      if (!settled) finish(() => reject(new Error('Memory Mesh relay socket closed before the task completed.')));
-    });
+    connect();
   });
 }
 
@@ -1087,7 +1124,7 @@ async function runPersistedMemoryMeshTask(taskId: string, onLifecycle?: (stage: 
       });
       result = turn.result.text;
     } else {
-      result = (await sendRemoteMemoryMeshTask(decision, context.prompt, 600_000, controller.signal)).text;
+      result = (await sendRemoteMemoryMeshTask(decision, context.prompt, task.id, 600_000, controller.signal)).text;
     }
     if (controller.signal.aborted || memoryMesh.getRoutingTask(task.id)?.status === 'cancelled') return memoryMesh.getRoutingTask(task.id)!;
     const writeback = memoryMesh.addMemory({

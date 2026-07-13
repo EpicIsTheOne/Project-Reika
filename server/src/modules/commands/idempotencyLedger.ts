@@ -15,6 +15,9 @@ export interface IdempotencyRecord {
   updatedAt: string;
   responses?: AgentHubEnvelope[];
   error?: string;
+  providerId?: string;
+  agent?: string;
+  providerSessionId?: string;
 }
 
 interface PersistedLedger {
@@ -42,7 +45,13 @@ export class IdempotencyLedger {
     return this.records.get(this.scopeKey(requestId, deviceId, sessionId));
   }
 
-  begin(requestId: string, deviceId: string, sessionId: string, legacy: boolean) {
+  begin(
+    requestId: string,
+    deviceId: string,
+    sessionId: string,
+    legacy: boolean,
+    provider?: { providerId?: string; agent?: string; providerSessionId?: string }
+  ) {
     const now = new Date().toISOString();
     const record: IdempotencyRecord = {
       key: this.scopeKey(requestId, deviceId, sessionId),
@@ -52,7 +61,10 @@ export class IdempotencyLedger {
       state: 'delivered',
       legacy,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      providerId: cleanOptional(provider?.providerId),
+      agent: cleanOptional(provider?.agent),
+      providerSessionId: cleanOptional(provider?.providerSessionId)
     };
     this.records.set(record.key, record);
     this.save();
@@ -94,4 +106,9 @@ export class IdempotencyLedger {
     if (existsSync(this.path)) copyFileSync(this.path, backupPath);
     renameSync(temporaryPath, this.path);
   }
+}
+
+function cleanOptional(value?: string) {
+  const text = String(value || '').trim();
+  return text || undefined;
 }
