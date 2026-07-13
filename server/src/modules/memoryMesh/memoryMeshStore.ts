@@ -519,7 +519,7 @@ export class MemoryMeshStore {
 
   private recoverInterruptedTasks() {
     const rows = this.db.prepare("SELECT id FROM mesh_routing_tasks WHERE status IN ('sent', 'accepted', 'working')").all() as Row[];
-    for (const row of rows) this.updateRoutingTask(String(row.id), { status: 'failed', error: 'Reika restarted before the delegated task returned a correlated result.', progress: 'Interrupted by application restart.' });
+    for (const row of rows) this.updateRoutingTask(String(row.id), { status: 'queued', progress: 'Queued for restart recovery.' });
   }
 
   private migrate() {

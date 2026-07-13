@@ -146,7 +146,8 @@ try {
   persistenceWriter.close();
   const persistenceReader = new MemoryMeshStore(persistencePath);
   assert.equal(persistenceReader.getDevice('persisted')?.name, 'Persisted Device', 'registry survives a database reopen');
-  assert.equal(persistenceReader.getRoutingTask(interrupted.id)?.status, 'failed', 'in-flight routing tasks are recovered honestly after restart');
+  assert.equal(persistenceReader.getRoutingTask(interrupted.id)?.status, 'queued', 'in-flight routing tasks are queued for durable restart recovery');
+  assert.equal(persistenceReader.getRoutingTask(interrupted.id)?.progress, 'Queued for restart recovery.', 'restart recovery is explicitly identified');
   persistenceReader.close();
 
   console.log('Memory Mesh focused tests passed: registry, scope isolation, project resolution, permissions, tools, routing, cancellation, persistence, and promotion.');

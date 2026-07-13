@@ -228,6 +228,7 @@ async function boot() {
   syncLocalStateToMemoryMesh();
   events.emit('provider.state', state.snapshot().providers);
   relayClient.start();
+  void resumeInterruptedMemoryMeshTasks();
   if (cli.mode === 'pair') {
     relayClient.connectWith({
       relayUrl: cli.relayUrl,
@@ -968,7 +969,8 @@ async function sendRemoteMemoryMeshTask(decision: RouteDecision, message: string
   if (!decision.device || !decision.agent || !decision.providerId) throw new Error('Route decision is incomplete.');
   const sessionId = `mesh_${taskId}`;
   const providerSessionId = `memory_mesh_${taskId.replace(/[^a-zA-Z0-9_-]+/g, '_')}`;
-  const request = createEnvelope({
+  const request = {
+    ...createEnvelope({
     type: 'agent.chat.request',
     source: { kind: 'app', id: 'reika-memory-mesh' },
     target: { kind: 'device', id: decision.device.id },
@@ -981,7 +983,9 @@ async function sendRemoteMemoryMeshTask(decision: RouteDecision, message: string
       message,
       delivery: { idempotencyKey: crypto.randomUUID(), statusMetadataVersion: 1 as const }
     }
-  });
+    }),
+    id: `memory-mesh-task-${taskId}`
+  };
   const relayUrl = relayAppUrl(decision.agent.relayEndpoint || settings.get().relayUrl);
   return new Promise<{ text: string; sessionId?: string }>((resolve, reject) => {
     let settled = false;
@@ -997,7 +1001,7 @@ async function sendRemoteMemoryMeshTask(decision: RouteDecision, message: string
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (pollTimer) clearInterval(pollTimer);
       signal?.removeEventListener('abort', abort);
-      socket?.close();
+      try { socket?.close(); } catch { /* Socket may still be connecting. */ }
       callback();
     };
     const abort = () => finish(() => reject(new Error('Memory Mesh task was cancelled.')));
@@ -1047,7 +1051,11 @@ async function sendRemoteMemoryMeshTask(decision: RouteDecision, message: string
           // Ignore unrelated relay broadcasts and malformed messages.
         }
       })());
-      next.addEventListener('error', () => next.close());
+      next.addEventListener('error', () => {
+        if (socket === next) socket = undefined;
+        try { next.close(); } catch { /* A connecting WebSocket can reject close(). */ }
+        scheduleReconnect();
+      });
       next.addEventListener('close', () => {
         if (socket === next) socket = undefined;
         scheduleReconnect();
@@ -1153,6 +1161,41 @@ async function runPersistedMemoryMeshTask(taskId: string, onLifecycle?: (stage: 
     return failed;
   } finally {
     activeMemoryMeshTasks.delete(task.id);
+  }
+}
+
+async function resumeInterruptedMemoryMeshTasks() {
+  const interrupted = memoryMesh.listRoutingTasks(200)
+    .filter((task) => task.status === 'queued' && task.progress === 'Queued for restart recovery.');
+  for (const task of interrupted) {
+    try {
+      const recovered = await runPersistedMemoryMeshTask(task.id);
+      if (!recovered.originConversationId) continue;
+      const session = sessions.get(recovered.originConversationId);
+      if (!session || session.messages.some((message) => {
+        const meta = message.meta?.memoryMesh;
+        return Boolean(meta && typeof meta === 'object' && (meta as { taskId?: unknown }).taskId === recovered.id);
+      })) continue;
+      appendMessage(session, 'assistant', routeExplanation(recovered), {
+        providerId: session.providerId,
+        agent: session.agent,
+        runtime: 'memory-mesh',
+        memoryMesh: {
+          taskId: recovered.id,
+          status: recovered.status,
+          projectId: recovered.projectId,
+          targetAgentId: recovered.targetAgentId,
+          targetDeviceId: recovered.targetDeviceId,
+          result: recovered.result,
+          error: recovered.error,
+          memoryWritebackIds: recovered.memoryWritebackIds,
+          lifecycle: recovered.lifecycle,
+          recoveredAfterSourceRestart: true
+        }
+      });
+    } catch (error) {
+      console.error(`Could not resume Memory Mesh task ${task.id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
 
