@@ -296,13 +296,13 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
 
   if (provider.kind === 'commandcenter') {
     let message = request.message;
-    let commandCenterSessionId = sessionId;
+    let commandCenterSessionId = String(request.providerSessionId || '').trim();
     const executedToolCalls: Array<ProviderToolCall & { ok: boolean }> = [];
     for (let round = 0; round < 5; round += 1) {
       const response = await providerFetch(`${commandCenterBaseUrl}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent: agentId, sessionId: commandCenterSessionId, message, ...(request.tools?.length ? { tools: request.tools, toolChoice: round === 0 && request.requireToolCall ? 'required' : 'auto' } : {}) })
+        body: JSON.stringify({ agent: agentId, ...(commandCenterSessionId ? { sessionId: commandCenterSessionId } : {}), message, ...(request.tools?.length ? { tools: request.tools, toolChoice: round === 0 && request.requireToolCall ? 'required' : 'auto' } : {}) })
       });
       const body = await response.json().catch(() => ({})) as Record<string, unknown>;
       if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));

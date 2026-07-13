@@ -27,5 +27,6 @@
     "test:chat-relay": "node scripts/test_chat_relay_contracts.mjs",
     "smoke:memory-mesh-relay": "npm run build --workspace project-reika-node && npm run build --workspace project-reika-relay && node scripts/smoke_memory_mesh_relay.mjs",
     "smoke:desktop-relay-chat": "node scripts/smoke_relay_desktop_chat.mjs"
+    ,"smoke:relay-voice": "node scripts/smoke_relay_voice.mjs"
   }
 }

@@ -104,6 +104,7 @@ export function ChatView({
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const callActiveRef = useRef(false);
   const callMutedRef = useRef(false);
+  const providerSessionIdRef = useRef<string | undefined>(undefined);
   const suppressedRelaySessionLoadRef = useRef<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const followLatestRef = useRef(true);
@@ -332,6 +333,7 @@ export function ChatView({
 
   useEffect(() => {
     if (!selectedSessionId) {
+      providerSessionIdRef.current = undefined;
       setMessages([]);
       return;
     }
@@ -339,6 +341,7 @@ export function ChatView({
       if (suppressedRelaySessionLoadRef.current === selectedSessionId) return;
       getRelayChatMessages(selectedSessionId, relayUrl)
         .then((result) => {
+          providerSessionIdRef.current = [...result].reverse().map((item) => item.meta?.providerSessionId).find((value): value is string => typeof value === "string" && Boolean(value.trim()));
           setMessages(result.map(mapReikaMessage));
           setSendError(null);
         })
@@ -482,7 +485,7 @@ export function ChatView({
           providerId: relayProviderId,
           agent: relayAgentId,
           sessionId: relaySessionId,
-          providerSessionId: makeProviderSessionId(relaySessionId),
+          providerSessionId: providerSessionIdRef.current,
           message,
           fileIds: []
         });
@@ -493,6 +496,7 @@ export function ChatView({
           body: result.text,
           time: formatClock(now)
         };
+        providerSessionIdRef.current = result.sessionId;
         setMessages((current) => {
           const next = [...current, agentMessage];
           return next;
@@ -1172,17 +1176,6 @@ function makeAgentOptionKey(providerId: string, agentId: string) {
 
 function makeRelayConversationKey(deviceId: string, providerId: string, agentId: string) {
   return `agenthub:relay-chat:${deviceId}:${providerId}:${agentId}`;
-}
-
-function makeProviderSessionId(sessionId: string) {
-  const input = String(sessionId || "").trim();
-  let hash = 2166136261;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  const suffix = (hash >>> 0).toString(16).padStart(8, "0");
-  return `reika_${suffix}`;
 }
 
 type SelectableAgentOption = {
