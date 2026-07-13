@@ -14,11 +14,11 @@ try {
 
   store.registerAgent({
     id: 'reika', displayName: 'Reika', providerId: 'hermes-a', providerAgentId: 'reika', deviceId: 'desktop-a',
-    status: 'online', capabilities: ['chat', 'tools'], supportedTools: ['filesystem']
+    status: 'online', capabilities: ['chat', 'tools'], supportedTools: ['filesystem', 'git'], permissions: ['reika:tool:reika.delegateTask', 'reika:tool:reika.cancelTask', 'reika:tool:reika.getProjectContext', 'reika:tool:reika.findCapability']
   });
   store.registerAgent({
     id: 'astra', displayName: 'Astra', providerId: 'openclaw-b', providerAgentId: 'astra', deviceId: 'server-b',
-    status: 'online', capabilities: ['chat', 'tools', 'git'], supportedTools: ['filesystem', 'git']
+    status: 'online', capabilities: ['chat', 'tools', 'git'], supportedTools: ['filesystem', 'git'], permissions: ['reika:tool:reika.getProjectContext', 'reika:tool:reika.findCapability']
   });
   store.registerAgent({
     id: 'nyxie', displayName: 'Nyxie', providerId: 'openclaw-b', providerAgentId: 'nyxie', deviceId: 'server-b',
@@ -44,6 +44,15 @@ try {
   const astraPrivate = store.addMemory({ content: 'Astra private note.', scope: 'agent', agentId: 'astra', createdBy: 'user', source: 'conversation' });
   const reikaPrivate = store.addMemory({ content: 'Reika private note.', scope: 'agent', agentId: 'reika', createdBy: 'user', source: 'conversation' });
   const projectMemory = store.addMemory({ content: 'Login uses a device-local OAuth callback.', scope: 'project', projectId: project.id, createdBy: 'user', source: 'architecture-decision' });
+  const provenancedMemory = store.addMemory({
+    content: 'Astra verified the deployed callback.',
+    scope: 'project',
+    projectId: project.id,
+    createdBy: 'astra',
+    source: 'routing-task:test',
+    provenance: { sourceConversationId: 'conversation-1', sourceMessageId: 'message-1', sourceTaskId: 'task-1', sourceAgentId: 'astra', sourceDeviceId: 'server-b', verifiedAt: '2026-07-13T00:00:00.000Z' }
+  }, { agentId: 'astra', deviceId: 'server-b' });
+  assert.equal(provenancedMemory.provenance?.sourceConversationId, 'conversation-1', 'memory writeback keeps conversation provenance');
 
   const astraView = store.searchMemory({}, { agentId: 'astra', deviceId: 'server-b' });
   assert(astraView.some((memory) => memory.id === globalMemory.id), 'agents can read global memory');
@@ -72,7 +81,7 @@ try {
   assert(decision.reasons.some((reason) => reason.includes('project owner')), 'routing decision explains ownership');
 
   const routedTask = store.createRoutingTask({ request: 'Fix the login page.', requiredCapabilities: ['git', 'tools'], sourceAgentId: 'reika', sourceDeviceId: 'desktop-a', decision });
-  store.updateRoutingTask(routedTask.id, { status: 'running' });
+  store.updateRoutingTask(routedTask.id, { status: 'working' });
   const result = store.updateRoutingTask(routedTask.id, { status: 'completed', result: 'Mock Astra updated and verified the login page.' });
   assert.equal(result?.status, 'completed');
   assert.match(result?.result || '', /verified the login page/);
@@ -103,15 +112,20 @@ try {
       decision: store.routeTask(input)
     })
   });
-  assert.equal(reikaMemoryToolDefinitions.length, 15, 'canonical tool catalog exposes the requested contract');
-  assert.equal(toOpenAiToolSchemas().length, 15, 'OpenAI-style provider adapter covers every common tool');
-  assert.equal(toCommandCenterToolSchemas().length, 15, 'Command Center adapter covers every common tool');
+  assert.equal(reikaMemoryToolDefinitions.length, 17, 'canonical tool catalog exposes the requested contract');
+  assert.equal(toOpenAiToolSchemas().length, 17, 'OpenAI-style provider adapter covers every common tool');
+  assert.equal(toCommandCenterToolSchemas().length, 17, 'Command Center adapter covers every common tool');
   assert.match(toHermesToolManifest(), /reika\.delegateTask/, 'Hermes adapter exposes the common tool names');
   const contextResult = await toolRuntime.execute(createReikaToolCall('reika.getProjectContext', { projectId: project.id, task: 'login callback' }), { actor: { agentId: 'astra', deviceId: 'server-b' }, currentAgentId: 'astra', currentDeviceId: 'server-b' });
   assert.equal(contextResult.ok, true, 'assigned agent receives compact project context');
   assert.equal((contextResult.data as { project: { id: string } }).project.id, project.id);
   const deniedContext = await toolRuntime.execute(createReikaToolCall('reika.getProjectContext', { projectId: project.id, task: 'login callback' }), { actor: { agentId: 'outsider', deviceId: 'server-b' } });
   assert.equal(deniedContext.ok, false, 'unassigned tool callers cannot read project context');
+  const capability = await toolRuntime.execute(createReikaToolCall('reika.findCapability', { projectQuery: 'CCO', capability: 'git' }), { actor: { agentId: 'reika', deviceId: 'desktop-a' }, currentAgentId: 'reika', currentDeviceId: 'desktop-a' });
+  assert.equal(capability.ok, true, 'capability lookup is available through the common tool runtime');
+  assert((capability.data as Array<{ agent: { id: string } }>).some((item) => item.agent.id === 'astra'), 'capability lookup finds the project owner');
+  const disallowedTool = await toolRuntime.execute(createReikaToolCall('reika.delegateTask', { projectQuery: 'CCO', task: 'nope' }), { actor: { agentId: 'astra', deviceId: 'server-b' }, currentAgentId: 'astra', currentDeviceId: 'server-b' });
+  assert.equal(disallowedTool.ok, false, 'agent tool allowlists are enforced');
   const delegated = await toolRuntime.execute(createReikaToolCall('reika.delegateTask', { projectQuery: 'CCO', task: 'Check login', requiredCapabilities: ['git'] }), { actor: { agentId: 'reika', deviceId: 'desktop-a' }, currentAgentId: 'reika', currentDeviceId: 'desktop-a' });
   assert.equal(delegated.ok, true, 'provider-independent delegation tool creates a persisted task');
   const delegatedTask = delegated.data as { id: string };
@@ -121,9 +135,18 @@ try {
   const persistencePath = join(root, 'persistence.sqlite');
   const persistenceWriter = new MemoryMeshStore(persistencePath);
   persistenceWriter.registerDevice({ id: 'persisted', name: 'Persisted Device', status: 'online' });
+  persistenceWriter.registerDevice({ id: 'persisted-remote', name: 'Persisted Remote', status: 'online' });
+  persistenceWriter.registerAgent({ id: 'persisted-agent', displayName: 'Persisted Agent', providerId: 'persisted-provider', providerAgentId: 'astra', deviceId: 'persisted-remote', status: 'online', capabilities: ['chat'] });
+  const persistedProject = persistenceWriter.createProject({ id: 'persisted-project', name: 'Persisted Project' });
+  persistenceWriter.assignAgentToProject(persistedProject.id, 'persisted-agent', { role: 'primary', access: 'read_write' });
+  persistenceWriter.assignDeviceToProject(persistedProject.id, 'persisted-remote', { isPrimary: true, path: '/srv/persisted' });
+  const persistedDecision = persistenceWriter.routeTask({ projectQuery: 'Persisted Project', task: 'recover me', currentDeviceId: 'persisted' });
+  const interrupted = persistenceWriter.createRoutingTask({ request: 'recover me', sourceDeviceId: 'persisted', decision: persistedDecision });
+  persistenceWriter.updateRoutingTask(interrupted.id, { status: 'working' });
   persistenceWriter.close();
   const persistenceReader = new MemoryMeshStore(persistencePath);
   assert.equal(persistenceReader.getDevice('persisted')?.name, 'Persisted Device', 'registry survives a database reopen');
+  assert.equal(persistenceReader.getRoutingTask(interrupted.id)?.status, 'failed', 'in-flight routing tasks are recovered honestly after restart');
   persistenceReader.close();
 
   console.log('Memory Mesh focused tests passed: registry, scope isolation, project resolution, permissions, tools, routing, cancellation, persistence, and promotion.');

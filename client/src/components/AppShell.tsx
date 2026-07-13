@@ -29,8 +29,8 @@ export function AppShell({
         <button className="brand-lockup" onClick={() => onNavigate("home")} aria-label="Go home">
           <img src={assets.brand.logoSmall} alt="" />
           <span>
-            <strong>AGENTHUB</strong>
-            <small>Your AI Agents. One Hub.</small>
+            <strong>REIKA</strong>
+            <small>One home. Every agent.</small>
           </span>
         </button>
 

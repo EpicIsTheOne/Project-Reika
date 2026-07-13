@@ -1,6 +1,6 @@
 # Project Reika Relay
 
-Relay service for pairing, presence, provider snapshots, agent rosters, optional chat envelopes, and safe AgentHub envelope routing.
+Relay service for pairing, presence, provider snapshots, agent rosters, optional chat envelopes, and safe Reika envelope routing.
 
 ## Run
 

@@ -293,7 +293,7 @@ export function DevicesView({
           <aside className="device-detail-panel">
             <section className="device-detail-content">
               <h2>No device selected</h2>
-              <p>Pair a device or start the local agent server to see live provider state.</p>
+              <p>Pair a node or start Reika Node to see live provider state.</p>
             </section>
           </aside>
         )}

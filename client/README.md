@@ -1,6 +1,6 @@
 # Project Reika Client
 
-Main Reika / AgentHub client app.
+Main Reika / Reika client app.
 
 This folder contains the Vite + React UI, project-local visual assets, local development backend, and app-side relay client.
 
@@ -20,7 +20,7 @@ http://127.0.0.1:5173
 The Vite dev server proxies:
 
 - `/api` to the local/dev app backend on `127.0.0.1:8787`
-- `/agent` to the local device-agent server on `127.0.0.1:47840`
+- `/agent` to the local Reika Node on `127.0.0.1:47840`
 - `/v1` to the relay on `127.0.0.1:8790`
 
 ## Desktop Window
@@ -49,7 +49,7 @@ Create or refresh Epic's Desktop shortcut:
 npm run desktop:shortcut
 ```
 
-If a packaged build exists, the shortcut points to `AgentHub.exe`. Otherwise it starts the repo dev desktop launcher.
+If a packaged build exists, the shortcut points to `Reika.exe`. Otherwise it starts the repo dev desktop launcher.
 
 ## Build
 
@@ -68,7 +68,7 @@ The Settings page has a Developer section for GitHub updates:
 - Check
 - Apply Update
 
-The UI reads update status from the local agent server at `/agent/updates/status`. A check or apply response includes:
+The UI reads update status from the local Reika Node at `/agent/updates/status`. A check or apply response includes:
 
 - whether an update is available
 - commit title/body as the update description
@@ -88,7 +88,7 @@ Settings also persists real local preferences for theme, relay URL, mock provide
 
 ## Agent Art Studio
 
-The sidebar includes `Agent Art`, a production-asset manager for AgentHub visuals.
+The sidebar includes `Agent Art`, a production-asset manager for Reika visuals.
 
 Current Phase 1 behavior:
 
@@ -102,7 +102,7 @@ Current Phase 1 behavior:
 - manual image upload and linked-image add
 - real image generation through the local server when a saved OpenAI API key, env key, Codex auth API key, or Codex/ChatGPT OAuth auth is available
 
-The page uses the existing AgentHub/Reika asset library as seeded production art. **Generate More** calls the local server, which stores successful generations as normal Art Studio assets and selects the new asset automatically.
+The page uses the existing Reika/Reika asset library as seeded production art. **Generate More** calls the local server, which stores successful generations as normal Art Studio assets and selects the new asset automatically.
 
 Image generation auth can be managed from:
 
@@ -122,9 +122,9 @@ src/domain/                  Pure API/relay-to-UI mapping helpers
 src/lib/                     API helpers, art runtime, motion helpers
 src/data/                    Client data adapters, assets, relay/startup helpers
 desktop/                     Electron desktop shell and local packaged proxy
-src/shared/protocol/         Versioned AgentHub envelope helpers
+src/shared/protocol/         Versioned Reika envelope helpers
 src/backend/                 Local/dev app backend and provider scanner
-assets/agenthub_phase1*/     Project-local visual assets
+assets/reika_phase1*/     Project-local visual assets
 Refrence Docs/               Source planning/reference docs
 ```
 

@@ -34,7 +34,7 @@ export async function ensureLocalAgent(options: LocalAgentOptions = {}): Promise
     return { url, started: false, stop: () => undefined };
   }
 
-  const logPath = join(app.getPath("userData"), "logs", "agent-server.log");
+  const logPath = join(app.getPath("userData"), "logs", "reika-node.log");
   mkdirSync(dirname(logPath), { recursive: true });
   const log = createWriteStream(logPath, { flags: "a" });
   log.write(`\n[${new Date().toISOString()}] starting ${exePath}\n`);
@@ -73,9 +73,9 @@ export function stopLocalAgent() {
 }
 
 function resolveBundledAgentPath() {
-  if (process.env.AGENTHUB_AGENT_EXE) return process.env.AGENTHUB_AGENT_EXE;
-  if (app.isPackaged) return join(process.resourcesPath, "agent-server", "reika-agent-server.exe");
-  return resolve(__dirname, "../../server/release/reika-agent-server.exe");
+  if (process.env.REIKA_NODE_EXE || process.env.AGENTHUB_AGENT_EXE) return process.env.REIKA_NODE_EXE ?? process.env.AGENTHUB_AGENT_EXE;
+  if (app.isPackaged) return join(process.resourcesPath, "reika-node", "reika-node.exe");
+  return resolve(__dirname, "../../server/release/reika-node.exe");
 }
 
 async function waitForAgent(url: string, timeoutMs: number) {
@@ -92,7 +92,7 @@ async function isAgentReady(url: string) {
     const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(800) });
     if (!response.ok) return false;
     const body = (await response.json()) as { ok?: boolean; service?: string };
-    return body.ok === true && body.service === "project-reika-agent-server";
+    return body.ok === true && (body.service === "project-reika-node" || body.service === "project-reika-agent-server");
   } catch {
     return false;
   }

@@ -1,14 +1,16 @@
 import { build } from "esbuild";
 import { mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
-const outdir = resolve("dist-desktop");
+const root = resolve(fileURLToPath(import.meta.url), "..", "..");
+const outdir = resolve(root, "dist-desktop");
 mkdirSync(outdir, { recursive: true });
 
 await Promise.all([
   build({
-    entryPoints: ["desktop/main.ts"],
-    outfile: "dist-desktop/main.cjs",
+    entryPoints: [resolve(root, "desktop/main.ts")],
+    outfile: resolve(outdir, "main.cjs"),
     bundle: true,
     platform: "node",
     target: "node20",
@@ -17,8 +19,8 @@ await Promise.all([
     sourcemap: true
   }),
   build({
-    entryPoints: ["desktop/preload.ts"],
-    outfile: "dist-desktop/preload.cjs",
+    entryPoints: [resolve(root, "desktop/preload.ts")],
+    outfile: resolve(outdir, "preload.cjs"),
     bundle: true,
     platform: "node",
     target: "node20",

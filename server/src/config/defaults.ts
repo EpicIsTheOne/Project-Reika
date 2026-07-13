@@ -14,8 +14,8 @@ function boolFromEnv(name: string, fallback = false) {
 }
 
 export const serverConfig = {
-  serviceName: 'project-reika-agent-server',
-  displayName: 'Project Reika Agent Server',
+  serviceName: 'project-reika-node',
+  displayName: 'Reika Node',
   host: process.env.REIKA_AGENT_HOST || '127.0.0.1',
   port: intFromEnv('REIKA_AGENT_PORT', 47840),
   externalUplinkEnabled: boolFromEnv('REIKA_UPLINK_ENABLED', false),

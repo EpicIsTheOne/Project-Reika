@@ -1,4 +1,4 @@
-# Shared AgentHub Contract
+# Shared Reika Contract
 
 This folder is the canonical protocol/model reference for Project Reika Phase 1.
 

@@ -2,12 +2,11 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "assets" / "agenthub_phase1_generated"
-OUTPUT = ROOT / "assets" / "agenthub_phase1_webp"
+SOURCE = ROOT / "assets" / "reika_phase1_generated"
+OUTPUT = ROOT / "assets" / "reika_phase1_webp"
 
 ASSETS = [
-    "brand/agenthub_logo_icon_alpha.png", "brand/agenthub_logo_icon_alpha_256.png",
-    "brand/agenthub_wordmark_text_alpha.png", "brand/agenthub_combined_deterministic_alpha.png",
+    "brand/reika_logo_icon_alpha.png", "brand/reika_logo_icon_alpha_256.png",
     "character/reika/chibi.png", "character/reika/circular_avatar_source.png",
     "character/reika/full_splash_illustration.png", "character/reika/half_body_portrait.png",
     "character/reika/expressions/neutral.png", "character/reika/expressions/happy.png",

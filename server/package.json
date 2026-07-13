@@ -1,11 +1,11 @@
 {
-  "name": "project-reika-agent-server",
+  "name": "project-reika-node",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Project Reika Agent Server - device-side service for Reika provider/agent state.",
+  "description": "Connects agents, projects, tools, and devices to Reika.",
   "bin": {
-    "reika-agent-server": "./dist/main.js"
+    "reika-node": "./dist/main.js"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

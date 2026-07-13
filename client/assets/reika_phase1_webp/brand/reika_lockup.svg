@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="220" viewBox="0 0 960 220" role="img" aria-labelledby="title desc">
+  <title id="title">Reika</title>
+  <desc id="desc">One home. Every agent.</desc>
+  <rect width="960" height="220" fill="none"/>
+  <path d="M70 172 138 34l68 138h-35l-12-25H117l15-31h12l-6-14-34 70H70Z" fill="#4d8dff"/>
+  <path d="m138 34 68 138h-35l-33-70-34 70H70l68-138Z" fill="none" stroke="#6fefff" stroke-width="5"/>
+  <text x="252" y="130" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="96" font-weight="700" letter-spacing="14">REIKA</text>
+  <text x="258" y="174" fill="#b7c0d8" font-family="Segoe UI, Arial, sans-serif" font-size="26" letter-spacing="3">ONE HOME. EVERY AGENT.</text>
+</svg>

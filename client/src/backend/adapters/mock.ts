@@ -19,7 +19,7 @@ export class MockProviderAdapter implements ProviderAdapter {
           role: "Backend connectivity test agent",
           status: "online",
           capabilities: ["status", "chat"],
-          lastActivity: "Registered by AgentHub backend"
+          lastActivity: "Registered by Reika backend"
         }
       ]
     };

@@ -138,7 +138,7 @@ function httpsJson<T>(url: string): Promise<T> {
     https.get(url, {
       headers: {
         'Accept': 'application/vnd.github+json',
-        'User-Agent': 'Project-Reika-AgentHub-Updater'
+        'User-Agent': 'Project-Reika-Updater'
       }
     }, (response) => {
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
@@ -165,7 +165,7 @@ function httpsJson<T>(url: string): Promise<T> {
 
 function downloadFile(url: string, destination: string): Promise<void> {
   return new Promise((resolveDownload, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'Project-Reika-AgentHub-Updater' } }, (response) => {
+    https.get(url, { headers: { 'User-Agent': 'Project-Reika-Updater' } }, (response) => {
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
         downloadFile(response.headers.location, destination).then(resolveDownload, reject);
@@ -222,8 +222,8 @@ async function getPackagedUpdateStatus(settings?: ReikaSettings): Promise<Update
       }],
       message: asset
         ? available
-          ? `Packaged AgentHub update ${release.tag_name || release.name} is available.`
-          : 'Packaged AgentHub is up to date with the latest GitHub release.'
+          ? `Packaged Reika update ${release.tag_name || release.name} is available.`
+          : 'Packaged Reika is up to date with the latest GitHub release.'
         : 'No Windows installer asset was found in the latest GitHub release.',
       checkedAt,
       installerAsset: asset ? { name: asset.name, url: asset.browser_download_url, size: asset.size, version: releaseVersion } : undefined,
@@ -319,7 +319,7 @@ async function applyPackagedUpdate(status: UpdateStatus): Promise<ApplyUpdateRes
     ...status,
     applied: true,
     applyOutput: `${launchMessage}\nManifest: ${manifestPath}`,
-    message: `Packaged update staged. Restart AgentHub if the installer did not restart it automatically.`
+    message: `Packaged update staged. Restart Reika if the installer did not restart it automatically.`
   };
 }
 

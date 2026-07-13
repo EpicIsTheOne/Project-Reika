@@ -144,7 +144,7 @@ async function runRelayCli(options: CliOptions) {
     }
     console.log(`Saved relay URL: ${cliSettings.get().relayUrl}`);
     console.log(`Default relay URL: ${serverConfig.uplink.relayUrl}`);
-    console.log('Change it with: reika-agent-server relay set --relay wss://relay.example.com/v1/device');
+    console.log('Change it with: reika-node relay set --relay wss://relay.example.com/v1/device');
     process.exit(0);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
@@ -706,15 +706,33 @@ async function runChatTurn(input: { sessionId?: string; providerSessionId?: stri
   return enqueueChatTurn(session.id, () => executeChatTurn(session, input, onEvent));
 }
 
-function naturalProjectReference(message: string) {
+function naturalProjectReference(message: string, recentProjectIds: string[] = []) {
   const normalized = message.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (!normalized) return { status: 'not_found' as const, projects: [] as MeshProject[] };
-  const matched = memoryMesh.listProjects().filter((project) => [project.name, ...project.aliases].some((label) => {
+  const projects = memoryMesh.listProjects();
+  const matched = projects.filter((project) => [project.name, ...project.aliases].some((label) => {
     const phrase = label.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
     if (!phrase) return false;
     return new RegExp(`(?:^|[^a-z0-9])${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^a-z0-9])`, 'i').test(normalized);
   }));
-  if (!matched.length) return { status: 'not_found' as const, projects: matched };
+  if (!matched.length) {
+    const messageTokens = new Set(normalized.split(/[^a-z0-9]+/u).filter((token) => token.length > 1));
+    const lexical = projects.map((project) => {
+      const labels = [project.name, ...project.aliases];
+      const score = Math.max(...labels.map((label) => {
+        const terms = label.toLowerCase().split(/[^a-z0-9]+/u).filter((token) => token.length > 1);
+        return terms.length ? terms.filter((term) => messageTokens.has(term)).length / terms.length : 0;
+      }));
+      return { project, score: score + (recentProjectIds.includes(project.id) ? 0.15 : 0) };
+    }).filter((item) => item.score >= 0.75).sort((a, b) => b.score - a.score);
+    if (lexical.length === 1 || (lexical.length > 1 && lexical[0].score - lexical[1].score >= 0.2)) return { status: 'resolved' as const, projects: lexical.map((item) => item.project), project: lexical[0].project };
+    if (lexical.length > 1) return { status: 'ambiguous' as const, projects: lexical.map((item) => item.project) };
+    if (/\b(?:it|that project|this project|there)\b/i.test(message)) {
+      const recent = recentProjectIds.map((id) => memoryMesh.getProject(id)).filter((project): project is MeshProject => Boolean(project));
+      if (recent.length) return { status: 'resolved' as const, projects: recent, project: recent[0] };
+    }
+    return { status: 'not_found' as const, projects: [] as MeshProject[] };
+  }
   if (matched.length > 1) return { status: 'ambiguous' as const, projects: matched };
   return { status: 'resolved' as const, projects: matched, project: matched[0] };
 }
@@ -727,11 +745,73 @@ function currentMeshAgentId(providerId: string, providerAgentId: string) {
   return memoryMesh.listAgents().find((agent) => agent.deviceId === state.device.id && agent.providerId === providerId && agent.providerAgentId === providerAgentId)?.id;
 }
 
+async function runOriginProviderActionPlan(input: { providerId: string; providerAgentId: string; sourceAgentId: string; sourceDeviceId: string; conversationId: string; messageId: string; project: MeshProject; task: string; recentProjectIds: string[] }, onEvent?: (event: ProviderChatEvent) => void) {
+  const provider = findProvider(state.snapshot().providers, input.providerId);
+  if (!provider) throw new Error(`Origin provider not found: ${input.providerId}`);
+  const allowedNames = new Set<ReikaMemoryToolName>(['reika.resolveProject', 'reika.getProjectContext', 'reika.findCapability', 'reika.planRoute']);
+  const tools = reikaMemoryToolDefinitions.filter((definition) => allowedNames.has(definition.name));
+  const executeTool = async (call: { id: string; name: string; arguments: Record<string, unknown> }) => {
+    if (!allowedNames.has(call.name as ReikaMemoryToolName)) throw new Error(`Origin provider requested disallowed planning tool: ${call.name}`);
+    return memoryMeshTools.execute({ id: call.id, name: call.name as ReikaMemoryToolName, arguments: call.arguments }, {
+      actor: { agentId: input.sourceAgentId, deviceId: input.sourceDeviceId, isUser: false },
+      sessionId: input.conversationId,
+      currentAgentId: input.sourceAgentId,
+      currentDeviceId: input.sourceDeviceId,
+      conversationId: input.conversationId,
+      messageId: input.messageId,
+      userApproved: true
+    });
+  };
+  const basePrompt = [
+    'You are the origin agent for a Reika Agent Action. Use a Reika planning tool before the task is routed.',
+    `Current agent: ${input.sourceAgentId}`,
+    `Current device: ${input.sourceDeviceId}`,
+    `Resolved project reference: ${input.project.name}`,
+    `User request: ${input.task}`,
+    'Call reika.resolveProject or reika.planRoute. Do not invent projects, paths, permissions, agents, nodes, or results.'
+  ].join('\n');
+  const hiddenSessionId = `mesh_plan_${input.conversationId}_${input.messageId}`;
+  if (provider.kind === 'openclaw' || provider.kind === 'commandcenter') {
+    const result = await runProviderChat({ providerId: input.providerId, agentId: input.providerAgentId, sessionId: hiddenSessionId, message: basePrompt, tools, requireToolCall: true, executeTool }, state.snapshot().providers, onEvent);
+    const toolCalls = Array.isArray(result.metadata?.toolCalls) ? result.metadata.toolCalls : [];
+    if (!toolCalls.length) throw new Error(`${provider.name} returned without invoking a Reika planning tool.`);
+    return { runtime: result.runtime, transport: provider.kind === 'openclaw' ? 'native-functions' : 'commandcenter-tools', toolCalls };
+  }
+  const manifest = tools.map((tool) => `${tool.name}: ${tool.description}`).join('\n');
+  const result = await runProviderChat({
+    providerId: input.providerId,
+    agentId: input.providerAgentId,
+    sessionId: hiddenSessionId,
+    message: `${basePrompt}\n\nAvailable tools:\n${manifest}\n\nReturn only JSON in this shape: {"name":"reika.resolveProject","arguments":{"query":"${input.project.name.replace(/"/g, '\\"')}"}}`
+  }, state.snapshot().providers, onEvent);
+  const call = parseManifestToolCall(result.text);
+  if (!call || !allowedNames.has(call.name as ReikaMemoryToolName)) throw new Error(`${provider.name} did not return a valid Reika planning tool call.`);
+  const toolResult = await executeTool(call);
+  onEvent?.({ type: 'tool', data: { stage: 'completed', toolCallId: call.id, name: call.name, ok: (toolResult as { ok?: unknown }).ok !== false } });
+  return { runtime: result.runtime, transport: 'manifest-json', toolCalls: [{ ...call, ok: (toolResult as { ok?: unknown }).ok !== false }] };
+}
+
+function parseManifestToolCall(text: string) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] || text;
+  const match = fenced.match(/\{[\s\S]*\}/);
+  if (!match) return undefined;
+  try {
+    const parsed = JSON.parse(match[0]) as { name?: unknown; arguments?: unknown };
+    if (typeof parsed.name !== 'string') return undefined;
+    return { id: crypto.randomUUID(), name: parsed.name, arguments: parsed.arguments && typeof parsed.arguments === 'object' ? parsed.arguments as Record<string, unknown> : {} };
+  } catch {
+    return undefined;
+  }
+}
+
 function routeExplanation(task: RoutingTask) {
   const decision = task.decision;
   if (task.status === 'completed') return `${decision.agent?.displayName || 'The selected agent'} completed the task for ${decision.project?.name || 'the project'}.\n\n${task.result || 'The task completed without a text result.'}`;
   if (task.status === 'cancelled') return `The delegated task for ${decision.project?.name || 'the project'} was cancelled.`;
   if (task.status === 'failed') return `The delegated task for ${decision.project?.name || 'the project'} failed: ${task.error || 'unknown remote error'}`;
+  if (task.status === 'timed_out') return `The delegated task for ${decision.project?.name || 'the project'} timed out: ${task.error || 'the remote agent did not return a result in time'}`;
+  if (task.status === 'awaiting_approval') return `The routed action for ${decision.project?.name || 'the project'} is waiting for explicit approval before it is sent.`;
+  if (task.status === 'unavailable') return `I could not route this task for ${decision.project?.name || 'that project'}.\n${decision.reasons.join('\n')}`;
   const details = decision.considered.flatMap((candidate) => candidate.reasons.map((reason) => `${candidate.agentId}: ${reason}`)).slice(0, 6);
   return [`I could not route this task for ${decision.project?.name || 'that project'}.`, ...decision.reasons, ...details].join('\n');
 }
@@ -742,7 +822,7 @@ async function executeChatTurn(session: ChatSession, input: { sessionId?: string
   const provider = findProvider(providers, requestedProviderId);
   if (!provider) throw new Error(`Provider not found: ${requestedProviderId}`);
   if (provider.status === 'offline' || provider.status === 'error') throw new Error(`${provider.name} is ${provider.status}: ${provider.error || provider.notes}`);
-  if (requestedProviderId === 'mock-local' && !settings.get().mockEnabled) throw new Error('Mock provider is disabled in AgentHub settings.');
+  if (requestedProviderId === 'mock-local' && !settings.get().mockEnabled) throw new Error('Mock provider is disabled in Reika settings.');
   const attachedFiles = filesPayload(input.fileIds);
   const context = attachmentContext(input.fileIds);
   const userMessage = appendMessage(session, 'user', input.message, { providerId: session.providerId, agent: session.agent, files: attachedFiles });
@@ -751,7 +831,8 @@ async function executeChatTurn(session: ChatSession, input: { sessionId?: string
     onEvent?.(event);
   };
   try {
-    const projectReference = input.metadata?.skipMemoryMeshRouting === true || !looksLikeProjectWork(input.message) ? { status: 'not_found' as const, projects: [] as MeshProject[] } : naturalProjectReference(input.message);
+    const recentProjectIds = Array.isArray(session.metadata.recentProjectIds) ? session.metadata.recentProjectIds.map(String) : [];
+    const projectReference = input.metadata?.skipMemoryMeshRouting === true || !looksLikeProjectWork(input.message) ? { status: 'not_found' as const, projects: [] as MeshProject[] } : naturalProjectReference(input.message, recentProjectIds);
     if (projectReference.status === 'ambiguous') {
       const candidates = projectReference.projects.map((project) => project.name);
       const lifecycle = [{ stage: 'resolving', at: new Date().toISOString() }, { stage: 'clarification_required', at: new Date().toISOString(), candidates }];
@@ -763,12 +844,33 @@ async function executeChatTurn(session: ChatSession, input: { sessionId?: string
     if (projectReference.status === 'resolved' && projectReference.project) {
       const lifecycle: Array<Record<string, unknown>> = [];
       const sourceAgentId = currentMeshAgentId(input.providerId || session.providerId, input.agent || session.agent);
+      let originProviderTools: Record<string, unknown> | undefined;
+      if (sourceAgentId) {
+        try {
+          originProviderTools = await runOriginProviderActionPlan({
+            providerId: input.providerId || session.providerId,
+            providerAgentId: input.agent || session.agent,
+            sourceAgentId,
+            sourceDeviceId: state.device.id,
+            conversationId: session.id,
+            messageId: userMessage.id,
+            project: projectReference.project,
+            task: input.message,
+            recentProjectIds
+          }, handler);
+        } catch (error) {
+          originProviderTools = { warning: error instanceof Error ? error.message : String(error), toolCalls: [] };
+        }
+      }
       const task = await executeMemoryMeshTask({
         projectQuery: projectReference.project.name,
         task: input.message,
         currentAgentId: sourceAgentId,
         currentDeviceId: state.device.id,
-        recentProjectIds: Array.isArray(session.metadata.recentProjectIds) ? session.metadata.recentProjectIds.map(String) : []
+        recentProjectIds,
+        originConversationId: session.id,
+        originMessageId: userMessage.id,
+        userApproved: true
       }, (stage, data) => {
         const item = { stage, at: new Date().toISOString(), ...data };
         lifecycle.push(item);
@@ -776,7 +878,8 @@ async function executeChatTurn(session: ChatSession, input: { sessionId?: string
       });
       session.metadata.recentProjectIds = [projectReference.project.id, ...(Array.isArray(session.metadata.recentProjectIds) ? session.metadata.recentProjectIds.map(String) : []).filter((id) => id !== projectReference.project!.id)].slice(0, 5);
       const text = routeExplanation(task);
-      const meshMeta = { taskId: task.id, status: task.status, projectId: task.projectId, targetAgentId: task.targetAgentId, targetDeviceId: task.targetDeviceId, reasons: task.decision.reasons, lifecycle };
+      const lifecycleMeta = [...task.lifecycle, ...lifecycle.filter((item) => item.stage === 'memory_updated')];
+      const meshMeta = { taskId: task.id, status: task.status, projectId: task.projectId, projectName: task.decision.project?.name, targetAgentId: task.targetAgentId, targetAgentName: task.decision.agent?.displayName, targetDeviceId: task.targetDeviceId, targetDeviceName: task.decision.device?.name, executeLocally: task.decision.executeLocally, reasons: task.decision.reasons, result: task.result, error: task.error, memoryWritebackIds: task.memoryWritebackIds, originConversationId: task.originConversationId, originMessageId: task.originMessageId, originProviderTools, lifecycle: lifecycleMeta };
       const assistantMessage = appendMessage(session, 'assistant', text, { providerId: session.providerId, agent: session.agent, runtime: 'memory-mesh', memoryMesh: meshMeta });
       return { session, userMessage, assistantMessage, result: { providerId: session.providerId, agentId: session.agent, sessionId: session.id, runtime: 'memory-mesh' as const, text, metadata: { memoryMesh: meshMeta } } };
     }
@@ -834,7 +937,7 @@ function memoryActor(req: http.IncomingMessage): MemoryAccessContext {
 }
 
 function compactTaskContext(decision: RouteDecision, task: string) {
-  if (!decision.project || !decision.agent || !decision.device) return task;
+  if (!decision.project || !decision.agent || !decision.device) return { prompt: task, memoryIds: [] as string[] };
   const actor = { agentId: decision.agent.id, deviceId: decision.device.id, isUser: false };
   const memories = memoryMesh.getRelevantMemories({
     task,
@@ -844,13 +947,13 @@ function compactTaskContext(decision: RouteDecision, task: string) {
     limit: 8
   }, actor);
   const contextLines = memories.map((memory) => `- [${memory.scope}; source=${memory.source}] ${memory.content.slice(0, 600)}`);
-  return [
+  return { prompt: [
     `Project: ${decision.project.name}`,
     decision.localPath ? `Device-specific project path: ${decision.localPath}` : '',
     `Task: ${task}`,
     contextLines.length ? `Relevant Memory Mesh context:\n${contextLines.join('\n')}` : '',
     'Return a concise result describing the work, verification, and any blockers. Do not assume paths from another device are valid.'
-  ].filter(Boolean).join('\n\n');
+  ].filter(Boolean).join('\n\n'), memoryIds: memories.map((memory) => memory.id) };
 }
 
 async function relaySocketText(data: unknown) {
@@ -921,26 +1024,56 @@ async function sendRemoteMemoryMeshTask(decision: RouteDecision, message: string
 
 const activeMemoryMeshTasks = new Map<string, AbortController>();
 
-async function executeMemoryMeshTask(input: { projectQuery: string; task: string; requiredCapabilities?: string[]; currentAgentId?: string; currentDeviceId?: string; recentProjectIds?: string[] }, onLifecycle?: (stage: string, data: Record<string, unknown>) => void) {
+interface MemoryMeshTaskInput {
+  projectQuery: string;
+  task: string;
+  requiredCapabilities?: string[];
+  currentAgentId?: string;
+  currentDeviceId?: string;
+  recentProjectIds?: string[];
+  originConversationId?: string;
+  originMessageId?: string;
+  userApproved?: boolean;
+}
+
+async function executeMemoryMeshTask(input: MemoryMeshTaskInput, onLifecycle?: (stage: string, data: Record<string, unknown>) => void) {
   const currentDeviceId = input.currentDeviceId || state.device.id;
   onLifecycle?.('resolving', { projectQuery: input.projectQuery });
   const decision = memoryMesh.routeTask({ ...input, currentDeviceId });
-  onLifecycle?.('route_planned', { decision });
+  onLifecycle?.('planning', { decision });
   const task = memoryMesh.createRoutingTask({
     request: input.task,
     requiredCapabilities: input.requiredCapabilities,
     sourceAgentId: input.currentAgentId,
     sourceDeviceId: currentDeviceId,
+    originConversationId: input.originConversationId,
+    originMessageId: input.originMessageId,
     decision
   });
   if (decision.status !== 'selected' || !decision.agent || !decision.device || !decision.project) return task;
+  if (task.status === 'awaiting_approval' && !input.userApproved) {
+    onLifecycle?.('awaiting_approval', { taskId: task.id, reason: decision.approvalReason });
+    return task;
+  }
+  if (task.status === 'awaiting_approval') memoryMesh.updateRoutingTask(task.id, { status: 'queued', progress: 'Approved by the originating user request.' });
+  return runPersistedMemoryMeshTask(task.id, onLifecycle);
+}
+
+async function runPersistedMemoryMeshTask(taskId: string, onLifecycle?: (stage: string, data: Record<string, unknown>) => void) {
+  const task = memoryMesh.getRoutingTask(taskId);
+  if (!task) throw new Error(`Routing task not found: ${taskId}`);
+  const decision = task.decision;
+  if (decision.status !== 'selected' || !decision.agent || !decision.device || !decision.project) return task;
   const controller = new AbortController();
   activeMemoryMeshTasks.set(task.id, controller);
-  memoryMesh.updateRoutingTask(task.id, { status: 'running' });
-  onLifecycle?.('delegating', { taskId: task.id, agent: decision.agent, device: decision.device, executeLocally: decision.executeLocally, reasons: decision.reasons });
+  memoryMesh.updateRoutingTask(task.id, { status: 'sent', progress: decision.executeLocally ? 'Dispatching to the selected local provider.' : 'Sending through the Project Reika relay.' });
+  onLifecycle?.('sent', { taskId: task.id, agent: decision.agent, device: decision.device, executeLocally: decision.executeLocally, reasons: decision.reasons });
   try {
-    const prompt = compactTaskContext(decision, input.task);
+    const context = compactTaskContext(decision, task.request);
+    memoryMesh.updateRoutingTask(task.id, { status: 'accepted', progress: `${decision.agent.displayName} accepted the routed task.`, sharedContextRefs: context.memoryIds });
+    onLifecycle?.('accepted', { taskId: task.id, targetAgentId: decision.agent.id, targetDeviceId: decision.device.id });
     if (controller.signal.aborted || memoryMesh.getRoutingTask(task.id)?.status === 'cancelled') return memoryMesh.getRoutingTask(task.id)!;
+    memoryMesh.updateRoutingTask(task.id, { status: 'working', progress: `${decision.agent.displayName} is working on ${decision.project.name}.` });
     onLifecycle?.('working', { taskId: task.id, targetAgentId: decision.agent.id, targetDeviceId: decision.device.id });
     let result: string;
     if (decision.executeLocally) {
@@ -948,18 +1081,17 @@ async function executeMemoryMeshTask(input: { projectQuery: string; task: string
         sessionId: `mesh_${task.id}`,
         providerId: decision.providerId,
         agent: decision.agent.providerAgentId,
-        message: prompt,
+        message: context.prompt,
         title: `${decision.project.name}: routed task`,
         metadata: { memoryMeshTaskId: task.id, projectId: decision.project.id, skipMemoryMeshRouting: true }
       });
       result = turn.result.text;
     } else {
-      result = (await sendRemoteMemoryMeshTask(decision, prompt, 120_000, controller.signal)).text;
+      result = (await sendRemoteMemoryMeshTask(decision, context.prompt, 120_000, controller.signal)).text;
     }
     if (controller.signal.aborted || memoryMesh.getRoutingTask(task.id)?.status === 'cancelled') return memoryMesh.getRoutingTask(task.id)!;
-    const completed = memoryMesh.updateRoutingTask(task.id, { status: 'completed', result })!;
-    memoryMesh.addMemory({
-      content: `Task: ${input.task}\nResult: ${result}`,
+    const writeback = memoryMesh.addMemory({
+      content: `Task: ${task.request}\nVerified result: ${result}`,
       scope: 'project',
       projectId: decision.project.id,
       createdBy: decision.agent.id,
@@ -967,21 +1099,32 @@ async function executeMemoryMeshTask(input: { projectQuery: string; task: string
       tags: ['routed-task', 'completed'],
       confidence: 0.9,
       importance: 0.7,
-      permissions: { visibility: 'project', access: 'read_write' }
+      permissions: { visibility: 'project', access: 'read_write' },
+      provenance: { sourceConversationId: task.originConversationId, sourceMessageId: task.originMessageId, sourceTaskId: task.id, sourceAgentId: decision.agent.id, sourceDeviceId: decision.device.id, verifiedAt: new Date().toISOString() }
     }, { isUser: true });
-    onLifecycle?.('memory_updated', { taskId: task.id, projectId: decision.project.id });
+    const completed = memoryMesh.updateRoutingTask(task.id, { status: 'completed', result, progress: 'Correlated result returned and durable project memory written.', memoryWritebackIds: [writeback.id] })!;
+    onLifecycle?.('memory_updated', { taskId: task.id, projectId: decision.project.id, memoryId: writeback.id });
     onLifecycle?.('completed', { taskId: task.id, result });
     return completed;
   } catch (error) {
     const cancelled = controller.signal.aborted || memoryMesh.getRoutingTask(task.id)?.status === 'cancelled';
+    const timedOut = error instanceof Error && /timed out/i.test(error.message);
     const failed = cancelled
       ? memoryMesh.updateRoutingTask(task.id, { status: 'cancelled', error: 'Cancelled by request.' })!
-      : memoryMesh.updateRoutingTask(task.id, { status: 'failed', error: error instanceof Error ? error.message : String(error) })!;
-    onLifecycle?.(cancelled ? 'cancelled' : 'failed', { taskId: task.id, error: failed.error });
+      : memoryMesh.updateRoutingTask(task.id, { status: timedOut ? 'timed_out' : 'failed', error: error instanceof Error ? error.message : String(error) })!;
+    onLifecycle?.(cancelled ? 'cancelled' : timedOut ? 'timed_out' : 'failed', { taskId: task.id, error: failed.error });
     return failed;
   } finally {
     activeMemoryMeshTasks.delete(task.id);
   }
+}
+
+async function approveMemoryMeshTask(taskId: string) {
+  const task = memoryMesh.getRoutingTask(taskId);
+  if (!task) return undefined;
+  if (task.status !== 'awaiting_approval') return task;
+  memoryMesh.updateRoutingTask(task.id, { status: 'queued', progress: 'Approved by the user.' });
+  return runPersistedMemoryMeshTask(task.id);
 }
 
 function cancelMemoryMeshTask(taskId: string) {
@@ -989,7 +1132,7 @@ function cancelMemoryMeshTask(taskId: string) {
   return memoryMesh.cancelRoutingTask(taskId);
 }
 
-const memoryMeshTools = new ReikaMemoryToolRuntime(memoryMesh, { delegateTask: executeMemoryMeshTask, cancelTask: cancelMemoryMeshTask });
+const memoryMeshTools = new ReikaMemoryToolRuntime(memoryMesh, { delegateTask: executeMemoryMeshTask, cancelTask: cancelMemoryMeshTask, approveTask: approveMemoryMeshTask });
 
 function writeSse(res: http.ServerResponse, event: string, data: unknown) {
   res.write(`event: ${event}\n`);
@@ -1064,11 +1207,18 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const actor = memoryActor(req);
+      if (actor.isUser) {
+        sendJson(res, 401, { ok: false, error: 'Direct Memory Mesh tool execution requires a registered Reika agent identity. User approvals must come through chat or task approval endpoints.' });
+        return;
+      }
       const result = await memoryMeshTools.execute(createReikaToolCall(name, body.arguments && typeof body.arguments === 'object' ? body.arguments as Record<string, unknown> : {}), {
         actor,
         sessionId: typeof body.sessionId === 'string' ? body.sessionId : undefined,
         currentAgentId: actor.agentId,
-        currentDeviceId: actor.deviceId || state.device.id
+        currentDeviceId: actor.deviceId || state.device.id,
+        conversationId: typeof body.conversationId === 'string' ? body.conversationId : undefined,
+        messageId: typeof body.messageId === 'string' ? body.messageId : undefined,
+        userApproved: actor.isUser && body.userApproved === true
       });
       sendJson(res, result.ok ? 200 : 403, result);
       return;
@@ -1273,6 +1423,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    const meshTaskApproveMatch = url.pathname.match(/^\/memory-mesh\/tasks\/([^/]+)\/approve$/u);
+    if (req.method === 'POST' && meshTaskApproveMatch) {
+      const task = await approveMemoryMeshTask(decodeURIComponent(meshTaskApproveMatch[1]));
+      sendJson(res, task ? 200 : 404, { ok: Boolean(task), task });
+      return;
+    }
+
     if (req.method === 'POST' && url.pathname === '/memory-mesh/tasks') {
       const body = await readJson(req);
       const task = await executeMemoryMeshTask({
@@ -1332,7 +1489,7 @@ const server = http.createServer(async (req, res) => {
       addNotification({
         kind: 'system',
         title: 'Art profile created',
-        body: `${profile.name} now has an AgentHub art profile.`,
+        body: `${profile.name} now has a Reika art profile.`,
         source: 'art-studio',
         tone: 'blue',
         data: { profileId: profile.id }
@@ -2107,14 +2264,14 @@ async function startServer() {
   await boot();
 
   if (cli.mode === 'pair' && cli.noUi) {
-    console.log(`Headless pairing requested for relay ${cli.relayUrl || serverConfig.uplink.relayUrl}. Approve this device in AgentHub.`);
+    console.log(`Headless pairing requested for relay ${cli.relayUrl || serverConfig.uplink.relayUrl}. Approve this node in Reika.`);
     console.log('Local API/UI server disabled for this terminal pairing run.');
     return;
   }
 
   server.on('error', (error: NodeJS.ErrnoException) => {
     if (error.code === 'EADDRINUSE') {
-      console.error(`${serverConfig.displayName} could not bind http://${serverConfig.host}:${serverConfig.port} because another agent server is already running there.`);
+      console.error(`${serverConfig.displayName} could not bind http://${serverConfig.host}:${serverConfig.port} because another Reika Node is already running there.`);
       console.error('For Linux terminal pairing, rerun with `--no-ui` or use the one-line installer again after updating.');
     } else {
       console.error(error instanceof Error ? error.message : String(error));
@@ -2127,10 +2284,10 @@ async function startServer() {
     console.log(`${serverConfig.displayName} listening on http://${serverConfig.host}:${serverConfig.port}`);
     console.log(`Local provider detection enabled. External uplink ${serverConfig.uplink.enabled ? 'enabled' : 'disabled'}. Direct provider chat enabled for CommandCenter, OpenClaw, Hermes, and mock.`);
     if (process.platform === 'linux') {
-      console.log(`Linux pairing: create a code in AgentHub, then run \`npm run dev -- pair --code <code> --relay ${serverConfig.uplink.relayUrl}\`.`);
+      console.log(`Linux pairing: create a code in Reika, then run \`npm run dev -- pair --code <code> --relay ${serverConfig.uplink.relayUrl}\`.`);
     }
     if (cli.mode === 'pair') {
-      console.log(`Pairing requested for relay ${cli.relayUrl || serverConfig.uplink.relayUrl}. Approve this device in AgentHub.`);
+      console.log(`Pairing requested for relay ${cli.relayUrl || serverConfig.uplink.relayUrl}. Approve this node in Reika.`);
     } else if (!cli.noUi && shouldOpenPairingUi()) {
       const localUrl = `http://${serverConfig.host}:${serverConfig.port}/`;
       console.log(`Opening Windows pairing UI at ${localUrl}`);

@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "assets" / "agenthub_phase1_generated"
+OUT = ROOT / "assets" / "reika_phase1_generated"
 
 
 def save_status_icon(name: str, color: tuple[int, int, int], label_color: tuple[int, int, int]) -> None:
@@ -81,8 +81,7 @@ def save_progress_bar() -> None:
 
 def resize_alpha_assets() -> None:
     for src in [
-        OUT / "brand" / "agenthub_logo_icon_alpha.png",
-        OUT / "brand" / "agenthub_combined_deterministic_alpha.png",
+        OUT / "brand" / "reika_logo_icon_alpha.png",
         OUT / "icons" / "providers" / "hermes_alpha.png",
         OUT / "icons" / "providers" / "openclaw_alpha.png",
         OUT / "icons" / "devices" / "pc_alpha.png",
@@ -115,11 +114,10 @@ def build_manifest() -> None:
                 }
             )
     manifest = {
-        "name": "AgentHub Phase 1 Generated Reika Asset Pack",
-        "description": "New project-local generated assets based on the supplied AgentHub and Reika reference sheets.",
+        "name": "Reika Phase 1 Generated Reika Asset Pack",
+        "description": "Project-local generated assets for Reika.",
         "source_references": [
-            "assets/agenthub_phase1_generated/_source_refs/agenthub_reference_sheet.png",
-            "assets/agenthub_phase1_generated/_source_refs/reika_character_sheet.png",
+            "assets/reika_phase1_generated/_source_refs/reika_character_sheet.png",
         ],
         "palette": {
             "deep_space": "#0B1020",

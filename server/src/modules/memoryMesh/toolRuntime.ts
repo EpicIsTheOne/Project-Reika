@@ -35,10 +35,12 @@ export const reikaMemoryToolDefinitions: ReikaMemoryToolDefinition[] = [
   { name: 'reika.addMemory', description: 'Create a scoped memory. Permissions are checked by Reika, not the model.', readOnly: false, inputSchema: objectSchema({ content: string('Memory content'), scope: { type: 'string', enum: ['global', 'agent', 'project', 'device', 'session'] }, agentId: string('Owning agent ID'), projectId: string('Owning project ID'), deviceId: string('Owning device ID'), sessionId: string('Session ID'), source: string('Traceable source'), tags: stringArray('Search tags'), confidence: { type: 'number', minimum: 0, maximum: 1 }, importance: { type: 'number', minimum: 0, maximum: 1 }, visibility: { type: 'string', enum: ['global', 'private_agent', 'private_device', 'project', 'user_only'] }, access: { type: 'string', enum: ['read_only', 'read_write'] } }, ['content', 'scope', 'source']) },
   { name: 'reika.updateMemory', description: 'Update a memory visible and writable by the acting identity.', readOnly: false, inputSchema: objectSchema({ memoryId: string('Memory ID'), content: string('Replacement content'), source: string('Updated source'), tags: stringArray('Replacement tags'), confidence: { type: 'number', minimum: 0, maximum: 1 }, importance: { type: 'number', minimum: 0, maximum: 1 } }, ['memoryId']) },
   { name: 'reika.promoteSessionMemory', description: 'Promote temporary session memory into an authorized durable scope.', readOnly: false, inputSchema: objectSchema({ memoryId: string('Session memory ID'), scope: { type: 'string', enum: ['global', 'agent', 'project', 'device'] }, agentId: string('Target agent ID'), projectId: string('Target project ID'), deviceId: string('Target device ID') }, ['memoryId', 'scope']) },
+  { name: 'reika.findCapability', description: 'Find eligible agents and nodes that expose a required capability, optionally within a project.', readOnly: true, inputSchema: objectSchema({ capability: string('Required capability or tool'), projectId: string('Optional project ID') }, ['capability']) },
   { name: 'reika.planRoute', description: 'Resolve a project and explain the best eligible agent and device without executing.', readOnly: true, inputSchema: objectSchema({ projectQuery: string('Project name or alias'), task: string('Requested work'), requiredCapabilities: stringArray('Capabilities required for the task'), recentProjectIds: stringArray('Recently referenced project IDs') }, ['projectQuery', 'task']) },
   { name: 'reika.delegateTask', description: 'Delegate project work through Reika and return the persisted routing task.', readOnly: false, inputSchema: objectSchema({ projectQuery: string('Project name or alias'), task: string('Requested work'), requiredCapabilities: stringArray('Capabilities required for the task'), recentProjectIds: stringArray('Recently referenced project IDs') }, ['projectQuery', 'task']) },
   { name: 'reika.getTaskStatus', description: 'Get persisted status, result, route explanation, or failure for a delegated task.', readOnly: true, inputSchema: objectSchema({ taskId: string('Routing task ID') }, ['taskId']) },
-  { name: 'reika.cancelTask', description: 'Cancel a queued or running routing task. Completed tasks remain unchanged.', readOnly: false, inputSchema: objectSchema({ taskId: string('Routing task ID') }, ['taskId']) }
+  { name: 'reika.cancelTask', description: 'Cancel an active routing task. Completed tasks remain unchanged.', readOnly: false, inputSchema: objectSchema({ taskId: string('Routing task ID') }, ['taskId']) },
+  { name: 'reika.approveTask', description: 'Approve a routing task that is waiting for explicit user approval.', readOnly: false, inputSchema: objectSchema({ taskId: string('Routing task ID') }, ['taskId']) }
 ];
 
 export interface ReikaToolExecutionContext {
@@ -46,11 +48,15 @@ export interface ReikaToolExecutionContext {
   sessionId?: string;
   currentAgentId?: string;
   currentDeviceId?: string;
+  conversationId?: string;
+  messageId?: string;
+  userApproved?: boolean;
 }
 
 export interface ReikaMemoryToolRuntimeOptions {
-  delegateTask: (input: { projectQuery: string; task: string; requiredCapabilities?: string[]; currentAgentId?: string; currentDeviceId?: string; recentProjectIds?: string[] }) => Promise<RoutingTask>;
+  delegateTask: (input: { projectQuery: string; task: string; requiredCapabilities?: string[]; currentAgentId?: string; currentDeviceId?: string; recentProjectIds?: string[]; originConversationId?: string; originMessageId?: string; userApproved?: boolean }) => Promise<RoutingTask>;
   cancelTask?: (taskId: string) => RoutingTask | undefined;
+  approveTask?: (taskId: string) => Promise<RoutingTask | undefined>;
 }
 
 export class ReikaMemoryToolRuntime {
@@ -69,6 +75,7 @@ export class ReikaMemoryToolRuntime {
 
   private async dispatch(name: ReikaMemoryToolName, args: Record<string, unknown>, context: ReikaToolExecutionContext): Promise<unknown> {
     const actor = context.actor;
+    this.assertTrustedContext(name, context);
     switch (name) {
       case 'reika.listAgents': return this.store.listAgents();
       case 'reika.getAgent': return requireFound(this.store.getAgent(requiredString(args.agentId, 'agentId')), 'Agent');
@@ -77,7 +84,7 @@ export class ReikaMemoryToolRuntime {
       case 'reika.listProjects': return this.store.listProjects().filter((project) => actor.isUser || project.agentAssignments.some((assignment) => assignment.agentId === actor.agentId));
       case 'reika.resolveProject': {
         const resolution = this.store.resolveProject(requiredString(args.query, 'query'), { recentProjectIds: stringList(args.recentProjectIds), agentId: context.currentAgentId || actor.agentId });
-        if (!actor.isUser) {
+        if (!actor.isUser && !context.userApproved) {
           resolution.candidates = resolution.candidates.filter((candidate) => candidate.project.agentAssignments.some((assignment) => assignment.agentId === actor.agentId));
           if (resolution.project && !resolution.project.agentAssignments.some((assignment) => assignment.agentId === actor.agentId)) return { status: 'not_found', query: resolution.query, candidates: [] };
         }
@@ -96,7 +103,8 @@ export class ReikaMemoryToolRuntime {
         return this.store.addMemory({
           content: requiredString(args.content, 'content'), scope, agentId: optionalString(args.agentId), projectId: optionalString(args.projectId), deviceId: optionalString(args.deviceId), sessionId: optionalString(args.sessionId) || (scope === 'session' ? context.sessionId : undefined),
           createdBy: actor.isUser ? 'user' : requiredString(actor.agentId, 'acting agent'), source: requiredString(args.source, 'source'), tags: stringList(args.tags), confidence: boundedNumber(args.confidence, 0.8, 0, 1), importance: boundedNumber(args.importance, 0.5, 0, 1),
-          permissions: { visibility: validVisibility(args.visibility, scope), access: args.access === 'read_only' ? 'read_only' : 'read_write' }
+          permissions: { visibility: validVisibility(args.visibility, scope), access: args.access === 'read_only' ? 'read_only' : 'read_write' },
+          provenance: { sourceConversationId: context.conversationId, sourceMessageId: context.messageId, sourceAgentId: actor.agentId, sourceDeviceId: actor.deviceId, verifiedAt: boundedNumber(args.confidence, 0.8, 0, 1) >= 0.85 ? new Date().toISOString() : undefined }
         }, actor);
       }
       case 'reika.updateMemory': {
@@ -110,14 +118,50 @@ export class ReikaMemoryToolRuntime {
         return requireFound(this.store.updateMemory(memoryId, patch, actor), 'Memory');
       }
       case 'reika.promoteSessionMemory': return requireFound(this.store.promoteSessionMemory(requiredString(args.memoryId, 'memoryId'), { scope: requiredDurableScope(args.scope), agentId: optionalString(args.agentId), projectId: optionalString(args.projectId), deviceId: optionalString(args.deviceId) }, actor), 'Session memory');
-      case 'reika.planRoute': return this.store.routeTask({ projectQuery: requiredString(args.projectQuery, 'projectQuery'), task: requiredString(args.task, 'task'), requiredCapabilities: stringList(args.requiredCapabilities), currentAgentId: context.currentAgentId || actor.agentId, currentDeviceId: context.currentDeviceId || actor.deviceId, recentProjectIds: stringList(args.recentProjectIds) });
-      case 'reika.delegateTask': return this.options.delegateTask({ projectQuery: requiredString(args.projectQuery, 'projectQuery'), task: requiredString(args.task, 'task'), requiredCapabilities: stringList(args.requiredCapabilities), currentAgentId: context.currentAgentId || actor.agentId, currentDeviceId: context.currentDeviceId || actor.deviceId, recentProjectIds: stringList(args.recentProjectIds) });
-      case 'reika.getTaskStatus': return requireFound(this.store.getRoutingTask(requiredString(args.taskId, 'taskId')), 'Routing task');
+      case 'reika.findCapability': {
+        const capability = requiredString(args.capability, 'capability').toLowerCase();
+        const projectId = optionalString(args.projectId);
+        const project = projectId ? requireFound(this.store.getProject(projectId), 'Project') : undefined;
+        if (project) assertProjectRead(project.agentAssignments, actor);
+        const allowedAgentIds = project ? new Set(project.agentAssignments.map((assignment) => assignment.agentId)) : undefined;
+        return this.store.listAgents().filter((agent) => (!allowedAgentIds || allowedAgentIds.has(agent.id)) && [...agent.capabilities, ...agent.supportedTools].some((item) => item.toLowerCase() === capability)).map((agent) => ({ agent, device: this.store.getDevice(agent.deviceId), online: agent.status === 'online' && this.store.getDevice(agent.deviceId)?.status === 'online' }));
+      }
+      case 'reika.planRoute': {
+        const decision = this.store.routeTask({ projectQuery: requiredString(args.projectQuery, 'projectQuery'), task: requiredString(args.task, 'task'), requiredCapabilities: stringList(args.requiredCapabilities), currentAgentId: context.currentAgentId || actor.agentId, currentDeviceId: context.currentDeviceId || actor.deviceId, recentProjectIds: stringList(args.recentProjectIds) });
+        if (decision.project && !context.userApproved) assertProjectRead(decision.project.agentAssignments, actor);
+        return decision;
+      }
+      case 'reika.delegateTask': {
+        const projectQuery = requiredString(args.projectQuery, 'projectQuery');
+        const planned = this.store.routeTask({ projectQuery, task: requiredString(args.task, 'task'), requiredCapabilities: stringList(args.requiredCapabilities), currentAgentId: context.currentAgentId || actor.agentId, currentDeviceId: context.currentDeviceId || actor.deviceId, recentProjectIds: stringList(args.recentProjectIds) });
+        if (planned.project && !context.userApproved) assertProjectRead(planned.project.agentAssignments, actor);
+        return this.options.delegateTask({ projectQuery, task: requiredString(args.task, 'task'), requiredCapabilities: stringList(args.requiredCapabilities), currentAgentId: context.currentAgentId || actor.agentId, currentDeviceId: context.currentDeviceId || actor.deviceId, recentProjectIds: stringList(args.recentProjectIds), originConversationId: context.conversationId, originMessageId: context.messageId, userApproved: context.userApproved });
+      }
+      case 'reika.getTaskStatus': {
+        const task = requireFound(this.store.getRoutingTask(requiredString(args.taskId, 'taskId')), 'Routing task');
+        assertTaskAccess(task, actor);
+        return task;
+      }
       case 'reika.cancelTask': {
         const taskId = requiredString(args.taskId, 'taskId');
+        assertTaskAccess(requireFound(this.store.getRoutingTask(taskId), 'Routing task'), actor);
         return requireFound(this.options.cancelTask?.(taskId) ?? this.store.cancelRoutingTask(taskId), 'Routing task');
       }
+      case 'reika.approveTask': {
+        if (!actor.isUser) throw new Error('Only the user may approve a delegated task.');
+        return requireFound(await this.options.approveTask?.(requiredString(args.taskId, 'taskId')), 'Routing task');
+      }
     }
+  }
+
+  private assertTrustedContext(name: ReikaMemoryToolName, context: ReikaToolExecutionContext) {
+    if (context.actor.isUser) return;
+    const actorId = requiredString(context.actor.agentId, 'acting agent');
+    const agent = requireFound(this.store.getAgent(actorId), 'Acting agent');
+    if (context.actor.deviceId && context.actor.deviceId !== agent.deviceId) throw new Error('Acting device does not match the registered agent device.');
+    if (context.currentAgentId && context.currentAgentId !== actorId) throw new Error('A tool caller cannot impersonate another current agent.');
+    const explicit = agent.permissions.filter((permission) => permission.startsWith('reika:tool:'));
+    if (agent.permissions.includes('reika:tools:none') || (explicit.length && !explicit.includes('reika:tool:*') && !explicit.includes(`reika:tool:${name}`))) throw new Error(`Agent ${actorId} is not permitted to use ${name}.`);
   }
 }
 
@@ -139,6 +183,10 @@ export function toHermesToolManifest(definitions = reikaMemoryToolDefinitions) {
 
 function assertProjectRead(assignments: Array<{ agentId: string }>, actor: MemoryAccessContext) {
   if (!actor.isUser && !assignments.some((assignment) => assignment.agentId === actor.agentId)) throw new Error('This actor is not assigned to the project.');
+}
+function assertTaskAccess(task: RoutingTask, actor: MemoryAccessContext) {
+  if (actor.isUser) return;
+  if (!actor.agentId || (task.sourceAgentId !== actor.agentId && task.targetAgentId !== actor.agentId)) throw new Error('This actor cannot access the routing task.');
 }
 function requiredString(value: unknown, name: string) { const result = optionalString(value); if (!result) throw new Error(`${name} is required.`); return result; }
 function optionalString(value: unknown) { return typeof value === 'string' && value.trim() ? value.trim() : undefined; }

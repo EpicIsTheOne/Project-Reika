@@ -33,6 +33,6 @@ assert(!chat.includes('aria-label="Heart reaction"') && chat.includes("MessageBo
 assert(relay.includes('deploymentMode: "private-single-operator-testing"') && relay.includes("REIKA_RELAY_ALLOW_NONLOCAL"), "SECURITY-001 relay must remain private/testing-only by default.");
 assert(protocol.includes('"command.status.request"') && protocol.includes('"executing"') && dispatcher.includes("IdempotencyLedger"), "PROTOCOL-002 durable delivery status and agent authority must remain wired.");
 assert(chat.includes("chat-drawer-toggle") && chat.includes("sessionDrawerOpen"), "UI-002 laptop session drawer must remain available.");
-assert(!assets.includes("agenthub_phase1_generated") && assets.includes("agenthub_phase1_webp"), "PERF-001 production asset catalog must use generated WebP files.");
+assert(!assets.includes("reika_phase1_generated") && assets.includes("reika_phase1_webp"), "PERF-001 production asset catalog must use generated WebP files.");
 
 console.log("audit regression contracts ok");

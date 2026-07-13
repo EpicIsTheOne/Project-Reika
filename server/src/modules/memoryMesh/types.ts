@@ -92,8 +92,18 @@ export interface MemoryRecord {
   confidence: number;
   importance: number;
   permissions: MemoryPermission;
+  provenance?: MemoryProvenance;
   expiresAt?: string;
   version: number;
+}
+
+export interface MemoryProvenance {
+  sourceConversationId?: string;
+  sourceMessageId?: string;
+  sourceTaskId?: string;
+  sourceAgentId?: string;
+  sourceDeviceId?: string;
+  verifiedAt?: string;
 }
 
 export interface MemoryAccessContext {
@@ -118,12 +128,37 @@ export interface RouteDecision {
   localPath?: string;
   executeLocally: boolean;
   score?: number;
+  approvalRequired?: boolean;
+  approvalReason?: string;
   reasons: string[];
   considered: Array<{ agentId: string; eligible: boolean; score: number; reasons: string[] }>;
 }
 
+export type RoutingTaskStatus =
+  | 'resolving'
+  | 'planning'
+  | 'awaiting_approval'
+  | 'queued'
+  | 'sent'
+  | 'accepted'
+  | 'working'
+  | 'awaiting_input'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'timed_out'
+  | 'unavailable';
+
+export interface RoutingTaskLifecycleEntry {
+  status: RoutingTaskStatus;
+  at: string;
+  progress?: string;
+}
+
 export interface RoutingTask {
   id: string;
+  originConversationId?: string;
+  originMessageId?: string;
   projectId?: string;
   sourceAgentId?: string;
   sourceDeviceId?: string;
@@ -131,12 +166,19 @@ export interface RoutingTask {
   targetDeviceId?: string;
   request: string;
   requiredCapabilities: string[];
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'unavailable' | 'cancelled';
+  sharedContextRefs: string[];
+  status: RoutingTaskStatus;
   decision: RouteDecision;
+  progress?: string;
   result?: string;
   error?: string;
+  memoryWritebackIds: string[];
+  lifecycle: RoutingTaskLifecycleEntry[];
+  approvalRequired: boolean;
   createdAt: string;
   updatedAt: string;
+  sentAt?: string;
+  acceptedAt?: string;
   completedAt?: string;
 }
 
@@ -152,10 +194,12 @@ export type ReikaMemoryToolName =
   | 'reika.addMemory'
   | 'reika.updateMemory'
   | 'reika.promoteSessionMemory'
+  | 'reika.findCapability'
   | 'reika.planRoute'
   | 'reika.delegateTask'
   | 'reika.getTaskStatus'
-  | 'reika.cancelTask';
+  | 'reika.cancelTask'
+  | 'reika.approveTask';
 
 export interface ReikaMemoryToolDefinition {
   name: ReikaMemoryToolName;

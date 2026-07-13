@@ -6,7 +6,7 @@ const configuredRelayUrl = process.env.VITE_REIKA_RELAY_URL ?? process.env.REIKA
 const configuredAgentProxyTarget = process.env.VITE_REIKA_AGENT_TARGET ?? "http://127.0.0.1:47840";
 const configuredRelayProxyTarget =
   process.env.VITE_REIKA_RELAY_PROXY_TARGET ??
-  process.env.AGENTHUB_RELAY_TARGET ??
+  process.env.REIKA_RELAY_TARGET ?? process.env.AGENTHUB_RELAY_TARGET ??
   deriveRelayProxyTarget(configuredRelayUrl) ??
   "https://relay.techexplore.us";
 

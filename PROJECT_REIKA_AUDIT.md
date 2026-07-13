@@ -186,7 +186,7 @@ The intended boundary is sensible: the client presents agents and devices; the a
 4. **Affected component:** Agent provider runtime and Electron launcher.
 5. **Affected files/lines:** `server/src/modules/provider/providerRuntime.ts:68-75`, `:148`, `:476`; `client/desktop/localAgent.ts:40-50`.
 6. **Description:** Provider discovery uses `process.env.HOME`, `/.local/bin`, colon PATH separation, and string-built paths. Windows commonly has no HOME; packaged Electron substitutes its user-data directory.
-7. **Evidence:** Isolated Windows runtime attempted `C:\.openclaw\openclaw.json`. Packaged execution can instead look under AgentHub userData rather than the real user home.
+7. **Evidence:** Isolated Windows runtime attempted `C:\.openclaw\openclaw.json`. Packaged execution can instead look under Reika userData rather than the real user home.
 8. **Reproduction steps:** Launch on Windows without HOME and inspect provider refresh diagnostics.
 9. **Expected behavior:** Use `os.homedir()`, `path.join`, and `path.delimiter`, with explicit configurable paths.
 10. **Actual behavior:** Discovery may miss installed providers or search inconsistent locations.
@@ -475,7 +475,7 @@ The intended boundary is sensible: the client presents agents and devices; the a
 5. **Affected files/lines:** `client/src/data/assets.ts`; static imports in feature components; generated `client/dist/assets`.
 6. **Description:** The Vite build emitted many individual PNG assets between roughly 1.5 MB and 2.3 MB, all associated with the main app build.
 7. **Evidence:** Production build output listed more than a dozen 1.5–2.3 MB images; JS itself was ~309 kB and CSS ~84 kB, showing imagery is the dominant payload.
-8. **Reproduction steps:** Run `npm run build --workspace agenthub-phase1-ui` and inspect asset sizes/network load.
+8. **Reproduction steps:** Run `npm run build --workspace reika-phase1-ui` and inspect asset sizes/network load.
 9. **Expected behavior:** Responsive WebP/AVIF variants, lazy page/agent loading, thumbnails, and bounded decoded image memory.
 10. **Actual behavior:** Large source PNGs are bundled directly.
 11. **User impact:** Slower cold start, larger installer/update, higher memory, and UI jank on lower-end machines.
@@ -563,7 +563,7 @@ The intended boundary is sensible: the client presents agents and devices; the a
 
 ### CLIENT-005 — Hard-coded demo account/build identity leaks into normal UI
 
-1. **Title:** Account shell presents Epic/epic@agenthub.dev and “Local Build” as if real.
+1. **Title:** Account shell presents Epic/epic@reika.dev and “Local Build” as if real.
 2. **Severity:** Low
 3. **Confidence:** Confirmed visually/code review.
 4. **Affected component:** App shell/settings.
@@ -620,7 +620,7 @@ The intended boundary is sensible: the client presents agents and devices; the a
 4. **Affected component:** Client packaging.
 5. **Affected files/lines:** `client/electron-builder.json`; desktop build scripts.
 6. **Description/Evidence:** Desktop build completed in ~128 seconds, produced installer/unpacked app, launched, and proxied isolated agent and relay health successfully.
-7. **Reproduction:** `npm run build:desktop --workspace agenthub-phase1-ui`, launch unpacked executable with isolated state.
+7. **Reproduction:** `npm run build:desktop --workspace reika-phase1-ui`, launch unpacked executable with isolated state.
 8. **Expected/Actual:** Package created and health passed.
 9. **Impact:** Packaging foundation is viable.
 10. **Cause/Fix/Effort/Dependencies/Test:** Address packaging warnings: missing description/author and SEA “signature seems corrupted” warning; verify Authenticode/reproducibility before release.
@@ -705,7 +705,7 @@ Critical missing behavioral tests:
 | `npm run build` in workspace | PASS |
 | Shared/server/relay typechecks | PASS |
 | `npm run check:protocol` | PASS |
-| `npm run build:desktop --workspace agenthub-phase1-ui` | PASS with metadata/SEA warning |
+| `npm run build:desktop --workspace reika-phase1-ui` | PASS with metadata/SEA warning |
 | Launch isolated relay + agent + Vite client | PASS |
 | Launch unpacked packaged app and check agent/relay proxies | PASS |
 | Local Mock chat and session persistence | PASS |
@@ -899,7 +899,7 @@ An excellent mature Project Reika is a calm, characterful desktop home for persi
 1. Is the hosted relay intended for public multi-tenant use now, private testing only, or single-operator deployment?
 2. Should a chat session permit concurrent turns, queue them, or branch them?
 3. Is remote file transfer an intended near-term capability, or should attachments be local-only?
-4. Are OpenClaw/Hermes configurations expected from the Windows user home or an AgentHub-managed profile?
+4. Are OpenClaw/Hermes configurations expected from the Windows user home or an Reika-managed profile?
 5. Are the server/client update toggles intended to map to independently released artifacts?
 6. What is the authoritative current roadmap/status document, and which phase docs should be archived?
 

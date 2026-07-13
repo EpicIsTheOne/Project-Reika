@@ -240,7 +240,7 @@ export function SettingsView({
         <img src={settingsScene} alt="" />
         <div className="settings-scene-card">
           <h2>Settings</h2>
-          <p>Make AgentHub truly yours.</p>
+          <p>Make Reika truly yours.</p>
           <span />
         </div>
       </aside>
@@ -251,9 +251,9 @@ export function SettingsView({
             <h1>Settings</h1>
             <p>Customize your experience.</p>
           </div>
-          <button className="secondary-action" type="button" onClick={() => setSettingsError("AgentHub v0.1.0 local desktop client.")}>
+          <button className="secondary-action" type="button" onClick={() => setSettingsError("Reika is an operating system for AI agents. Version 0.1.0.")}>
             <Info size={18} />
-            About AgentHub
+            About Reika
           </button>
         </header>
 
@@ -286,7 +286,7 @@ export function SettingsView({
                     <ChevronDown size={18} />
                   </button>
                 </SettingRow>
-                <SettingRow title="Startup Behavior" detail="Choose what happens when AgentHub launches.">
+                <SettingRow title="Startup Behavior" detail="Choose what happens when Reika launches.">
                   <button className="select-button" onClick={() => updateSetting("startupView", nextStartupView(settings.startupView))} disabled={busySetting === "startupView"}>
                     Open {labelView(settings.startupView)}
                     <ChevronDown size={18} />
@@ -413,7 +413,7 @@ export function SettingsView({
                 <SettingRow title="Diagnostics" detail="Show extra backend details while building Project Reika.">
                   <Toggle checked={settings.developerDiagnostics} disabled={busySetting === "developerDiagnostics"} onClick={() => updateSetting("developerDiagnostics", !settings.developerDiagnostics)} />
                 </SettingRow>
-                <SettingRow title="Automatic App Updates" detail={settings.autoUpdateServer && settings.autoUpdateClient ? "AgentHub and its bundled server can update together." : "Updates are checked and applied manually."}>
+                <SettingRow title="Automatic App Updates" detail={settings.autoUpdateServer && settings.autoUpdateClient ? "Reika and its bundled server can update together." : "Updates are checked and applied manually."}>
                   <Toggle checked={settings.autoUpdateServer && settings.autoUpdateClient} disabled={busySetting === "automaticUpdates"} onClick={() => updateAutomaticUpdates(!(settings.autoUpdateServer && settings.autoUpdateClient))} />
                 </SettingRow>
                 <UpdateStatusCard status={updateStatus} busy={updateBusy} onCheck={runUpdateCheck} onApply={runUpdateApply} />
@@ -453,7 +453,7 @@ export function SettingsView({
         </div>
 
         <footer className="settings-footer">
-          AgentHub v0.1.0
+          Reika v0.1.0
           <StatusDot status={updateStatus?.available ? "busy" : "online"} />
           {updateStatus?.available ? `${updateStatus.behindBy} GitHub update${updateStatus.behindBy === 1 ? "" : "s"} available` : "No GitHub update pending"}
         </footer>

@@ -7,7 +7,7 @@
 - The Notifications detail hero uses the closest existing Reika/room bitmap asset rather than the exact crop in the reference. This is acceptable for Phase 1 because it preserves the same dark-blue Reika system mood and does not block UI fidelity.
 
 **Implementation Checklist**
-- Added dedicated Devices and Notifications routes to the existing AgentHub shell.
+- Added dedicated Devices and Notifications routes to the existing Reika shell.
 - Built realistic mock device rows, provider/status details, notification rows, selection states, search/filter/action controls, and detail panels.
 - Reused generated project bitmap assets for Reika, provider icons, device icons, and room art.
 - Fixed the Notifications detail info row so `View Profile` no longer overlaps the Agent/Reika value.
@@ -24,7 +24,7 @@ viewport: 1536x1024 desktop
 state: Devices selected with Epic PC active; Notifications selected with Reika online notification active
 full-view comparison evidence: `C:/Users/Epic/Documents/Project Reika/screenshots/devices-notifications/comparison-devices.png`, `C:/Users/Epic/Documents/Project Reika/screenshots/devices-notifications/comparison-notifications.png`
 focused region comparison evidence: full-view sheets were sufficient for this pass because the relevant details are readable at 1536x1024; the Notifications detail row overlap was inspected and patched before final capture.
-fonts and typography: passed; headings, small labels, row titles, metrics, and button text follow the established AgentHub Inter/system hierarchy and match the reference density closely.
+fonts and typography: passed; headings, small labels, row titles, metrics, and button text follow the established Reika Inter/system hierarchy and match the reference density closely.
 spacing and layout rhythm: passed; sidebar, header controls, stats cards, list rows, two-column detail panels, and footer spacing align with the supplied desktop references.
 colors and visual tokens: passed; navy surfaces, electric-blue borders/glows, green/yellow/red status colors, and danger actions follow the reference palette.
 image quality and asset fidelity: passed; all visible custom visuals use real project bitmap assets, with only P3 crop differences remaining for future generated art.

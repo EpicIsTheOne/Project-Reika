@@ -1,0 +1,139 @@
+Reika UI Component Library
+
+Purpose
+
+Reika should reuse consistent components instead of creating a new
+style for every page.
+
+This prevents messy UI and reduces bugs.
+
+------------------------------------------------------------------------
+
+Core Components
+
+AppShell
+
+The main frame of the application.
+
+Includes: - Navigation - Page container - Global background - Global
+modals/toasts
+
+------------------------------------------------------------------------
+
+LoadingScreen
+
+Used during startup and connection checks.
+
+Includes: - Splash art - Progress text - Connection state
+
+------------------------------------------------------------------------
+
+HomePage
+
+Displays devices, providers, and agents.
+
+Includes: - Hero section - Device sections - Provider sections - Agent
+cards
+
+------------------------------------------------------------------------
+
+DeviceSection
+
+Displays one device.
+
+Includes: - Device name - Device type - Online/offline status -
+Providers on device
+
+------------------------------------------------------------------------
+
+ProviderSection
+
+Displays one provider on a device.
+
+Includes: - Provider name - Provider status - Agent list - Test
+connection button
+
+------------------------------------------------------------------------
+
+AgentCard
+
+Displays one agent.
+
+Includes: - Character art - Name - Provider - Device - Status - Last
+activity
+
+------------------------------------------------------------------------
+
+ChatView
+
+Main chat interface.
+
+Includes: - Agent header - Character portrait - Chat history - Message
+input - Send button
+
+------------------------------------------------------------------------
+
+ChatBubble
+
+Displays one message.
+
+Variants: - User message - Agent message - System message - Error
+message
+
+------------------------------------------------------------------------
+
+SettingsView
+
+Displays settings.
+
+Includes: - Provider settings - Device settings - Appearance settings -
+Developer settings
+
+------------------------------------------------------------------------
+
+StatusChip
+
+Small reusable status indicator.
+
+Statuses: - online - offline - connecting - busy - error
+
+------------------------------------------------------------------------
+
+NotificationCard
+
+Displays app notifications.
+
+Includes: - Character portrait - Title - Message - Time
+
+------------------------------------------------------------------------
+
+EmptyState
+
+Displays when content is missing.
+
+Examples: - No agents connected - No chat history - No providers found
+
+Should include character/chibi art.
+
+------------------------------------------------------------------------
+
+Component Rules
+
+Each component should: - Have one job - Be reusable - Avoid
+provider-specific logic - Use shared styles - Accept data through props
+
+------------------------------------------------------------------------
+
+Styling Rules
+
+Use shared design tokens for: - Colors - Radius - Shadows - Fonts -
+Spacing - Animation timing
+
+Avoid: - Random one-off colors - Hardcoded layout values everywhere -
+Copy-pasted component variants
+
+------------------------------------------------------------------------
+
+Guiding Principle
+
+“Build one clean component, then reuse it everywhere.”

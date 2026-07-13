@@ -385,7 +385,7 @@ function PairingInstructions({
           <>
             <h3>Windows pairing</h3>
             <ol className="connection-steps-list">
-              <li>Launch <code>reika-agent-server.exe</code> on the Windows device.</li>
+              <li>Launch <code>reika-node.exe</code> on the Windows node.</li>
               <li>Paste the relay URL and pairing code into the agent pairing window.</li>
               <li>Click Pair Device in that window.</li>
               <li>Return here and click Approve And Verify once the device is claimed.</li>

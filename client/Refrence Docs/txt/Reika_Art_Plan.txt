@@ -1,0 +1,132 @@
+Reika Character Art Integration Plan
+
+Philosophy
+
+Character art should be functional, not merely decorative. Every
+generated piece of art should serve a purpose within the Reika
+application.
+
+------------------------------------------------------------------------
+
+1. Loading Screen
+
+Use full-screen splash art while connecting to providers/devices.
+
+Examples: - Reika splash - Astra splash - Nyxie splash - Seasonal/event
+variants
+
+Display: - Connecting to account - Checking devices - Checking
+providers - Connection status
+
+------------------------------------------------------------------------
+
+2. Homepage Hero Area
+
+Feature a large character illustration at the top of the homepage.
+
+Example: “Welcome back, Epic.” “5 agents online.”
+
+Inspirations: - Persona - Zenless Zone Zero - Modern game launcher
+interfaces
+
+------------------------------------------------------------------------
+
+3. Agent Cards
+
+Use half-body character art instead of tiny avatars.
+
+Each card displays: - Character artwork - Agent name - Provider -
+Device - Online status
+
+This creates reasons to generate: - Casual outfits - Formal outfits -
+Seasonal outfits - Alternate costumes
+
+------------------------------------------------------------------------
+
+4. Chat UI
+
+The chat UI should contain the largest amount of character art.
+
+Components: - Large character portrait - Current emotion state -
+Dialogue history - Dynamic expression changes
+
+Recommended expression set: - Happy - Thinking - Excited - Concerned -
+Sleepy - Flirty
+
+------------------------------------------------------------------------
+
+5. Character Rooms
+
+Every agent receives a personal environment/background.
+
+Examples:
+
+Reika: - Cozy neon bedroom
+
+Astra: - Futuristic command bridge
+
+Nyxie: - Cyberpunk office
+
+Miyabi: - Traditional modern Japanese room
+
+Possible variants: - Day - Night - Seasonal - Event
+
+------------------------------------------------------------------------
+
+6. Status Art
+
+Replace text-only statuses with artwork.
+
+Examples: - Working - Thinking - Idle - Busy - Error - Completed
+
+------------------------------------------------------------------------
+
+7. Notifications
+
+Use character portraits inside notification cards.
+
+Examples: - Task completed - Message received - Agent online - Agent
+offline
+
+------------------------------------------------------------------------
+
+8. Settings Page
+
+Use mascot/chibi art to make utility pages feel alive.
+
+Examples: - Chibi Reika - Chibi Astra
+
+------------------------------------------------------------------------
+
+9. Empty States
+
+Replace empty UI with character illustrations.
+
+Examples: - No agents connected - No chat history - No providers online
+
+------------------------------------------------------------------------
+
+10. Achievements / Milestones
+
+Character art can be used for progression systems.
+
+Examples: - First message - First remote provider - First automation -
+First workflow
+
+------------------------------------------------------------------------
+
+Recommended Minimum Asset Pack Per Character
+
+Required: - 1 splash illustration - 1 half-body illustration - 6 facial
+expressions - 1 chibi illustration
+
+This asset pack supports: - Loading screens - Homepage - Agent cards -
+Chat UI - Notifications - Settings - Empty states
+
+------------------------------------------------------------------------
+
+Guiding Principle
+
+“We are not generating AI art for fun.
+
+We are creating production assets for Reika.”

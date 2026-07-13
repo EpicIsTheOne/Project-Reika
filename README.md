@@ -2,15 +2,29 @@
 
 > Current implementation and safety status: see [`docs/CURRENT_ARCHITECTURE.md`](docs/CURRENT_ARCHITECTURE.md) and [`AUDIT_FIX_CHECKLIST.md`](AUDIT_FIX_CHECKLIST.md). Older phase plans are historical context, not current release constraints.
 
-Project Reika is the workspace for Reika's multi-device AgentHub system.
+Project Reika is the development ecosystem for Reika, an operating system for AI agents.
+
+**One home. Every agent.**
+
+## Product Naming
+
+- **Reika:** desktop application
+- **Project Reika:** full ecosystem and development project
+- **Reika Node:** remote or embedded agent runtime
+- **Reika Memory Mesh:** shared memory and project-awareness layer
+- **Reika Link:** device connectivity
+- **Reika Relay:** remote task transport
+- **Reika Orchestrator:** task and agent coordination
+
+Compatibility note: legacy `AgentHubEnvelope` protocol types, `AGENTHUB_*` environment variables, the `dev.agenthub.reika` application ID, old startup identifiers, and legacy data paths remain supported so existing installations, nodes, relays, chats, and settings continue to work.
 
 The repo is split into clear lanes so Astra and Codex can work in parallel without turning the architecture into soup.
 
 ## Folders
 
 ```text
-server/  Device-side agent server
-client/  Main AgentHub app/client
+server/  Device-side Reika Node
+client/  Main Reika app/client
 Relay/   Tiny dev relay service
 shared/  Canonical Phase 1 protocol/model reference
 ```
@@ -20,7 +34,7 @@ shared/  Canonical Phase 1 protocol/model reference
 Phase 1 has a working vertical slice:
 
 ```text
-Device Agent Server  --->  Reika Relay  <---  Main App Client
+Reika Node  --->  Reika Relay  <---  Main App Client
           outbound WS             dev WS/API
 ```
 
@@ -30,7 +44,7 @@ The important shape is real: devices call home, the app connects to the relay, p
 
 Implemented:
 
-- Node/TypeScript device-agent server scaffold
+- Node/TypeScript Reika Node scaffold
 - platform-aware Windows/Linux/macOS device identity
 - Windows `.exe` build with local pairing UI
 - Linux CLI pairing flow
@@ -61,10 +75,10 @@ docs/REIKA_MEMORY_MESH_NATIVE_TOOLS.md
 
 Implemented:
 
-- Vite + React AgentHub UI
+- Vite + React Reika UI
 - Windows desktop client shell using Electron
 - modular client architecture with app, feature, component, domain, data, and runtime layers
-- generated/local Reika and AgentHub visual assets
+- generated/local Reika and Reika visual assets
 - local/dev app backend for provider scanning
 - Agent Art Studio page for agent/global art profiles, categories, selection modes, prompts, references, and manual uploads
 - Devices page relay integration
@@ -189,9 +203,9 @@ npm run desktop:shortcut
 
 The desktop shell packages the React client in a normal app window while keeping the browser/Vite path available for fast testing.
 
-To connect another device server through the relay, open AgentHub, choose **Add Device** or **Connect Agent** on the Devices page, and follow the Agent Connection Wizard. The wizard creates the pairing code, shows Windows/Linux instructions, approves claimed devices, then verifies state, providers, and agent roster with safe relay requests only.
+To connect another device server through the relay, open Reika, choose **Add Device** or **Connect Agent** on the Devices page, and follow the Agent Connection Wizard. The wizard creates the pairing code, shows Windows/Linux instructions, approves claimed devices, then verifies state, providers, and agent roster with safe relay requests only.
 
-The local Windows agent server auto-pairs itself to the saved relay URL on boot when the relay is reachable and the device is not already registered. Set `REIKA_AUTO_PAIR_LOCAL_RELAY=false` to disable that local convenience behavior.
+The local Windows Reika Node auto-pairs itself to the saved relay URL on boot when the relay is reachable and the device is not already registered. Set `REIKA_AUTO_PAIR_LOCAL_RELAY=false` to disable that local convenience behavior.
 
 Manual relay environment for development:
 
@@ -207,7 +221,7 @@ Windows agent build:
 ```powershell
 cd server
 npm run build:windows-exe
-.\release\reika-agent-server.exe
+.\release\reika-node.exe
 ```
 
 The Windows executable opens a local pairing UI with startup controls. Startup can also be managed from the app Settings page while the local agent is running.
@@ -221,22 +235,22 @@ curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/ser
 After install, Linux users can list commands with:
 
 ```bash
-reika-agent-server --help
+reika-node --help
 ```
 
 Linux startup commands:
 
 ```bash
-reika-agent-server relay status
-reika-agent-server relay set --relay ws://relay-host:8790/v1/device
-reika-agent-server startup status
-reika-agent-server startup enable --relay ws://relay-host:8790/v1/device
-reika-agent-server startup disable
+reika-node relay status
+reika-node relay set --relay ws://relay-host:8790/v1/device
+reika-node startup status
+reika-node startup enable --relay ws://relay-host:8790/v1/device
+reika-node startup disable
 ```
 
 ## GitHub Auto Updates
 
-AgentHub can check the Project Reika GitHub repo for updates from the local device-agent server.
+Reika can check the Project Reika GitHub repo for updates from the local Reika Node.
 
 Settings includes separate toggles for:
 
@@ -260,17 +274,17 @@ POST /updates/apply
 
 Update notifications include the update description and changed file list so users can see what changed before or after applying.
 
-When auto-update is off, AgentHub still checks GitHub on server startup and creates a local notification if a new update is available. The notification includes the changed files and update description.
+When auto-update is off, Reika still checks GitHub on server startup and creates a local notification if a new update is available. The notification includes the changed files and update description.
 
 CLI update controls:
 
 ```bash
-reika-agent-server updates status
-reika-agent-server updates check
-reika-agent-server updates apply
-reika-agent-server updates enable all
-reika-agent-server updates enable server
-reika-agent-server updates disable client
+reika-node updates status
+reika-node updates check
+reika-node updates apply
+reika-node updates enable all
+reika-node updates enable server
+reika-node updates disable client
 ```
 
 ## Guardrails

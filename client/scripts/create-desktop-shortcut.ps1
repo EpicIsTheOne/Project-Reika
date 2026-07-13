@@ -2,15 +2,15 @@ $ErrorActionPreference = "Stop"
 
 $clientDir = Resolve-Path (Join-Path $PSScriptRoot "..")
 $desktopPath = [Environment]::GetFolderPath("Desktop")
-$shortcutPath = Join-Path $desktopPath "AgentHub.lnk"
+$shortcutPath = Join-Path $desktopPath "Reika.lnk"
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 
 $releaseDir = Join-Path $clientDir "release"
-$installedExe = Get-ChildItem -Path $releaseDir -Recurse -Filter "AgentHub.exe" -ErrorAction SilentlyContinue |
+$installedExe = Get-ChildItem -Path $releaseDir -Recurse -Filter "Reika.exe" -ErrorAction SilentlyContinue |
   Where-Object { $_.FullName -notmatch "\\win-unpacked\\resources\\" } |
   Select-Object -First 1
-$unpackedExe = Join-Path $releaseDir "win-unpacked\AgentHub.exe"
+$unpackedExe = Join-Path $releaseDir "win-unpacked\Reika.exe"
 
 if ($installedExe) {
   $shortcut.TargetPath = $installedExe.FullName
@@ -24,13 +24,13 @@ if ($installedExe) {
   $shortcut.WorkingDirectory = $clientDir
 }
 
-$icon = Join-Path $clientDir "assets\agenthub_phase1\brand\agenthub_app_icon.ico"
+$icon = Join-Path $clientDir "assets\reika_phase1\brand\reika_app_icon.ico"
 if (Test-Path $icon) {
   $shortcut.IconLocation = $icon
 } elseif ($shortcut.TargetPath -like "*.exe" -and (Test-Path $shortcut.TargetPath)) {
   $shortcut.IconLocation = $shortcut.TargetPath
 }
 
-$shortcut.Description = "AgentHub desktop client"
+$shortcut.Description = "Reika desktop client"
 $shortcut.Save()
 Write-Host "Created shortcut: $shortcutPath"

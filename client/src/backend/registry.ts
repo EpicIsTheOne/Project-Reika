@@ -236,7 +236,7 @@ export class AgentHubRegistry {
       for (const device of snapshot.devices ?? []) this.devices.set(device.id, device);
       for (const token of snapshot.deviceTokens ?? []) this.deviceTokens.set(token.tokenHash, token);
     } catch (error) {
-      console.warn(`[agenthub] Registry load failed: ${String(error)}`);
+      console.warn(`[reika] Registry load failed: ${String(error)}`);
     }
   }
 

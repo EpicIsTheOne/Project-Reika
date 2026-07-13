@@ -4,5 +4,6 @@ dist/
 vite.config.js
 vite.config.d.ts
 .agenthub/
+.reika/
 backend*.log
 dev*.log

@@ -38,7 +38,7 @@ export function LoadingScreen({
 
       <aside className="loading-rail" aria-label="Boot sequence">
         <div className="loading-rail-brand">
-          <strong>AGENTHUB</strong>
+          <strong>REIKA</strong>
           <span>v0.1.0</span>
         </div>
 
@@ -73,8 +73,8 @@ export function LoadingScreen({
         </div>
 
         <div className="loading-title-block">
-          <h1 aria-label="AgentHub">A G E N T H U B</h1>
-          <p>Your AI Agents. One Hub.</p>
+          <h1 aria-label="Reika">R E I K A</h1>
+          <p>One home. Every agent.</p>
         </div>
 
         <div className="boot-progress" aria-label="Initializing secure connection">
@@ -88,14 +88,14 @@ export function LoadingScreen({
         </div>
 
         <figure className="boot-quote">
-          <blockquote>Connecting minds. Building tomorrow.</blockquote>
+          <blockquote>An operating system for AI agents.</blockquote>
           <figcaption>Astra</figcaption>
         </figure>
 
-        {error ? <p className="boot-note">{error}</p> : <p className="boot-note">{doneCount} checks passed. {ready ? "Entering AgentHub." : "Still loading."}</p>}
+        {error ? <p className="boot-note">{error}</p> : <p className="boot-note">{doneCount} checks passed. {ready ? "Entering Reika." : "Still loading."}</p>}
 
         <button className="boot-enter" onClick={onEnter}>
-          {ready ? "Enter AgentHub" : "Skip Boot"}
+          {ready ? "Enter Reika" : "Skip Boot"}
           <ChevronRight size={18} />
         </button>
       </section>

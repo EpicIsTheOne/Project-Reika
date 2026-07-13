@@ -18,7 +18,7 @@ async function bootstrapLocalDevice() {
   const registration = registry.registerDevice(getLocalDeviceRegistration());
   const snapshot = await scanLocalProviders(registration.device.id);
   registry.upsertProviderSnapshot(snapshot);
-  console.log(`[agenthub] Local device registered: ${registration.device.name} (${registration.device.id})`);
+  console.log(`[reika] Local node registered: ${registration.device.name} (${registration.device.id})`);
 }
 
 const server = createServer(async (request, response) => {
@@ -36,7 +36,7 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET" && pathname === "/api/health") {
       sendJson(response, 200, {
         ok: true,
-        service: "agenthub-backend",
+        service: "reika-backend",
         account: registry.getAccount(),
         deviceCount: registry.listDevices().length,
         providerCount: registry.listProviders().length
@@ -223,10 +223,10 @@ function sendSocket(socket: WebSocket, message: DeviceAgentServerMessage) {
 bootstrapLocalDevice()
   .then(() => {
     server.listen(backendConfig.port, backendConfig.host, () => {
-      console.log(`[agenthub] Backend listening at http://${backendConfig.host}:${backendConfig.port}`);
+      console.log(`[reika] Backend listening at http://${backendConfig.host}:${backendConfig.port}`);
     });
   })
   .catch((error) => {
-    console.error(`[agenthub] Failed to start backend: ${String(error)}`);
+    console.error(`[reika] Failed to start backend: ${String(error)}`);
     process.exitCode = 1;
   });

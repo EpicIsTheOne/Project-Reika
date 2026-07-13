@@ -583,7 +583,7 @@ export function AgentArtStudio({
             <div className="art-section-heading">
               <span>
                 <h2>Art Categories</h2>
-                <p>Each category controls how art is used across AgentHub.</p>
+                <p>Each category controls how art is used across Reika.</p>
               </span>
               <div className="art-toolbar">
                 <button className="select-button compact-select" type="button" onClick={() => setCategoryFilter((current) => (current === "all" ? "selected" : "all"))}>

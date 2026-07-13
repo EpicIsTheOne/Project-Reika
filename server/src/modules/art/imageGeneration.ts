@@ -119,7 +119,7 @@ export async function getImageAuthStatus(): Promise<ImageAuthStatus> {
       source: 'codex-oauth',
       imageGenerationAvailable: true,
       quotaLabel: 'ChatGPT OAuth',
-      message: `Codex/ChatGPT OAuth token found. AgentHub will use ${imageModel()} through the Codex image_generation tool.`
+      message: `Codex/ChatGPT OAuth token found. Reika will use ${imageModel()} through the Codex image_generation tool.`
     };
   }
 

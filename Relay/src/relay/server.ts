@@ -135,7 +135,7 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/v1/health") {
       sendJson(response, 200, {
         ok: true,
-        service: "agenthub-relay",
+        service: "reika-relay",
         accountId: relayConfig.accountId,
         deviceCount: devices.size,
         appSocketCount: appSockets.size,
@@ -402,7 +402,7 @@ deviceSocketServer.on("connection", (socket, request) => {
   socket.on("message", (raw) => {
     const parsed = parseEnvelope(raw.toString());
     if (!parsed) {
-      sendEnvelope(socket, createCommandStatus("command.rejected", "Invalid AgentHub envelope."));
+      sendEnvelope(socket, createCommandStatus("command.rejected", "Invalid Reika Relay envelope."));
       return;
     }
 
@@ -502,7 +502,7 @@ appSocketServer.on("connection", (socket) => {
   socket.on("message", (raw) => {
     const envelope = parseEnvelope(raw.toString());
     if (!envelope) {
-      sendEnvelope(socket, createCommandStatus("command.rejected", "Invalid AgentHub envelope."));
+      sendEnvelope(socket, createCommandStatus("command.rejected", "Invalid Reika Relay envelope."));
       return;
     }
 
@@ -541,7 +541,7 @@ function routeAppRequest(envelope: AgentHubEnvelope) {
 }
 
 server.listen(relayConfig.port, relayConfig.host, () => {
-  console.log(`[agenthub-relay] Relay listening at http://${relayConfig.host}:${relayConfig.port}`);
+  console.log(`[reika-relay] Relay listening at http://${relayConfig.host}:${relayConfig.port}`);
 });
 
 const presenceWatchdog = setInterval(() => {
@@ -1013,7 +1013,7 @@ function loadRelayStore() {
       if (isChatSessionRecord(session)) chatSessions.set(session.id, session);
     }
   } catch (error) {
-    console.warn(`[agenthub-relay] Could not load relay store: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[reika-relay] Could not load relay store: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

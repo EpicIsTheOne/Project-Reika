@@ -44,6 +44,21 @@ export interface ProviderChatRequest {
   history?: ProviderChatMessage[];
   model?: string;
   providerSessionId?: string;
+  tools?: ProviderToolDefinition[];
+  requireToolCall?: boolean;
+  executeTool?: (call: ProviderToolCall) => Promise<unknown>;
+}
+
+export interface ProviderToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface ProviderToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
 }
 
 export interface ProviderChatEvent {
@@ -169,9 +184,7 @@ function openClawSessionKey(agentId: string, providerSessionId: string) {
   return `agent:${safeAgent}:reika:${safeSession}`;
 }
 
-function extractOpenClawText(payload: unknown) {
-  const root = payload as { choices?: Array<{ message?: { content?: unknown } }> };
-  const content = root?.choices?.[0]?.message?.content;
+function extractMessageText(content: unknown) {
   if (typeof content === 'string') return content.trim();
   if (Array.isArray(content)) {
     return content
@@ -187,32 +200,72 @@ function extractOpenClawText(payload: unknown) {
   return '';
 }
 
-async function runOpenClawGatewayChat(input: { agentId: string; providerSessionId: string; message: string; model?: string }) {
+function parseToolArguments(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object') return value as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(String(value || '{}'));
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+async function runOpenClawGatewayChat(input: { agentId: string; providerSessionId: string; message: string; model?: string; tools?: ProviderToolDefinition[]; requireToolCall?: boolean; executeTool?: (call: ProviderToolCall) => Promise<unknown>; onEvent?: (event: ProviderChatEvent) => void }) {
   const gateway = await readOpenClawGatewayConfig();
   const sessionKey = openClawSessionKey(input.agentId, input.providerSessionId);
-  const response = await providerFetch(`${gateway.baseUrl}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(gateway.authHeader ? { Authorization: gateway.authHeader } : {}),
-      'x-openclaw-agent-id': input.agentId,
-      'x-openclaw-session-key': sessionKey
-    },
-    body: JSON.stringify({
-      model: `openclaw:${input.agentId}`,
-      user: sessionKey,
-      messages: [{ role: 'user', content: input.message }]
-    })
-  });
-  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-  const text = extractOpenClawText(body);
-  if (!response.ok) {
-    const errorBody = body.error && typeof body.error === 'object' ? body.error as { message?: unknown } : undefined;
-    const message = String(errorBody?.message || body.error || `OpenClaw HTTP ${response.status}`).trim();
-    throw new Error(message || `OpenClaw HTTP ${response.status}`);
+  const messages: Array<Record<string, unknown>> = [{ role: 'user', content: input.message }];
+  const executedToolCalls: Array<ProviderToolCall & { ok: boolean }> = [];
+  for (let round = 0; round < 6; round += 1) {
+    const response = await providerFetch(`${gateway.baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(gateway.authHeader ? { Authorization: gateway.authHeader } : {}),
+        'x-openclaw-agent-id': input.agentId,
+        'x-openclaw-session-key': sessionKey
+      },
+      body: JSON.stringify({
+        model: `openclaw:${input.agentId}`,
+        user: sessionKey,
+        messages,
+        ...(input.tools?.length ? {
+          tools: input.tools.map((tool) => ({ type: 'function', function: { name: tool.name.replace(/\./g, '__'), description: tool.description, parameters: tool.inputSchema } })),
+          tool_choice: round === 0 && input.requireToolCall ? 'required' : 'auto'
+        } : {})
+      })
+    });
+    const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) {
+      const errorBody = body.error && typeof body.error === 'object' ? body.error as { message?: unknown } : undefined;
+      const message = String(errorBody?.message || body.error || `OpenClaw HTTP ${response.status}`).trim();
+      throw new Error(message || `OpenClaw HTTP ${response.status}`);
+    }
+    const choice = (body.choices as Array<{ message?: Record<string, unknown> }> | undefined)?.[0];
+    const assistant = choice?.message || {};
+    const calls = Array.isArray(assistant.tool_calls) ? assistant.tool_calls as Array<Record<string, unknown>> : [];
+    if (!calls.length) {
+      const text = extractMessageText(assistant.content);
+      if (!text) throw new Error('OpenClaw returned no chat response.');
+      return { text, sessionKey, raw: JSON.stringify(body), toolCalls: executedToolCalls };
+    }
+    if (!input.executeTool) throw new Error('OpenClaw requested a Reika tool but no trusted executor was provided.');
+    messages.push({ role: 'assistant', content: assistant.content ?? null, tool_calls: calls });
+    for (const rawCall of calls) {
+      const fn = rawCall.function && typeof rawCall.function === 'object' ? rawCall.function as Record<string, unknown> : {};
+      const call: ProviderToolCall = {
+        id: String(rawCall.id || `tool_${Date.now().toString(36)}`),
+        name: String(fn.name || '').replace(/__/g, '.'),
+        arguments: parseToolArguments(fn.arguments)
+      };
+      input.onEvent?.({ type: 'tool', data: { stage: 'requested', toolCallId: call.id, name: call.name } });
+      const result = await input.executeTool(call);
+      const ok = !(result && typeof result === 'object' && 'ok' in result && (result as { ok?: unknown }).ok === false);
+      executedToolCalls.push({ ...call, ok });
+      input.onEvent?.({ type: 'tool', data: { stage: 'completed', toolCallId: call.id, name: call.name, ok } });
+      messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+    }
   }
-  if (!text) throw new Error('OpenClaw returned no chat response.');
-  return { text, sessionKey, raw: JSON.stringify(body) };
+  throw new Error('OpenClaw exceeded the bounded Reika tool-call loop.');
 }
 
 export function findProvider(providers: ProviderRecord[], providerId?: string) {
@@ -242,25 +295,41 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
   onEvent?.({ type: 'thinking', data: { providerId: provider.id, agent: agentId, status: `Routing to ${provider.name}...` } });
 
   if (provider.kind === 'commandcenter') {
-    const response = await providerFetch(`${commandCenterBaseUrl}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent: agentId, sessionId, message: request.message })
-    });
-    const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-    if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
-    const text = String(body.text || body.reply || body.message || body.response || '').trim();
-    const commandCenterSessionId = String(body.sessionId || sessionId).trim();
-    onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text } });
-    onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: commandCenterSessionId } });
-    return {
-      providerId: provider.id,
-      agentId,
-      sessionId: commandCenterSessionId,
-      runtime: 'commandcenter',
-      text,
-      metadata: { ...body, providerSessionId: commandCenterSessionId, commandCenterSessionId }
-    };
+    let message = request.message;
+    let commandCenterSessionId = sessionId;
+    const executedToolCalls: Array<ProviderToolCall & { ok: boolean }> = [];
+    for (let round = 0; round < 5; round += 1) {
+      const response = await providerFetch(`${commandCenterBaseUrl}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent: agentId, sessionId: commandCenterSessionId, message, ...(request.tools?.length ? { tools: request.tools, toolChoice: round === 0 && request.requireToolCall ? 'required' : 'auto' } : {}) })
+      });
+      const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+      if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
+      commandCenterSessionId = String(body.sessionId || commandCenterSessionId).trim();
+      const rawCalls = Array.isArray(body.toolCalls) ? body.toolCalls : Array.isArray(body.tool_calls) ? body.tool_calls : [];
+      if (!rawCalls.length) {
+        const text = String(body.text || body.reply || body.message || body.response || '').trim();
+        if (!text) throw new Error('Command Center returned no chat response.');
+        onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text } });
+        onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: commandCenterSessionId } });
+        return { providerId: provider.id, agentId, sessionId: commandCenterSessionId, runtime: 'commandcenter', text, metadata: { ...body, providerSessionId: commandCenterSessionId, commandCenterSessionId, toolCalls: executedToolCalls } };
+      }
+      if (!request.executeTool) throw new Error('Command Center requested a Reika tool but no trusted executor was provided.');
+      const results: unknown[] = [];
+      for (const raw of rawCalls as Array<Record<string, unknown>>) {
+        const fn = raw.function && typeof raw.function === 'object' ? raw.function as Record<string, unknown> : raw;
+        const call: ProviderToolCall = { id: String(raw.id || `tool_${Date.now().toString(36)}`), name: String(fn.name || '').replace(/__/g, '.'), arguments: parseToolArguments(fn.arguments) };
+        onEvent?.({ type: 'tool', data: { stage: 'requested', toolCallId: call.id, name: call.name } });
+        const result = await request.executeTool(call);
+        const ok = !(result && typeof result === 'object' && 'ok' in result && (result as { ok?: unknown }).ok === false);
+        executedToolCalls.push({ ...call, ok });
+        results.push({ toolCallId: call.id, name: call.name, result });
+        onEvent?.({ type: 'tool', data: { stage: 'completed', toolCallId: call.id, name: call.name, ok } });
+      }
+      message = `Reika tool results:\n${JSON.stringify(results)}\nContinue the same request using these results.`;
+    }
+    throw new Error('Command Center exceeded the bounded Reika tool-call loop.');
   }
 
   if (provider.kind === 'openclaw') {
@@ -269,7 +338,11 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
       agentId,
       providerSessionId: openClawSessionId,
       message: request.message,
-      model: request.model
+      model: request.model,
+      tools: request.tools,
+      requireToolCall: request.requireToolCall,
+      executeTool: request.executeTool,
+      onEvent
     });
     onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text: gatewayResult.text } });
     onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: openClawSessionId } });
@@ -285,7 +358,8 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
         openClawSessionId,
         openClawSessionKey: gatewayResult.sessionKey,
         localSessionId: sessionId,
-        transport: 'gateway-chat-completions'
+        transport: 'gateway-chat-completions',
+        toolCalls: gatewayResult.toolCalls
       }
     };
   }
@@ -306,7 +380,7 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
     if (!parsed.text) throw new Error('Hermes returned no chat response.');
     const hermesSessionId = parsed.hermesSessionId || request.providerSessionId || '';
     if (!request.providerSessionId && parsed.hermesSessionId) {
-      await renameHermesSession(parsed.hermesSessionId, `AgentHub - ${String(agent.name || agentId || 'Reika').trim()}`);
+      await renameHermesSession(parsed.hermesSessionId, `Reika - ${String(agent.name || agentId || 'Reika').trim()}`);
     }
     onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text: parsed.text } });
     onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: hermesSessionId || sessionId } });

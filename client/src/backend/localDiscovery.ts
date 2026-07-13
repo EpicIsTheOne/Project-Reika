@@ -7,7 +7,7 @@ import { MockProviderAdapter } from "./adapters/mock";
 import type { DeviceRegistrationRequest, DeviceType, ProviderSnapshot } from "../shared/agenthub";
 
 export function getLocalDeviceRegistration(): DeviceRegistrationRequest {
-  const name = process.env.AGENTHUB_DEVICE_NAME ?? hostname();
+  const name = process.env.REIKA_NODE_NAME ?? process.env.AGENTHUB_DEVICE_NAME ?? hostname();
   return {
     accountId: backendConfig.accountId,
     name,

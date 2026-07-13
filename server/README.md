@@ -1,12 +1,12 @@
-# Project Reika Agent Server
+# Reika Node
 
-Project Reika Agent Server is the **device-side service** for Reika.
+Reika Node is the **device-side service** for Reika.
 
 This is not the main visual app client. It is the local agent/device server that reports device/provider/agent state upward through the relay.
 
 ## Current Phase
 
-**Phase 1: local device agent server + safe relay uplink**
+**Phase 1: local Reika Node + safe relay uplink**
 
 Included now:
 
@@ -58,7 +58,7 @@ Account -> Device -> Provider -> Agent -> Session -> Message/Event
 
 Important boundaries:
 
-- This folder is the **device agent server**, not the app client.
+- This folder is the **Reika Node**, not the app client.
 - Devices are not providers.
 - Providers are not agents.
 - CommandCenter is the preferred rich local provider when available.
@@ -166,13 +166,13 @@ If auto-update is off, startup still checks GitHub and creates a local notificat
 CLI controls:
 
 ```bash
-reika-agent-server updates status
-reika-agent-server updates check
-reika-agent-server updates apply
-reika-agent-server updates enable all
-reika-agent-server updates enable server
-reika-agent-server updates enable client
-reika-agent-server updates disable all
+reika-node updates status
+reika-node updates check
+reika-node updates apply
+reika-node updates enable all
+reika-node updates enable server
+reika-node updates enable client
+reika-node updates disable all
 ```
 
 ## Uplink Config
@@ -205,7 +205,7 @@ Windows should be distributed as a single `.exe`:
 ```powershell
 cd server
 npm run build:windows-exe
-.\release\reika-agent-server.exe
+.\release\reika-node.exe
 ```
 
 On Windows, the agent opens a simple local pairing UI at:
@@ -214,18 +214,18 @@ On Windows, the agent opens a simple local pairing UI at:
 http://127.0.0.1:47840/
 ```
 
-Create a pairing code in AgentHub, paste it into the UI, and approve the device in the app. The device still connects outbound to the relay; no inbound public port is required.
+Create a pairing code in Reika, paste it into the UI, and approve the device in the app. The device still connects outbound to the relay; no inbound public port is required.
 
-The Windows UI includes startup controls. It registers the current user's Run key so the agent starts when Windows signs in. The main AgentHub Settings page can also toggle this while the local agent is reachable.
+The Windows UI includes startup controls. It registers the current user's Run key so the agent starts when Windows signs in. The main Reika Settings page can also toggle this while the local agent is reachable.
 
 For headless Windows testing:
 
 ```powershell
-.\release\reika-agent-server.exe --no-ui
-.\release\reika-agent-server.exe pair --code <approved pairing code> --relay ws://127.0.0.1:8790/v1/device
-.\release\reika-agent-server.exe startup status
-.\release\reika-agent-server.exe startup enable --relay ws://127.0.0.1:8790/v1/device
-.\release\reika-agent-server.exe startup disable
+.\release\reika-node.exe --no-ui
+.\release\reika-node.exe pair --code <approved pairing code> --relay ws://127.0.0.1:8790/v1/device
+.\release\reika-node.exe startup status
+.\release\reika-node.exe startup enable --relay ws://127.0.0.1:8790/v1/device
+.\release\reika-node.exe startup disable
 ```
 
 ## Linux Agent
@@ -236,27 +236,27 @@ Linux stays terminal-first:
 curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh | bash -s -- --code <approved pairing code> --relay ws://127.0.0.1:8790/v1/device
 ```
 
-The installer clones/updates the repo, builds the server, creates `~/.local/bin/reika-agent-server`, enables the user-level startup service by default, and starts the CLI pairing flow. Users can list commands with:
+The installer clones/updates the repo, builds the server, creates `~/.local/bin/reika-node`, enables the user-level startup service by default, and starts the CLI pairing flow. Users can list commands with:
 
 ```bash
-reika-agent-server --help
+reika-node --help
 ```
 
 After install, pairing can be repeated without reinstalling:
 
 ```bash
-reika-agent-server pair --code <approved pairing code> --relay wss://relay.example.com/v1/device
+reika-node pair --code <approved pairing code> --relay wss://relay.example.com/v1/device
 ```
 
 Startup can be changed from the CLI:
 
 ```bash
-reika-agent-server startup status
-reika-agent-server startup enable --relay wss://relay.example.com/v1/device
-reika-agent-server startup disable
+reika-node startup status
+reika-node startup enable --relay wss://relay.example.com/v1/device
+reika-node startup disable
 ```
 
-Linux startup uses `~/.config/systemd/user/reika-agent-server.service` when `systemctl --user` is available. On a headless server, the user service starts when that user session starts; production packaging can add linger/system-service setup later if we want true boot-before-login behavior.
+Linux startup uses `~/.config/systemd/user/reika-node.service` when `systemctl --user` is available. On a headless server, the user service starts when that user session starts; production packaging can add linger/system-service setup later if we want true boot-before-login behavior.
 
 For local dev relay testing:
 
@@ -341,7 +341,7 @@ REIKA_ART_STORE_PATH=~/.local/share/project-reika/art-library.json
 REIKA_ART_ASSET_DIR=~/.local/share/project-reika/art-assets
 ```
 
-The seeded library uses the project-local AgentHub/Reika assets as production defaults. User uploads and generated images are stored under `REIKA_ART_ASSET_DIR` and served through `GET /art/assets/:id/content`.
+The seeded library uses the project-local Reika/Reika assets as production defaults. User uploads and generated images are stored under `REIKA_ART_ASSET_DIR` and served through `GET /art/assets/:id/content`.
 
 `POST /art/profiles/:id/categories/:categoryId/generate` now attempts real OpenAI image generation and inserts the returned image into the selected category as a `generated` asset. Auth is resolved in this order:
 

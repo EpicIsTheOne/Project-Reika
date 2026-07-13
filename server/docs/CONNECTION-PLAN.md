@@ -5,7 +5,7 @@
 Project Reika uses an outbound relay model:
 
 ```text
-Device Agent Server  --->  Reika Relay  <---  Main App Client
+Reika Node  --->  Reika Relay  <---  Main App Client
           outbound WSS 443          outbound WSS 443
 ```
 
@@ -43,7 +43,7 @@ The server's envelope shape:
 interface AgentHubEnvelope<TPayload = unknown> {
   v: 1;
   id: string;
-  type: AgentHubMessageType;
+  type: ReikaMessageType;
   timestamp: string;
   source: { kind: "app" | "device" | "relay"; id: string };
   target?: { kind: "app" | "device" | "relay"; id: string };

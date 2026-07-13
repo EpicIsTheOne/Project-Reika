@@ -51,8 +51,8 @@ export function pairingPage(device: DeviceIdentity, uplink: RelayClientSnapshot,
 </head>
 <body>
   <main>
-    <h1>AGENTHUB</h1>
-    <p>Pair this Windows device with the relay. Create a pairing code in AgentHub, paste it here, and the agent will connect outbound.</p>
+    <h1>REIKA</h1>
+    <p>Pair this Windows device with the relay. Create a pairing code in Reika, paste it here, and the agent will connect outbound.</p>
     <dl>
       <dt>Device</dt><dd>${escapeHtml(device.name)}</dd>
       <dt>ID</dt><dd>${escapeHtml(uplink.deviceId)}</dd>
@@ -63,7 +63,7 @@ export function pairingPage(device: DeviceIdentity, uplink: RelayClientSnapshot,
         <input id="relayUrl" value="${escapeHtml(defaultRelayUrl)}" spellcheck="false" />
       </label>
       <label>Pairing code
-        <input id="pairingToken" placeholder="Paste code from AgentHub" spellcheck="false" autocomplete="off" />
+        <input id="pairingToken" placeholder="Paste code from Reika" spellcheck="false" autocomplete="off" />
       </label>
       <button type="submit">Pair Device</button>
       <button type="button" class="secondary" id="refresh">Refresh Status</button>
@@ -145,7 +145,7 @@ export function pairingPage(device: DeviceIdentity, uplink: RelayClientSnapshot,
       });
       const body = await response.json();
       setStatus(body.uplink.status);
-      messageEl.textContent = body.ok ? 'Pairing started. Approve this device in AgentHub.' : body.error;
+      messageEl.textContent = body.ok ? 'Pairing started. Approve this device in Reika.' : body.error;
       setTimeout(refresh, 1200);
     });
     setInterval(refresh, 3000);

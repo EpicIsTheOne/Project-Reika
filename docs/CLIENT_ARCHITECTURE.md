@@ -1,6 +1,6 @@
 # Client Architecture
 
-The AgentHub client is organized so new features can land without growing a single giant app file.
+The Reika client is organized so new features can land without growing a single giant app file.
 
 ## Boundaries
 
@@ -12,7 +12,7 @@ client/src/components/          Shared UI primitives used across features
 client/src/domain/              Pure mapping/filtering helpers between API records and UI models
 client/src/lib/                 API, art runtime, motion, and other runtime helpers
 client/src/data/                Client-side data adapters, assets, relay/startup helpers
-client/src/shared/protocol/     Versioned AgentHub envelope helpers mirrored from shared/
+client/src/shared/protocol/     Versioned Reika envelope helpers mirrored from shared/
 client/desktop/                 Electron desktop shell and local proxy runtime
 ```
 

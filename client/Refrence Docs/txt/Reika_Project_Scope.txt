@@ -1,0 +1,76 @@
+Reika Project Scope
+
+Purpose
+
+Reika is a unified client for connecting to AI agents across devices
+and providers.
+
+It is not meant to be a giant all-in-one operating system at the
+beginning.
+
+The goal is to start small, stay modular, and expand safely.
+
+------------------------------------------------------------------------
+
+What Reika Is
+
+Reika is: - A desktop/web client for AI agents - A device and
+provider dashboard - A unified chat interface - A character-focused AI
+launcher - A way to access local and remote agents from one place
+
+------------------------------------------------------------------------
+
+Core Hierarchy
+
+Account └── Device └── Provider └── Agent
+
+------------------------------------------------------------------------
+
+What Reika Is NOT
+
+Reika v1 is NOT: - A full operating system - A game engine - A social
+network - A Twitch bot platform - A VR environment - A full automation
+suite - A plugin marketplace - A relationship simulator - A full
+Live2D/VRM runtime - A replacement for OpenClaw or Hermes
+
+------------------------------------------------------------------------
+
+MVP Scope
+
+The MVP should include: - Loading screen - Homepage - Device groups -
+Provider groups - Agent cards - Basic chat UI - Settings page - Mock
+devices - Mock providers - Mock agents
+
+------------------------------------------------------------------------
+
+v1 Scope
+
+v1 should include: - One real provider connection - Provider status -
+Agent discovery - Basic chat messaging - Connection testing - Simple
+settings - Art integration
+
+------------------------------------------------------------------------
+
+Banned From MVP
+
+Do not add these to MVP: - Voice chat - Live2D - VRM - Twitch
+integration - YouTube integration - Relationship/affinity systems -
+Economy systems - Complex memory controls - Marketplace - Plugin
+system - Workflow automation builder - Multi-user support - AI-generated
+rooms - Advanced animations
+
+------------------------------------------------------------------------
+
+Scope Rule
+
+If a feature does not help the user: 1. See devices 2. See providers 3.
+See agents 4. Chat with an agent
+
+Then it does not belong in the MVP.
+
+------------------------------------------------------------------------
+
+Guiding Principle
+
+“Reika starts as a clean agent dock, not a giant anime operating
+system.”

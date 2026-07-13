@@ -39,6 +39,7 @@ export class MemoryMeshStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
     this.migrate();
+    this.recoverInterruptedTasks();
   }
 
   close() {
@@ -260,6 +261,7 @@ export class MemoryMeshStore {
       confidence: clampNumber(input.confidence, 0, 1, 0.8),
       importance: clampNumber(input.importance, 0, 1, 0.5),
       permissions,
+      provenance: normalizeProvenance(input.provenance),
       expiresAt: optionalText(input.expiresAt) ?? (scope === 'session' ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : undefined),
       version: Math.max(1, Number(input.version || 1))
     };
@@ -267,9 +269,9 @@ export class MemoryMeshStore {
     if (!actor.isUser && record.createdBy !== actor.agentId) throw new Error('createdBy must match the acting agent.');
     if (!actor.isUser && !this.canWriteMemory(record, actor)) throw new Error('This actor cannot write to the requested memory scope.');
     this.db.prepare(`INSERT INTO mesh_memories
-      (id, content, scope, agent_id, project_id, device_id, session_id, created_by, source, tags_json, created_at, updated_at, confidence, importance, permissions_json, expires_at, version)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(record.id, record.content, record.scope, record.agentId ?? null, record.projectId ?? null, record.deviceId ?? null, record.sessionId ?? null, record.createdBy, record.source, json(record.tags), record.createdAt, record.updatedAt, record.confidence, record.importance, json(record.permissions), record.expiresAt ?? null, record.version);
+      (id, content, scope, agent_id, project_id, device_id, session_id, created_by, source, tags_json, created_at, updated_at, confidence, importance, permissions_json, provenance_json, expires_at, version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(record.id, record.content, record.scope, record.agentId ?? null, record.projectId ?? null, record.deviceId ?? null, record.sessionId ?? null, record.createdBy, record.source, json(record.tags), record.createdAt, record.updatedAt, record.confidence, record.importance, json(record.permissions), json(record.provenance ?? {}), record.expiresAt ?? null, record.version);
     return record;
   }
 
@@ -286,8 +288,8 @@ export class MemoryMeshStore {
     if (!this.canWriteMemory(current, actor)) throw new Error('Memory is read-only for this actor.');
     const next = { ...current, ...input, id, updatedAt: new Date().toISOString(), version: current.version + 1 };
     validateMemory(next);
-    this.db.prepare(`UPDATE mesh_memories SET content=?, scope=?, agent_id=?, project_id=?, device_id=?, session_id=?, source=?, tags_json=?, updated_at=?, confidence=?, importance=?, permissions_json=?, expires_at=?, version=? WHERE id=?`)
-      .run(next.content, next.scope, next.agentId ?? null, next.projectId ?? null, next.deviceId ?? null, next.sessionId ?? null, next.source, json(next.tags), next.updatedAt, next.confidence, next.importance, json(next.permissions), next.expiresAt ?? null, next.version, id);
+    this.db.prepare(`UPDATE mesh_memories SET content=?, scope=?, agent_id=?, project_id=?, device_id=?, session_id=?, source=?, tags_json=?, updated_at=?, confidence=?, importance=?, permissions_json=?, provenance_json=?, expires_at=?, version=? WHERE id=?`)
+      .run(next.content, next.scope, next.agentId ?? null, next.projectId ?? null, next.deviceId ?? null, next.sessionId ?? null, next.source, json(next.tags), next.updatedAt, next.confidence, next.importance, json(next.permissions), json(next.provenance ?? {}), next.expiresAt ?? null, next.version, id);
     return next;
   }
 
@@ -368,17 +370,21 @@ export class MemoryMeshStore {
     const agent = this.getAgent(winner.agentId)!;
     const device = this.getDevice(agent.deviceId)!;
     const localPath = project.paths.find((path) => path.deviceId === device.id && path.isPrimary)?.path ?? project.paths.find((path) => path.deviceId === device.id)?.path;
+    const approvalRequired = project.permissions.includes('route:approval') || agent.permissions.includes('route:approval');
+    const approvalReason = approvalRequired ? `${project.name} requires user approval before delegated work begins.` : undefined;
     return {
       status: 'selected', project, agent, device, providerId: agent.providerId, localPath,
       executeLocally: device.id === input.currentDeviceId,
-      score: winner.score, reasons: winner.reasons, considered
+      score: winner.score, approvalRequired, approvalReason, reasons: winner.reasons, considered
     };
   }
 
-  createRoutingTask(input: { request: string; requiredCapabilities?: string[]; sourceAgentId?: string; sourceDeviceId?: string; decision: RouteDecision }) {
+  createRoutingTask(input: { request: string; requiredCapabilities?: string[]; sourceAgentId?: string; sourceDeviceId?: string; originConversationId?: string; originMessageId?: string; sharedContextRefs?: string[]; decision: RouteDecision }) {
     const now = new Date().toISOString();
     const task: RoutingTask = {
       id: randomUUID(),
+      originConversationId: optionalText(input.originConversationId),
+      originMessageId: optionalText(input.originMessageId),
       projectId: input.decision.project?.id,
       sourceAgentId: optionalText(input.sourceAgentId),
       sourceDeviceId: optionalText(input.sourceDeviceId),
@@ -386,27 +392,45 @@ export class MemoryMeshStore {
       targetDeviceId: input.decision.device?.id,
       request: cleanText(input.request),
       requiredCapabilities: cleanList(input.requiredCapabilities),
-      status: input.decision.status === 'selected' ? 'queued' : 'unavailable',
+      sharedContextRefs: cleanList(input.sharedContextRefs),
+      status: input.decision.status === 'selected' ? (input.decision.approvalRequired ? 'awaiting_approval' : 'queued') : 'unavailable',
       decision: input.decision,
+      memoryWritebackIds: [],
+      lifecycle: [],
+      approvalRequired: Boolean(input.decision.approvalRequired),
       createdAt: now,
       updatedAt: now
     };
-    this.db.prepare(`INSERT INTO mesh_routing_tasks (id, project_id, source_agent_id, source_device_id, target_agent_id, target_device_id, request, required_capabilities_json, status, decision_json, result, error, created_at, updated_at, completed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL)`).run(task.id, task.projectId ?? null, task.sourceAgentId ?? null, task.sourceDeviceId ?? null, task.targetAgentId ?? null, task.targetDeviceId ?? null, task.request, json(task.requiredCapabilities), task.status, json(task.decision), now, now);
+    task.lifecycle = [
+      { status: 'resolving', at: now, progress: `Resolving ${input.decision.project?.name || 'project'}.` },
+      { status: 'planning', at: now, progress: input.decision.reasons[0] || 'Evaluating eligible agents and nodes.' },
+      { status: task.status, at: now, ...(input.decision.approvalReason ? { progress: input.decision.approvalReason } : {}) }
+    ];
+    this.db.prepare(`INSERT INTO mesh_routing_tasks (id, origin_conversation_id, origin_message_id, project_id, source_agent_id, source_device_id, target_agent_id, target_device_id, request, required_capabilities_json, shared_context_refs_json, status, decision_json, result, error, memory_writeback_ids_json, lifecycle_json, approval_required, created_at, updated_at, sent_at, accepted_at, completed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, '[]', ?, ?, ?, ?, NULL, NULL, NULL)`)
+      .run(task.id, task.originConversationId ?? null, task.originMessageId ?? null, task.projectId ?? null, task.sourceAgentId ?? null, task.sourceDeviceId ?? null, task.targetAgentId ?? null, task.targetDeviceId ?? null, task.request, json(task.requiredCapabilities), json(task.sharedContextRefs), task.status, json(task.decision), json(task.lifecycle), task.approvalRequired ? 1 : 0, now, now);
     return task;
   }
 
-  updateRoutingTask(id: string, input: { status: RoutingTask['status']; result?: string; error?: string }) {
-    const completedAt = input.status === 'completed' || input.status === 'failed' || input.status === 'unavailable' || input.status === 'cancelled' ? new Date().toISOString() : null;
-    this.db.prepare('UPDATE mesh_routing_tasks SET status=?, result=?, error=?, updated_at=?, completed_at=? WHERE id=?')
-      .run(input.status, input.result ?? null, input.error ?? null, new Date().toISOString(), completedAt, id);
+  updateRoutingTask(id: string, input: { status: RoutingTask['status']; progress?: string; result?: string; error?: string; memoryWritebackIds?: string[]; sharedContextRefs?: string[] }) {
+    const current = this.getRoutingTask(id);
+    if (!current) return undefined;
+    const now = new Date().toISOString();
+    const terminal = ['completed', 'failed', 'unavailable', 'cancelled', 'timed_out'].includes(input.status);
+    const lifecycle = [...current.lifecycle, { status: input.status, at: now, ...(input.progress ? { progress: cleanText(input.progress) } : {}) }];
+    const memoryWritebackIds = cleanList(input.memoryWritebackIds ?? current.memoryWritebackIds);
+    const sharedContextRefs = cleanList(input.sharedContextRefs ?? current.sharedContextRefs);
+    const sentAt = current.sentAt ?? (input.status === 'sent' ? now : undefined);
+    const acceptedAt = current.acceptedAt ?? (input.status === 'accepted' ? now : undefined);
+    this.db.prepare('UPDATE mesh_routing_tasks SET status=?, progress=?, result=?, error=?, shared_context_refs_json=?, memory_writeback_ids_json=?, lifecycle_json=?, sent_at=?, accepted_at=?, updated_at=?, completed_at=? WHERE id=?')
+      .run(input.status, input.progress ?? current.progress ?? null, input.result ?? current.result ?? null, input.error ?? current.error ?? null, json(sharedContextRefs), json(memoryWritebackIds), json(lifecycle), sentAt ?? null, acceptedAt ?? null, now, terminal ? now : null, id);
     return this.getRoutingTask(id);
   }
 
   cancelRoutingTask(id: string) {
     const task = this.getRoutingTask(id);
     if (!task) return undefined;
-    if (task.status === 'completed' || task.status === 'failed' || task.status === 'unavailable' || task.status === 'cancelled') return task;
+    if (['completed', 'failed', 'unavailable', 'cancelled', 'timed_out'].includes(task.status)) return task;
     return this.updateRoutingTask(id, { status: 'cancelled', error: 'Cancelled by request.' });
   }
 
@@ -493,6 +517,11 @@ export class MemoryMeshStore {
     }
   }
 
+  private recoverInterruptedTasks() {
+    const rows = this.db.prepare("SELECT id FROM mesh_routing_tasks WHERE status IN ('sent', 'accepted', 'working')").all() as Row[];
+    for (const row of rows) this.updateRoutingTask(String(row.id), { status: 'failed', error: 'Reika restarted before the delegated task returned a correlated result.', progress: 'Interrupted by application restart.' });
+  }
+
   private migrate() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS mesh_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
@@ -552,6 +581,23 @@ export class MemoryMeshStore {
         this.db.prepare('INSERT INTO mesh_schema_migrations (version, applied_at) VALUES (1, ?)').run(new Date().toISOString());
       });
     }
+    if (version < 2) {
+      this.transaction(() => {
+        this.db.exec(`
+          ALTER TABLE mesh_memories ADD COLUMN provenance_json TEXT NOT NULL DEFAULT '{}';
+          ALTER TABLE mesh_routing_tasks ADD COLUMN origin_conversation_id TEXT;
+          ALTER TABLE mesh_routing_tasks ADD COLUMN origin_message_id TEXT;
+          ALTER TABLE mesh_routing_tasks ADD COLUMN shared_context_refs_json TEXT NOT NULL DEFAULT '[]';
+          ALTER TABLE mesh_routing_tasks ADD COLUMN progress TEXT;
+          ALTER TABLE mesh_routing_tasks ADD COLUMN memory_writeback_ids_json TEXT NOT NULL DEFAULT '[]';
+          ALTER TABLE mesh_routing_tasks ADD COLUMN lifecycle_json TEXT NOT NULL DEFAULT '[]';
+          ALTER TABLE mesh_routing_tasks ADD COLUMN approval_required INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE mesh_routing_tasks ADD COLUMN sent_at TEXT;
+          ALTER TABLE mesh_routing_tasks ADD COLUMN accepted_at TEXT;
+        `);
+        this.db.prepare('INSERT INTO mesh_schema_migrations (version, applied_at) VALUES (2, ?)').run(new Date().toISOString());
+      });
+    }
   }
 }
 
@@ -568,11 +614,11 @@ function mapProjectAgentAssignment(row: Row): ProjectAgentAssignment { return { 
 function mapProjectDeviceAssignment(row: Row): ProjectDeviceAssignment { return { projectId: String(row.project_id), deviceId: String(row.device_id), isPrimary: Number(row.is_primary) === 1 }; }
 
 function mapMemory(row: Row): MemoryRecord {
-  return { id: String(row.id), content: String(row.content), scope: cleanScope(row.scope), agentId: optionalText(row.agent_id), projectId: optionalText(row.project_id), deviceId: optionalText(row.device_id), sessionId: optionalText(row.session_id), createdBy: String(row.created_by), source: String(row.source), tags: parseList(row.tags_json), createdAt: String(row.created_at), updatedAt: String(row.updated_at), confidence: Number(row.confidence), importance: Number(row.importance), permissions: parsePermission(row.permissions_json), expiresAt: optionalText(row.expires_at), version: Number(row.version) };
+  return { id: String(row.id), content: String(row.content), scope: cleanScope(row.scope), agentId: optionalText(row.agent_id), projectId: optionalText(row.project_id), deviceId: optionalText(row.device_id), sessionId: optionalText(row.session_id), createdBy: String(row.created_by), source: String(row.source), tags: parseList(row.tags_json), createdAt: String(row.created_at), updatedAt: String(row.updated_at), confidence: Number(row.confidence), importance: Number(row.importance), permissions: parsePermission(row.permissions_json), provenance: normalizeProvenance(parseJson(row.provenance_json, {})), expiresAt: optionalText(row.expires_at), version: Number(row.version) };
 }
 
 function mapRoutingTask(row: Row): RoutingTask {
-  return { id: String(row.id), projectId: optionalText(row.project_id), sourceAgentId: optionalText(row.source_agent_id), sourceDeviceId: optionalText(row.source_device_id), targetAgentId: optionalText(row.target_agent_id), targetDeviceId: optionalText(row.target_device_id), request: String(row.request), requiredCapabilities: parseList(row.required_capabilities_json), status: String(row.status) as RoutingTask['status'], decision: parseJson(row.decision_json, {}) as RouteDecision, result: optionalText(row.result), error: optionalText(row.error), createdAt: String(row.created_at), updatedAt: String(row.updated_at), completedAt: optionalText(row.completed_at) };
+  return { id: String(row.id), originConversationId: optionalText(row.origin_conversation_id), originMessageId: optionalText(row.origin_message_id), projectId: optionalText(row.project_id), sourceAgentId: optionalText(row.source_agent_id), sourceDeviceId: optionalText(row.source_device_id), targetAgentId: optionalText(row.target_agent_id), targetDeviceId: optionalText(row.target_device_id), request: String(row.request), requiredCapabilities: parseList(row.required_capabilities_json), sharedContextRefs: parseList(row.shared_context_refs_json), status: String(row.status) as RoutingTask['status'], decision: parseJson(row.decision_json, {}) as RouteDecision, progress: optionalText(row.progress), result: optionalText(row.result), error: optionalText(row.error), memoryWritebackIds: parseList(row.memory_writeback_ids_json), lifecycle: parseJson(row.lifecycle_json, []) as RoutingTask['lifecycle'], approvalRequired: Number(row.approval_required) === 1, createdAt: String(row.created_at), updatedAt: String(row.updated_at), sentAt: optionalText(row.sent_at), acceptedAt: optionalText(row.accepted_at), completedAt: optionalText(row.completed_at) };
 }
 
 function validateMemory(memory: MemoryRecord) {
@@ -597,6 +643,20 @@ function normalizePermission(value: Partial<MemoryPermission> | undefined, scope
 function parsePermission(value: unknown): MemoryPermission {
   const parsed = parseJson(value, {}) as Partial<MemoryPermission>;
   return normalizePermission(parsed, 'global');
+}
+
+function normalizeProvenance(value: unknown): MemoryRecord['provenance'] {
+  if (!value || typeof value !== 'object') return undefined;
+  const input = value as Record<string, unknown>;
+  const provenance = {
+    sourceConversationId: optionalText(input.sourceConversationId),
+    sourceMessageId: optionalText(input.sourceMessageId),
+    sourceTaskId: optionalText(input.sourceTaskId),
+    sourceAgentId: optionalText(input.sourceAgentId),
+    sourceDeviceId: optionalText(input.sourceDeviceId),
+    verifiedAt: optionalText(input.verifiedAt)
+  };
+  return Object.values(provenance).some(Boolean) ? provenance : undefined;
 }
 
 function scoreProject(project: MeshProject, query: string, context: { recentProjectIds?: string[]; agentId?: string }) {

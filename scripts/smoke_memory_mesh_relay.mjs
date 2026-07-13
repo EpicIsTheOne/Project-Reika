@@ -121,10 +121,19 @@ async function main() {
   assert(naturalChat.text.includes("Astra Relay Mesh received"), "Natural chat did not return the remote Astra result.");
   assert(naturalChat.message.meta?.memoryMesh?.status === "completed", "Natural chat did not persist completed delegation metadata.");
   assert(naturalChat.message.meta.memoryMesh.targetAgentId === remoteAgent.id, "Natural chat selected the wrong agent.");
-  const stages = naturalChat.message.meta.memoryMesh.lifecycle.map((item) => item.stage);
-  for (const stage of ["resolving", "route_planned", "delegating", "working", "memory_updated", "completed"]) {
-    assert(stages.includes(stage), `Natural chat lifecycle is missing ${stage}.`);
+  const stages = naturalChat.message.meta.memoryMesh.lifecycle.map((item) => item.stage || item.status);
+  for (const stage of ["resolving", "planning", "sent", "accepted", "working", "memory_updated", "completed"]) {
+    assert(stages.includes(stage), `Natural chat lifecycle is missing ${stage}; saw ${stages.join(", ")}`);
   }
+  assert(naturalChat.message.meta.memoryMesh.originConversationId, "Natural chat did not record origin conversation correlation.");
+  assert(naturalChat.message.meta.memoryMesh.originMessageId, "Natural chat did not record origin message correlation.");
+
+  const anonymousToolResponse = await fetch(`${agentHttpUrl}/memory-mesh/tools/execute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "reika.resolveProject", arguments: { query: "RMP" } })
+  });
+  assert(anonymousToolResponse.status === 401, "Anonymous direct tool execution was not rejected.");
 
   const failedChat = await jsonFetch(`${agentHttpUrl}/chat`, {
     method: "POST",
@@ -171,7 +180,9 @@ async function main() {
   assert(offlineChat.message.meta.memoryMesh.status === "unavailable", "Offline remote ownership did not fail closed in chat.");
 
   const memories = await jsonFetch(`${agentHttpUrl}/memory-mesh/memories?projectId=${encodeURIComponent(project.id)}&limit=20`);
-  assert(memories.memories.some((memory) => memory.source === `routing-task:${response.task.id}`), "Completed remote result was not written to project memory.");
+  const writeback = memories.memories.find((memory) => memory.source === `routing-task:${response.task.id}`);
+  assert(writeback, "Completed remote result was not written to project memory.");
+  assert(writeback.provenance?.sourceTaskId === response.task.id, "Project memory writeback is missing task provenance.");
 }
 
 async function pairDevice() {

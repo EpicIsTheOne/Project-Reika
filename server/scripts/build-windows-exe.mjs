@@ -4,12 +4,12 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const releaseDir = resolve(root, 'release');
-const releaseExePath = 'release/reika-agent-server.exe';
-const releaseBlobPath = 'release/reika-agent-server.blob';
-const bundlePath = resolve(releaseDir, 'reika-agent-server.cjs');
-const blobPath = resolve(releaseDir, 'reika-agent-server.blob');
+const releaseExePath = 'release/reika-node.exe';
+const releaseBlobPath = 'release/reika-node.blob';
+const bundlePath = resolve(releaseDir, 'reika-node.cjs');
+const blobPath = resolve(releaseDir, 'reika-node.blob');
 const seaConfigPath = resolve(releaseDir, 'sea-config.json');
-const exePath = resolve(releaseDir, 'reika-agent-server.exe');
+const exePath = resolve(releaseDir, 'reika-node.exe');
 
 function run(command, args) {
   const usesCmdShim = process.platform === 'win32' && ['npm', 'npx'].includes(command);
@@ -38,7 +38,7 @@ run('npx', [
   '--platform=node',
   '--target=node22',
   '--format=cjs',
-  '--outfile=release/reika-agent-server.cjs'
+  '--outfile=release/reika-node.cjs'
 ]);
 
 await import('node:fs/promises').then(({ writeFile }) => writeFile(seaConfigPath, JSON.stringify({

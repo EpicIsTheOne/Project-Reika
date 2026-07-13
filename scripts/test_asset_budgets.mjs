@@ -1,7 +1,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const root = join(process.cwd(), "client", "assets", "agenthub_phase1_webp");
+const root = join(process.cwd(), "client", "assets", "reika_phase1_webp");
 const files = walk(root).filter((path) => path.endsWith(".webp"));
 if (files.length < 25) throw new Error(`Expected generated WebP catalog, found ${files.length} files.`);
 

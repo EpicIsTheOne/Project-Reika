@@ -29,7 +29,7 @@
   --motion-delay: 0ms;
 }
 
-:root[data-agenthub-theme="blue"] {
+:root[data-reika-theme="blue"] {
   --bg: #020a1d;
   --bg-2: #071b38;
   --panel: rgba(7, 22, 52, 0.78);
@@ -42,7 +42,7 @@
   --glow: 0 0 34px rgba(67, 196, 255, 0.38);
 }
 
-:root[data-agenthub-theme="contrast"] {
+:root[data-reika-theme="contrast"] {
   --bg: #00050d;
   --bg-2: #030b18;
   --panel: rgba(4, 12, 27, 0.9);
@@ -836,7 +836,7 @@ img {
   min-height: 100vh;
   background:
     linear-gradient(90deg, rgba(3, 8, 19, 0.96), rgba(4, 10, 24, 0.72)),
-    url("../assets/agenthub_phase1_webp/decorative/subtle_noise_texture_alpha.webp");
+    url("../assets/reika_phase1_webp/decorative/subtle_noise_texture_alpha.webp");
 }
 
 .sidebar {
@@ -6264,6 +6264,9 @@ img {
 .delegation-card.summary summary { display: flex; align-items: center; gap: 7px; padding: 9px 11px; cursor: pointer; color: #b8c8ff; font-size: 12px; list-style: none; }
 .delegation-card.summary summary::-webkit-details-marker { display: none; }
 .delegation-timeline { display: grid; gap: 7px; padding: 0 12px 11px 34px; }
+.delegation-target { display: grid; gap: 2px; margin-left: -22px; padding: 7px 9px; border: 1px solid rgba(125, 156, 255, 0.18); border-radius: 8px; background: rgba(5, 13, 29, 0.24); }
+.delegation-target strong { color: var(--text-primary); font-size: 13px; }
+.delegation-target small { color: var(--text-secondary); line-height: 1.35; }
 .delegation-timeline span { position: relative; color: var(--text-secondary); font-size: 12px; }
 .delegation-timeline span i { position: absolute; left: -17px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: #7899ff; }
 .delegation-timeline small { color: var(--text-muted); line-height: 1.35; }

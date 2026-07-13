@@ -69,7 +69,7 @@ export function App() {
   }, [settings.relayUrl]);
 
   useEffect(() => {
-    document.documentElement.dataset.agenthubTheme = settings.theme ?? "dark";
+    document.documentElement.dataset.reikaTheme = settings.theme ?? "dark";
   }, [settings.theme]);
 
   useEffect(() => {

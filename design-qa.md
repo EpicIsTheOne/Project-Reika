@@ -14,12 +14,12 @@ At both tested viewports the modal remains inside the viewport. Measured overflo
 
 ## Focused region comparison evidence
 
-The right inspector was checked separately for readable labels, selected tab state, source thumbnail, stepper buttons, sliders, and visible primary actions. The chat preview was checked for portrait crop, overlay, profile card, and adjacent chat context. The implementation intentionally uses existing AgentHub typography, tokens, and Lucide icons rather than reproducing image-generated approximations.
+The right inspector was checked separately for readable labels, selected tab state, source thumbnail, stepper buttons, sliders, and visible primary actions. The chat preview was checked for portrait crop, overlay, profile card, and adjacent chat context. The implementation intentionally uses existing Reika typography, tokens, and Lucide icons rather than reproducing image-generated approximations.
 
 ## Findings
 
 - No actionable P0/P1/P2 differences remain.
-- P3: The mock includes a decorative agent rail and denser sample conversation. The implementation uses the actual current AgentHub chat composition and keeps the preview lighter so the portrait remains the focus.
+- P3: The mock includes a decorative agent rail and denser sample conversation. The implementation uses the actual current Reika chat composition and keeps the preview lighter so the portrait remains the focus.
 - P3: At narrower desktop widths the preview becomes denser than the mock, but the controls and footer remain visible and usable without page overflow.
 
 ## Interaction checks

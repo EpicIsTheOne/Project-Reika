@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Project Reika dev relay for pairing, presence, and safe AgentHub envelope routing.",
+  "description": "Reika Relay for pairing, presence, and safe backwards-compatible envelope routing.",
   "bin": {
     "reika-relay": "./dist/relay/cli.js"
   },

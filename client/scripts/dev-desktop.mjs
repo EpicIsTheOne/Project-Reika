@@ -18,8 +18,8 @@ try {
     stdio: "inherit",
     env: {
       ...process.env,
-      AGENTHUB_DESKTOP_DEV: "1",
-      AGENTHUB_DESKTOP_DEV_URL: "http://127.0.0.1:5173"
+      REIKA_DESKTOP_DEV: "1",
+      REIKA_DESKTOP_DEV_URL: "http://127.0.0.1:5173"
     }
   });
   electron.on("exit", (code) => {

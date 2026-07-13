@@ -2,8 +2,9 @@ import { app, BrowserWindow, shell } from "electron";
 import { join } from "node:path";
 import { startDesktopServer, type DesktopServer } from "./localServer.js";
 import { ensureLocalAgent, stopLocalAgent, type LocalAgentRuntime } from "./localAgent.js";
+import { migrateLegacyUserData } from "./userDataMigration.js";
 
-const isDev = process.env.AGENTHUB_DESKTOP_DEV === "1";
+const isDev = (process.env.REIKA_DESKTOP_DEV ?? process.env.AGENTHUB_DESKTOP_DEV) === "1";
 
 let desktopServer: DesktopServer | undefined;
 let localAgent: LocalAgentRuntime | undefined;
@@ -11,8 +12,8 @@ let mainWindow: BrowserWindow | undefined;
 
 async function createWindow() {
   const iconPath = app.isPackaged
-    ? join(process.resourcesPath, "assets/brand/agenthub_app_icon.png")
-    : join(__dirname, "../assets/agenthub_phase1/brand/agenthub_app_icon.png");
+    ? join(process.resourcesPath, "assets/brand/reika_app_icon.png")
+    : join(__dirname, "../assets/reika_phase1/brand/reika_app_icon.png");
   const preload = join(__dirname, "preload.cjs");
 
   mainWindow = new BrowserWindow({
@@ -21,7 +22,7 @@ async function createWindow() {
     minWidth: 1180,
     minHeight: 760,
     backgroundColor: "#020813",
-    title: "AgentHub",
+    title: "Reika",
     icon: iconPath,
     autoHideMenuBar: true,
     show: false,
@@ -49,7 +50,7 @@ async function createWindow() {
   });
 
   if (isDev) {
-    await mainWindow.loadURL(process.env.AGENTHUB_DESKTOP_DEV_URL ?? "http://127.0.0.1:5173");
+    await mainWindow.loadURL(process.env.REIKA_DESKTOP_DEV_URL ?? process.env.AGENTHUB_DESKTOP_DEV_URL ?? "http://127.0.0.1:5173");
     return;
   }
 
@@ -57,17 +58,17 @@ async function createWindow() {
     ? join(process.resourcesPath, "client-dist")
     : join(__dirname, "../dist");
   localAgent = await ensureLocalAgent({
-    target: process.env.AGENTHUB_AGENT_TARGET,
+    target: process.env.REIKA_NODE_TARGET ?? process.env.AGENTHUB_AGENT_TARGET,
     waitMs: 10000
   });
 
   desktopServer = await startDesktopServer({
     distDir,
-    port: Number(process.env.AGENTHUB_DESKTOP_PORT ?? 0) || 0,
+    port: Number(process.env.REIKA_DESKTOP_PORT ?? process.env.AGENTHUB_DESKTOP_PORT ?? 0) || 0,
     agentTarget: localAgent.url,
     recoverAgentTarget: recoverLocalAgent,
-    relayTarget: process.env.AGENTHUB_RELAY_TARGET,
-    apiTarget: process.env.AGENTHUB_API_TARGET
+    relayTarget: process.env.REIKA_RELAY_TARGET ?? process.env.AGENTHUB_RELAY_TARGET,
+    apiTarget: process.env.REIKA_API_TARGET ?? process.env.AGENTHUB_API_TARGET
   });
   await mainWindow.loadURL(desktopServer.url);
 }
@@ -75,15 +76,16 @@ async function createWindow() {
 async function recoverLocalAgent() {
   if (localAgent?.started) stopLocalAgent();
   localAgent = await ensureLocalAgent({
-    target: process.env.AGENTHUB_AGENT_TARGET,
+    target: process.env.REIKA_NODE_TARGET ?? process.env.AGENTHUB_AGENT_TARGET,
     waitMs: 10000
   });
   return localAgent.url;
 }
 
-app.setName("AgentHub");
+app.setName("Reika");
 
 app.whenReady().then(async () => {
+  migrateLegacyUserData(app.getPath("appData"), app.getPath("userData"));
   await createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();

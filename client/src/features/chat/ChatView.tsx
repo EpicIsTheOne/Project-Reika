@@ -884,14 +884,28 @@ function getRelayAgentId(agent: ReikaProviderRecord["agents"][number] | undefine
 const delegationStageLabels: Record<string, string> = {
   resolving: "Resolving project",
   route_planned: "Selecting agent and device",
+  planning: "Selecting agent and device",
   delegating: "Delegating task",
-  working: "Remote agent working",
+  awaiting_approval: "Awaiting approval",
+  queued: "Queued",
+  sent: "Sent to agent",
+  accepted: "Accepted",
+  working: "Agent working",
   memory_updated: "Project memory updated",
   completed: "Result returned",
   failed: "Delegation failed",
+  timed_out: "Timed out",
   cancelled: "Task cancelled",
   clarification_required: "Clarification required"
 };
+
+function textField(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function arrayOfStrings(value: unknown, limit = 3) {
+  return Array.isArray(value) ? value.map(String).filter(Boolean).slice(0, limit) : [];
+}
 
 function DelegationActivityCard({ activity }: { activity: Array<Record<string, unknown>> }) {
   const current = activity.at(-1) ?? {};
@@ -903,13 +917,31 @@ function DelegationActivityCard({ activity }: { activity: Array<Record<string, u
 
 function DelegationSummaryCard({ value }: { value: Record<string, unknown> }) {
   const lifecycle = Array.isArray(value.lifecycle) ? value.lifecycle.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object")) : [];
-  const reasons = Array.isArray(value.reasons) ? value.reasons.map(String).slice(0, 2) : [];
+  const reasons = arrayOfStrings(value.reasons, 3);
+  const memoryIds = arrayOfStrings(value.memoryWritebackIds, 2);
+  const projectName = textField(value.projectName) || textField(value.projectId) || "Project";
+  const targetName = textField(value.targetAgentName) || textField(value.targetAgentId) || "No agent selected";
+  const deviceName = textField(value.targetDeviceName) || textField(value.targetDeviceId);
+  const status = textField(value.status) || "routed";
+  const originTools = value.originProviderTools && typeof value.originProviderTools === "object" ? value.originProviderTools as Record<string, unknown> : undefined;
+  const toolCalls = originTools && Array.isArray(originTools.toolCalls) ? originTools.toolCalls.length : 0;
+  const toolWarning = textField(originTools?.warning);
   return (
     <details className="delegation-card summary" data-testid="delegation-summary">
       <summary><Activity size={15} /><span>Memory Mesh · {String(value.status || "routed")}</span></summary>
       <div className="delegation-timeline">
-        {lifecycle.map((item, index) => <span key={`${String(item.stage)}-${index}`}><i />{delegationStageLabels[String(item.stage)] || String(item.stage)}</span>)}
+        <div className="delegation-target">
+          <strong>{projectName}</strong>
+          <small>{deviceName ? `${targetName} on ${deviceName}` : targetName} - {status.replace(/_/g, " ")}</small>
+        </div>
+        {lifecycle.map((item, index) => {
+          const stage = String(item.stage || item.status || "");
+          return <span key={`${stage}-${index}`}><i />{delegationStageLabels[stage] || stage}</span>;
+        })}
         {reasons.map((reason) => <small key={reason}>{reason}</small>)}
+        {toolCalls ? <small>Origin provider used {toolCalls} Reika planning tool{toolCalls === 1 ? "" : "s"}.</small> : null}
+        {toolWarning ? <small>Origin provider tool bridge warning: {toolWarning}</small> : null}
+        {memoryIds.length ? <small>Memory writeback: {memoryIds.join(", ")}</small> : null}
         {value.taskId ? <code>Task {String(value.taskId).slice(0, 8)}</code> : null}
       </div>
     </details>

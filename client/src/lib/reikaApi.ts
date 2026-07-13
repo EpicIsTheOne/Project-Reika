@@ -118,6 +118,14 @@ export interface MemoryMeshMemory {
   permissions: { visibility: "global" | "private_agent" | "private_device" | "project" | "user_only"; access: "read_only" | "read_write" };
   expiresAt?: string;
   version: number;
+  provenance?: {
+    sourceConversationId?: string;
+    sourceMessageId?: string;
+    sourceTaskId?: string;
+    sourceAgentId?: string;
+    sourceDeviceId?: string;
+    verifiedAt?: string;
+  };
 }
 
 export interface MemoryMeshRouteDecision {
@@ -131,6 +139,31 @@ export interface MemoryMeshRouteDecision {
   score?: number;
   reasons: string[];
   considered: Array<{ agentId: string; eligible: boolean; score: number; reasons: string[] }>;
+  approvalRequired?: boolean;
+  approvalReason?: string;
+}
+
+export type MemoryMeshRoutingTaskStatus =
+  | "resolving"
+  | "planning"
+  | "awaiting_approval"
+  | "queued"
+  | "running"
+  | "sent"
+  | "accepted"
+  | "working"
+  | "awaiting_input"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "timed_out"
+  | "unavailable";
+
+export interface MemoryMeshRoutingTaskLifecycleEntry {
+  stage: string;
+  at: string;
+  detail?: string;
+  [key: string]: unknown;
 }
 
 export interface MemoryMeshRoutingTask {
@@ -138,14 +171,23 @@ export interface MemoryMeshRoutingTask {
   projectId?: string;
   sourceAgentId?: string;
   sourceDeviceId?: string;
+  originConversationId?: string;
+  originMessageId?: string;
   targetAgentId?: string;
   targetDeviceId?: string;
   request: string;
   requiredCapabilities: string[];
-  status: "queued" | "running" | "completed" | "failed" | "unavailable" | "cancelled";
+  status: MemoryMeshRoutingTaskStatus;
   decision: MemoryMeshRouteDecision;
   result?: string;
   error?: string;
+  sharedContextRefs?: string[];
+  progress?: string;
+  memoryWritebackIds?: string[];
+  lifecycle?: MemoryMeshRoutingTaskLifecycleEntry[];
+  approvalRequired?: boolean;
+  sentAt?: string;
+  acceptedAt?: string;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -544,6 +586,10 @@ export async function executeMemoryMeshTask(input: { projectQuery: string; task:
 
 export async function cancelMemoryMeshTask(taskId: string) {
   return request<{ ok: true; task: MemoryMeshRoutingTask }>(`/memory-mesh/tasks/${encodeURIComponent(taskId)}/cancel`, { method: "POST", body: "{}" });
+}
+
+export async function approveMemoryMeshTask(taskId: string) {
+  return request<{ ok: true; task: MemoryMeshRoutingTask }>(`/memory-mesh/tasks/${encodeURIComponent(taskId)}/approve`, { method: "POST", body: "{}" });
 }
 
 export async function getHealth() {

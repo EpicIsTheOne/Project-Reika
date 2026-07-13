@@ -16,7 +16,7 @@ interface ScanResponse {
 export async function fetchAgentHubDevices() {
   const response = await fetch("/api/devices");
   const payload = (await response.json()) as DevicesResponse;
-  if (!response.ok || !payload.ok) throw new Error(payload.error ?? "AgentHub backend did not return devices.");
+  if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Reika backend did not return nodes.");
   return payload.devices.map(mapDevice);
 }
 

@@ -1,9 +1,9 @@
 {
-  "name": "agenthub-phase1-ui",
+  "name": "reika-desktop-client",
   "private": true,
   "version": "0.1.0",
-  "description": "Project Reika AgentHub desktop client",
-  "author": "Project Reika contributors",
+  "description": "An operating system for AI agents.",
+  "author": "Project Reika",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n backend,ui -c cyan,blue \"npm:dev:backend\" \"npm:dev:ui\"",

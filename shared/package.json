@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Canonical shared AgentHub protocol and data contracts for Project Reika.",
+  "description": "Canonical shared protocol and data contracts for Project Reika.",
   "exports": {
     "./agenthub": {
       "types": "./dist/agenthub.d.ts",

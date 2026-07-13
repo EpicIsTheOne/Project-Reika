@@ -1,0 +1,477 @@
+{
+  "name": "Reika Phase 1 Generated Reika Asset Pack",
+  "description": "Project-local generated assets for Reika.",
+  "source_references": [
+    "assets/reika_phase1_generated/_source_refs/reika_character_sheet.png"
+  ],
+  "palette": {
+    "deep_space": "#0B1020",
+    "midnight_blue": "#131B33",
+    "electric_blue": "#4D8DFF",
+    "sky_blue": "#7AB7FF",
+    "cyan_glow": "#6FEFFF",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#B7C0D8"
+  },
+  "assets": [
+    {
+      "path": "assets/reika_phase1_generated/brand/reika_logo_icon.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/brand/reika_logo_icon_alpha.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/brand/reika_logo_icon_alpha_128.png",
+      "size": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/brand/reika_logo_icon_alpha_256.png",
+      "size": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/brand/reika_logo_icon_alpha_512.png",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/character/reika/chibi.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/character/reika/circular_avatar_source.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/character/reika/expressions/happy.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/character/reika/expressions/neutral.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/character/reika/expressions/playful.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/character/reika/expressions/thinking.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/character/reika/full_splash_illustration.png",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/character/reika/half_body_portrait.png",
+      "size": [
+        1402,
+        1122
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/decorative/blue_glow_overlay_alpha.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/decorative/glass_panel_texture_alpha.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/decorative/subtle_noise_texture_alpha.png",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/empty_states/no_agents_connected.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/empty_states/no_chat_history.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/laptop_alpha.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/laptop_alpha_128.png",
+      "size": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/laptop_alpha_256.png",
+      "size": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/laptop_alpha_512.png",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/laptop_chromakey.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/pc_alpha.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/pc_alpha_128.png",
+      "size": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/pc_alpha_256.png",
+      "size": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/pc_alpha_512.png",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/pc_chromakey.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/vps_server_alpha.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/vps_server_alpha_128.png",
+      "size": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/vps_server_alpha_256.png",
+      "size": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/vps_server_alpha_512.png",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/devices/vps_server_chromakey.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/providers/hermes_alpha.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/providers/hermes_alpha_128.png",
+      "size": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/providers/hermes_alpha_256.png",
+      "size": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/providers/hermes_alpha_512.png",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/providers/hermes_chromakey.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/providers/openclaw_alpha.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/providers/openclaw_alpha_128.png",
+      "size": [
+        128,
+        128
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/providers/openclaw_alpha_256.png",
+      "size": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/providers/openclaw_alpha_512.png",
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/providers/openclaw_chromakey.png",
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/status/offline_alpha.png",
+      "size": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/icons/status/online_alpha.png",
+      "size": [
+        256,
+        256
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/loading/loading_splash_background.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/loading/progress_bar_alpha.png",
+      "size": [
+        900,
+        120
+      ],
+      "mode": "RGBA",
+      "transparent": true
+    },
+    {
+      "path": "assets/reika_phase1_generated/loading/reika_boot_backdrop.png",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/room/blurred_ui_background.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/room/full_room_night.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB",
+      "transparent": false
+    },
+    {
+      "path": "assets/reika_phase1_generated/room/hero_banner.png",
+      "size": [
+        1914,
+        822
+      ],
+      "mode": "RGB",
+      "transparent": false
+    }
+  ]
+}

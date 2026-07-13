@@ -1,11 +1,13 @@
 {
   "appId": "dev.agenthub.reika",
-  "productName": "AgentHub",
+  "productName": "Reika",
+  "artifactName": "${productName} Setup ${version}.${ext}",
   "directories": {
     "output": "release"
   },
   "files": [
     "dist-desktop/**/*",
+    "!dist-desktop/**/*.map",
     "package.json"
   ],
   "afterPack": "scripts/after-pack-icon.cjs",
@@ -15,27 +17,27 @@
       "to": "client-dist"
     },
     {
-      "from": "assets/agenthub_phase1/brand",
-      "to": "assets/brand"
+      "from": "assets/reika_phase1/brand/reika_app_icon.png",
+      "to": "assets/brand/reika_app_icon.png"
     },
     {
-      "from": "../server/release/reika-agent-server.exe",
-      "to": "agent-server/reika-agent-server.exe"
+      "from": "../server/release/reika-node.exe",
+      "to": "reika-node/reika-node.exe"
     }
   ],
   "win": {
     "target": ["nsis"],
-    "icon": "assets/agenthub_phase1/brand/agenthub_app_icon.ico",
+    "icon": "assets/reika_phase1/brand/reika_app_icon.ico",
     "signAndEditExecutable": false,
     "signDlls": false
   },
   "nsis": {
-    "installerIcon": "assets/agenthub_phase1/brand/agenthub_app_icon.ico",
-    "uninstallerIcon": "assets/agenthub_phase1/brand/agenthub_app_icon.ico",
+    "installerIcon": "assets/reika_phase1/brand/reika_app_icon.ico",
+    "uninstallerIcon": "assets/reika_phase1/brand/reika_app_icon.ico",
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "AgentHub"
+    "shortcutName": "Reika"
   }
 }

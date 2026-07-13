@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "assets" / "agenthub_phase1"
+OUT = ROOT / "assets" / "reika_phase1"
 SOURCE_DIR = OUT / "_source"
 
 REFERENCE_SHEET = Path(r"C:\Users\Epic\Downloads\RefrenceSheet.png")
@@ -127,7 +127,6 @@ def build_contact_sheet(records: list[dict[str, object]]) -> None:
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     SOURCE_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(REFERENCE_SHEET, SOURCE_DIR / "reference_sheet.png")
     shutil.copy2(CHARACTER_SHEET, SOURCE_DIR / "reika_character_sheet.png")
 
     ref = Image.open(REFERENCE_SHEET).convert("RGB")
@@ -135,13 +134,11 @@ def main() -> None:
 
     records: list[dict[str, object]] = []
     assets = [
-        ("brand/agenthub_icon.png", ref, (31, 166, 96, 228), True, (512, 256), True),
-        ("brand/agenthub_wordmark.png", ref, (113, 169, 281, 229), False, (), True),
-        ("brand/agenthub_combined.png", ref, (296, 171, 453, 228), False, (), True),
-        ("brand/agenthub_app_icon.png", ref, (480, 160, 549, 229), True, (512, 256), False),
-        ("brand/agenthub_tray_icon.png", ref, (581, 178, 633, 226), True, (256, 128), True),
-        ("brand/agenthub_loading_emblem.png", ref, (666, 151, 757, 239), True, (512, 256), True),
-        ("brand/agenthub_glowing_emblem.png", ref, (689, 158, 739, 216), True, (512, 256), True),
+        ("brand/reika_icon.png", ref, (31, 166, 96, 228), True, (512, 256), True),
+        ("brand/reika_app_icon.png", ref, (480, 160, 549, 229), True, (512, 256), False),
+        ("brand/reika_tray_icon.png", ref, (581, 178, 633, 226), True, (256, 128), True),
+        ("brand/reika_loading_emblem.png", ref, (666, 151, 757, 239), True, (512, 256), True),
+        ("brand/reika_glowing_emblem.png", ref, (689, 158, 739, 216), True, (512, 256), True),
         ("character/reika/full_splash.png", ref, (25, 333, 394, 489), False, (), False),
         ("character/reika/half_body_portrait.png", ref, (404, 333, 544, 492), False, (), False),
         ("character/reika/circular_avatar.png", ref, (558, 333, 666, 449), True, (512, 256), False),
@@ -218,10 +215,9 @@ def main() -> None:
         )
 
     manifest = {
-        "name": "AgentHub Phase 1 Reika Visual Slice",
-        "source_prompt": "C:/Users/Epic/Documents/NEXUS-AICHAT/Refrence Docs/txt/AgentHub_Phase1_Visual_Prompt.txt",
+        "name": "Reika Phase 1 Reika Visual Slice",
+        "source_prompt": "C:/Users/Epic/Documents/NEXUS-AICHAT/Refrence Docs/txt/Reika_Phase1_Visual_Prompt.txt",
         "sources": [
-            "_source/reference_sheet.png",
             "_source/reika_character_sheet.png",
         ],
         "palette": {

@@ -8,8 +8,10 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 
 const WINDOWS_RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
-const WINDOWS_RUN_VALUE = 'ProjectReikaAgentServer';
-const LINUX_SERVICE_NAME = 'reika-agent-server.service';
+const WINDOWS_RUN_VALUE = 'ReikaNode';
+const LEGACY_WINDOWS_RUN_VALUE = 'ProjectReikaAgentServer';
+const LINUX_SERVICE_NAME = 'reika-node.service';
+const LEGACY_LINUX_SERVICE_NAME = 'reika-agent-server.service';
 
 export type StartupMethod = 'windows-run-key' | 'linux-systemd-user' | 'unsupported';
 
@@ -110,18 +112,24 @@ function quotePosixArg(value: string) {
 }
 
 async function getWindowsStartupStatus(): Promise<StartupStatus> {
-  const command = await queryWindowsRunValue();
+  const activeValue = (await queryWindowsRunValue(WINDOWS_RUN_VALUE))
+    ? WINDOWS_RUN_VALUE
+    : (await queryWindowsRunValue(LEGACY_WINDOWS_RUN_VALUE))
+      ? LEGACY_WINDOWS_RUN_VALUE
+      : WINDOWS_RUN_VALUE;
+  const command = await queryWindowsRunValue(activeValue);
   return {
     supported: true,
     enabled: Boolean(command),
     method: 'windows-run-key',
     command,
-    configPath: `${WINDOWS_RUN_KEY}\\${WINDOWS_RUN_VALUE}`
+    configPath: `${WINDOWS_RUN_KEY}\\${activeValue}`
   };
 }
 
 async function enableWindowsStartup(command: string): Promise<StartupStatus> {
   await execFileAsync('reg', ['add', WINDOWS_RUN_KEY, '/v', WINDOWS_RUN_VALUE, '/t', 'REG_SZ', '/d', command, '/f']);
+  await execFileAsync('reg', ['delete', WINDOWS_RUN_KEY, '/v', LEGACY_WINDOWS_RUN_VALUE, '/f']).catch(() => undefined);
   return {
     supported: true,
     enabled: true,
@@ -133,6 +141,7 @@ async function enableWindowsStartup(command: string): Promise<StartupStatus> {
 
 async function disableWindowsStartup(): Promise<StartupStatus> {
   await execFileAsync('reg', ['delete', WINDOWS_RUN_KEY, '/v', WINDOWS_RUN_VALUE, '/f']).catch(() => undefined);
+  await execFileAsync('reg', ['delete', WINDOWS_RUN_KEY, '/v', LEGACY_WINDOWS_RUN_VALUE, '/f']).catch(() => undefined);
   return {
     supported: true,
     enabled: false,
@@ -141,15 +150,15 @@ async function disableWindowsStartup(): Promise<StartupStatus> {
   };
 }
 
-async function queryWindowsRunValue() {
+async function queryWindowsRunValue(valueName: string) {
   try {
-    const { stdout } = await execFileAsync('reg', ['query', WINDOWS_RUN_KEY, '/v', WINDOWS_RUN_VALUE]);
+    const { stdout } = await execFileAsync('reg', ['query', WINDOWS_RUN_KEY, '/v', valueName]);
     const line = stdout
       .split(/\r?\n/u)
       .map((item) => item.trim())
-      .find((item) => item.startsWith(WINDOWS_RUN_VALUE));
+      .find((item) => item.startsWith(valueName));
     if (!line) return undefined;
-    const match = line.match(/^ProjectReikaAgentServer\s+REG_SZ\s+(.+)$/u);
+    const match = line.match(/^\S+\s+REG_SZ\s+(.+)$/u);
     return match?.[1]?.trim();
   } catch {
     return undefined;
@@ -157,9 +166,14 @@ async function queryWindowsRunValue() {
 }
 
 async function getLinuxStartupStatus(): Promise<StartupStatus> {
-  const servicePath = linuxServicePath();
+  const serviceName = existsSync(linuxServicePath(LINUX_SERVICE_NAME))
+    ? LINUX_SERVICE_NAME
+    : existsSync(linuxServicePath(LEGACY_LINUX_SERVICE_NAME))
+      ? LEGACY_LINUX_SERVICE_NAME
+      : LINUX_SERVICE_NAME;
+  const servicePath = linuxServicePath(serviceName);
   const command = existsSync(servicePath) ? await readExecStart(servicePath) : undefined;
-  const systemdEnabled = await isSystemdUserServiceEnabled();
+  const systemdEnabled = await isSystemdUserServiceEnabled(serviceName);
   return {
     supported: true,
     enabled: systemdEnabled ?? existsSync(servicePath),
@@ -174,9 +188,12 @@ async function getLinuxStartupStatus(): Promise<StartupStatus> {
 }
 
 async function enableLinuxStartup(command: string): Promise<StartupStatus> {
-  const servicePath = linuxServicePath();
+  const servicePath = linuxServicePath(LINUX_SERVICE_NAME);
   await mkdir(path.dirname(servicePath), { recursive: true });
   await writeFile(servicePath, linuxServiceFile(command), 'utf8');
+  await execFileAsync('systemctl', ['--user', 'stop', LEGACY_LINUX_SERVICE_NAME]).catch(() => undefined);
+  await execFileAsync('systemctl', ['--user', 'disable', LEGACY_LINUX_SERVICE_NAME]).catch(() => undefined);
+  await rm(linuxServicePath(LEGACY_LINUX_SERVICE_NAME), { force: true }).catch(() => undefined);
 
   const systemdMessage = await reloadAndEnableSystemdUserService();
   const status = await getLinuxStartupStatus();
@@ -189,10 +206,12 @@ async function enableLinuxStartup(command: string): Promise<StartupStatus> {
 }
 
 async function disableLinuxStartup(): Promise<StartupStatus> {
-  const servicePath = linuxServicePath();
-  await execFileAsync('systemctl', ['--user', 'stop', LINUX_SERVICE_NAME]).catch(() => undefined);
-  await execFileAsync('systemctl', ['--user', 'disable', LINUX_SERVICE_NAME]).catch(() => undefined);
-  await rm(servicePath, { force: true }).catch(() => undefined);
+  const servicePath = linuxServicePath(LINUX_SERVICE_NAME);
+  for (const serviceName of [LINUX_SERVICE_NAME, LEGACY_LINUX_SERVICE_NAME]) {
+    await execFileAsync('systemctl', ['--user', 'stop', serviceName]).catch(() => undefined);
+    await execFileAsync('systemctl', ['--user', 'disable', serviceName]).catch(() => undefined);
+    await rm(linuxServicePath(serviceName), { force: true }).catch(() => undefined);
+  }
   await execFileAsync('systemctl', ['--user', 'daemon-reload']).catch(() => undefined);
   return {
     supported: true,
@@ -202,14 +221,14 @@ async function disableLinuxStartup(): Promise<StartupStatus> {
   };
 }
 
-function linuxServicePath() {
-  return path.join(os.homedir(), '.config', 'systemd', 'user', LINUX_SERVICE_NAME);
+function linuxServicePath(serviceName: string) {
+  return path.join(os.homedir(), '.config', 'systemd', 'user', serviceName);
 }
 
 function linuxServiceFile(command: string) {
   return [
     '[Unit]',
-    'Description=Project Reika Agent Server',
+    'Description=Reika Node',
     'After=network-online.target',
     'Wants=network-online.target',
     '',
@@ -237,9 +256,9 @@ async function readExecStart(servicePath: string) {
   }
 }
 
-async function isSystemdUserServiceEnabled() {
+async function isSystemdUserServiceEnabled(serviceName: string) {
   try {
-    await execFileAsync('systemctl', ['--user', 'is-enabled', LINUX_SERVICE_NAME]);
+    await execFileAsync('systemctl', ['--user', 'is-enabled', serviceName]);
     return true;
   } catch (error) {
     const candidate = error as { code?: number; stderr?: string };

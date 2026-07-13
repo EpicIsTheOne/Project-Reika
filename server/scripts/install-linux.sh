@@ -2,8 +2,8 @@
 set -euo pipefail
 
 REPO_URL="${REIKA_REPO_URL:-https://github.com/EpicIsTheOne/Project-Reika.git}"
-INSTALL_DIR="${REIKA_AGENT_INSTALL_DIR:-$HOME/.agenthub/reika-agent-server}"
-BIN_DIR="${REIKA_AGENT_BIN_DIR:-$HOME/.local/bin}"
+INSTALL_DIR="${REIKA_NODE_INSTALL_DIR:-${REIKA_AGENT_INSTALL_DIR:-$HOME/.reika/reika-node}}"
+BIN_DIR="${REIKA_NODE_BIN_DIR:-${REIKA_AGENT_BIN_DIR:-$HOME/.local/bin}}"
 RELAY_URL=""
 PAIRING_CODE=""
 DEVICE_ID=""
@@ -12,14 +12,14 @@ ENABLE_STARTUP=1
 
 usage() {
   cat <<'EOF'
-Project Reika Agent Server Linux CLI installer
+Reika Node Linux CLI installer
 
 Usage:
   curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh | bash
   curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh | bash -s -- --code <code> --relay <url>
 
 Options:
-  --code <code>       Pairing code created in AgentHub.
+  --code <code>       Pairing code created in Reika.
   --relay <url>       Relay device WebSocket URL. Defaults to REIKA_RELAY_URL or the bundled server default.
   --device-id <id>    Override the generated device id.
   --install-only      Install the CLI wrapper without starting the agent.
@@ -27,17 +27,17 @@ Options:
   --help              Show this help.
 
 Installed command:
-  reika-agent-server --help
-  reika-agent-server pair --code <code> --relay <url>
-  reika-agent-server startup status
-  reika-agent-server startup enable --relay <url>
-  reika-agent-server startup disable
+  reika-node --help
+  reika-node pair --code <code> --relay <url>
+  reika-node startup status
+  reika-node startup enable --relay <url>
+  reika-node startup disable
 
 Linux pairing:
-  1. Create a pairing code in AgentHub.
+  1. Create a pairing code in Reika.
   2. Run this installer with --code and --relay.
   3. The installer enables startup automatically unless --no-startup is passed.
-  4. Approve the claimed device in AgentHub.
+  4. Approve the claimed node in Reika.
 EOF
 }
 
@@ -103,27 +103,29 @@ cd "$INSTALL_DIR/server"
 npm ci
 npm run build
 
-cat > "$BIN_DIR/reika-agent-server" <<EOF
+cat > "$BIN_DIR/reika-node" <<EOF
 #!/usr/bin/env bash
 cd "$INSTALL_DIR/server"
 exec node dist/main.js "\$@"
 EOF
-chmod +x "$BIN_DIR/reika-agent-server"
+chmod +x "$BIN_DIR/reika-node"
+ln -sf "$BIN_DIR/reika-node" "$BIN_DIR/reika-agent-server"
 
-echo "Installed reika-agent-server to $BIN_DIR/reika-agent-server"
+echo "Installed reika-node to $BIN_DIR/reika-node"
+echo "Legacy reika-agent-server command retained as a compatibility alias."
 
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-  echo "Note: add $BIN_DIR to PATH if reika-agent-server is not found in a new terminal."
+  echo "Note: add $BIN_DIR to PATH if reika-node is not found in a new terminal."
 fi
 
 if [[ "$ENABLE_STARTUP" -eq 1 ]]; then
   startup_args=(startup enable)
   if [[ -n "$RELAY_URL" ]]; then startup_args+=(--relay "$RELAY_URL"); fi
   if [[ -n "$DEVICE_ID" ]]; then startup_args+=(--device-id "$DEVICE_ID"); fi
-  if "$BIN_DIR/reika-agent-server" "${startup_args[@]}"; then
-    echo "Startup enabled. Use reika-agent-server startup disable to turn it off."
+  if "$BIN_DIR/reika-node" "${startup_args[@]}"; then
+    echo "Startup enabled. Use reika-node startup disable to turn it off."
   else
-    echo "Startup service could not be enabled automatically. Run reika-agent-server startup enable when systemd --user is available." >&2
+    echo "Startup service could not be enabled automatically. Run reika-node startup enable when systemd --user is available." >&2
   fi
 fi
 
@@ -136,7 +138,7 @@ if [[ -n "$PAIRING_CODE" ]]; then
   if [[ -n "$RELAY_URL" ]]; then args+=(--relay "$RELAY_URL"); fi
   if [[ -n "$DEVICE_ID" ]]; then args+=(--device-id "$DEVICE_ID"); fi
   args+=(--no-ui)
-  exec "$BIN_DIR/reika-agent-server" "${args[@]}"
+  exec "$BIN_DIR/reika-node" "${args[@]}"
 fi
 
-"$BIN_DIR/reika-agent-server" --help
+"$BIN_DIR/reika-node" --help

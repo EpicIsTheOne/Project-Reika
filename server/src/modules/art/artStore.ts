@@ -148,8 +148,8 @@ function reikaCategories(): ArtCategoryRecord[] {
       icon: 'portrait',
       selectionMode: 'random',
       selectedAssetId: portrait[0]?.id,
-      prompt: 'Anime-style portrait for an AgentHub agent, chat-ready composition, premium futuristic styling, dark navy and electric blue mood, clean facial focus, polished production quality. Use the attached references to preserve the specific agent identity, outfit, palette, and design language.',
-      systemPrompt: 'Keep the asset character-neutral in wording. Follow the provided reference images for the exact character identity while preserving AgentHub dark navy, electric blue, premium, cozy futuristic consistency.',
+      prompt: 'Anime-style portrait for an Reika agent, chat-ready composition, premium futuristic styling, dark navy and electric blue mood, clean facial focus, polished production quality. Use the attached references to preserve the specific agent identity, outfit, palette, and design language.',
+      systemPrompt: 'Keep the asset character-neutral in wording. Follow the provided reference images for the exact character identity while preserving Reika dark navy, electric blue, premium, cozy futuristic consistency.',
       assets: portrait
     }),
     category({
@@ -160,7 +160,7 @@ function reikaCategories(): ArtCategoryRecord[] {
       icon: 'avatar',
       selectionMode: 'single',
       selectedAssetId: 'art_reika_avatar_circle_main',
-      prompt: 'Circular avatar for an AgentHub agent, readable at small sizes, clean face crop, premium futuristic styling, strong silhouette, and crisp dark-UI contrast. Use references to match the intended agent identity.',
+      prompt: 'Circular avatar for an Reika agent, readable at small sizes, clean face crop, premium futuristic styling, strong silhouette, and crisp dark-UI contrast. Use references to match the intended agent identity.',
       systemPrompt: 'Keep the wording character-neutral. Prioritize face readability, clean silhouette, transparency-friendly framing, and strong contrast on dark interface surfaces.',
       assets: [
         asset('art_reika_avatar_circle_main', 'Main Avatar', 'reika.avatar', 'seed'),
@@ -176,7 +176,7 @@ function reikaCategories(): ArtCategoryRecord[] {
       icon: 'banner',
       selectionMode: 'single',
       selectedAssetId: 'art_reika_hero_room',
-      prompt: 'Wide cinematic hero banner for an AgentHub agent in a premium futuristic environment, dark navy and electric blue atmosphere, character-focused framing, and clean negative space for overlay text. Use references to match the intended agent and environment details.',
+      prompt: 'Wide cinematic hero banner for an Reika agent in a premium futuristic environment, dark navy and electric blue atmosphere, character-focused framing, and clean negative space for overlay text. Use references to match the intended agent and environment details.',
       systemPrompt: 'Keep the wording character-neutral. Composition must stay wide, polished, character-focused, and usable behind overlay text and UI chrome.',
       assets: [
         asset('art_reika_hero_room', 'Bedroom Hero', 'room.hero', 'generated'),
@@ -191,7 +191,7 @@ function reikaCategories(): ArtCategoryRecord[] {
       icon: 'loading',
       selectionMode: 'random',
       selectedAssetId: 'art_reika_loading_boot',
-      prompt: 'AgentHub loading screen artwork featuring an agent or agent-themed composition, premium dark navy and electric blue atmosphere, cinematic interface framing, and a strong focal point that supports the boot flow. Use references to preserve the intended agent identity when character art is present.',
+      prompt: 'Reika loading screen artwork featuring an agent or agent-themed composition, premium dark navy and electric blue atmosphere, cinematic interface framing, and a strong focal point that supports the boot flow. Use references to preserve the intended agent identity when character art is present.',
       systemPrompt: 'Keep the wording character-neutral. Leave clear room for progress UI, status copy, and boot overlays without losing visual balance.',
       assets: [
         asset('art_reika_loading_boot', 'Boot Backdrop', 'loading.bootBackdrop', 'generated'),
@@ -206,7 +206,7 @@ function reikaCategories(): ArtCategoryRecord[] {
       icon: 'expressions',
       selectionMode: 'random',
       selectedAssetId: expressions[0]?.id,
-      prompt: 'Expression set for an AgentHub agent with subtle emotional variations while preserving the exact character identity from the references, consistent styling, and premium dark-blue neon presentation.',
+      prompt: 'Expression set for an Reika agent with subtle emotional variations while preserving the exact character identity from the references, consistent styling, and premium dark-blue neon presentation.',
       systemPrompt: 'Keep the wording character-neutral. Preserve face, outfit, and overall design; only vary expression, gaze, and micro-pose.',
       assets: expressions
     }),
@@ -218,7 +218,7 @@ function reikaCategories(): ArtCategoryRecord[] {
       icon: 'room',
       selectionMode: 'random',
       selectedAssetId: 'art_reika_room_full',
-      prompt: 'Premium AgentHub environment background, cozy futuristic room or workspace, dark navy and electric blue lighting, cinematic atmosphere, and composition suitable behind interface panels.',
+      prompt: 'Premium Reika environment background, cozy futuristic room or workspace, dark navy and electric blue lighting, cinematic atmosphere, and composition suitable behind interface panels.',
       systemPrompt: 'Keep the wording character-neutral. Avoid busy foreground text and preserve readable UI overlays, depth, and visual calm.',
       assets: [
         asset('art_reika_room_full', 'Full Room Night', 'room.full', 'generated'),
@@ -234,7 +234,7 @@ function reikaCategories(): ArtCategoryRecord[] {
       icon: 'chibi',
       selectionMode: 'random',
       selectedAssetId: 'art_reika_chibi_main',
-      prompt: 'Cute chibi or compact mascot artwork for an AgentHub agent, expressive, readable, premium, and compatible with dark navy futuristic UI surfaces. Use references to preserve the intended character identity.',
+      prompt: 'Cute chibi or compact mascot artwork for an Reika agent, expressive, readable, premium, and compatible with dark navy futuristic UI surfaces. Use references to preserve the intended character identity.',
       systemPrompt: 'Keep the wording character-neutral. Make the mascot crisp, compact, transparent-background friendly where possible, and easy to read at small sizes.',
       assets: [
         asset('art_reika_chibi_main', 'Chibi Main', 'reika.chibi', 'generated'),
@@ -250,7 +250,7 @@ function reikaCategories(): ArtCategoryRecord[] {
       icon: 'bell',
       selectionMode: 'random',
       selectedAssetId: 'art_reika_notification_main',
-      prompt: 'Compact notification thumbnail for an AgentHub agent, clear face crop, premium futuristic styling, readable at small sizes, and visually clean inside dark glass notification cards. Use references to preserve the intended character identity.',
+      prompt: 'Compact notification thumbnail for an Reika agent, clear face crop, premium futuristic styling, readable at small sizes, and visually clean inside dark glass notification cards. Use references to preserve the intended character identity.',
       systemPrompt: 'Keep the wording character-neutral. Prioritize compact readability, emotional clarity, and strong contrast on dark UI surfaces.',
       assets: [
         asset('art_reika_notification_main', 'Main Notification', 'reika.avatar', 'seed'),
@@ -266,7 +266,7 @@ function reikaCategories(): ArtCategoryRecord[] {
       icon: 'splash',
       selectionMode: 'single',
       selectedAssetId: 'art_reika_splash_full',
-      prompt: 'Large splash or full-body illustration for an AgentHub agent, premium futuristic staging, cinematic dark navy and electric blue atmosphere, and polished production-asset quality. Use references to preserve the specific agent identity and design details.',
+      prompt: 'Large splash or full-body illustration for an Reika agent, premium futuristic staging, cinematic dark navy and electric blue atmosphere, and polished production-asset quality. Use references to preserve the specific agent identity and design details.',
       systemPrompt: 'Keep the wording character-neutral. Use a full composition with environmental context, clean silhouette, and presentation-ready balance.',
       assets: [
         asset('art_reika_splash_full', 'Full Splash', 'reika.splash', 'generated'),
@@ -281,7 +281,7 @@ function reikaCategories(): ArtCategoryRecord[] {
       icon: 'warning',
       selectionMode: 'single',
       selectedAssetId: 'art_reika_error_glow',
-      prompt: 'Offline or error-state artwork for an AgentHub agent, subtle holographic glitch language, warning accents, and premium readability that still feels polished and intentional. Use references to preserve the intended agent identity.',
+      prompt: 'Offline or error-state artwork for an Reika agent, subtle holographic glitch language, warning accents, and premium readability that still feels polished and intentional. Use references to preserve the intended agent identity.',
       systemPrompt: 'Keep the wording character-neutral. Communicate degraded or warning status without making the UI feel cheap, chaotic, or broken.',
       assets: [
         asset('art_reika_error_glow', 'Glitch Portrait', 'reika.expressions.thinking', 'seed'),
@@ -365,7 +365,7 @@ function defaultProfiles(): ArtProfileRecord[] {
       name: 'Global Assets',
       subtitle: 'Application-wide art',
       status: 'online',
-      providerLabel: 'AgentHub',
+      providerLabel: 'Reika',
       avatarAssetKey: 'brand.logo',
       defaultProfile: true,
       createdAt,
@@ -379,8 +379,8 @@ function defaultProfiles(): ArtProfileRecord[] {
           icon: 'loading',
           selectionMode: 'random',
           selectedAssetId: 'art_global_loading_boot',
-          prompt: 'Global AgentHub boot artwork in dark navy and electric blue, premium futuristic identity, and a composition that supports optional character or emblem-driven presentation.',
-          systemPrompt: 'Must match AgentHub loading UI and leave room for status rail and progress.',
+          prompt: 'Global Reika boot artwork in dark navy and electric blue, premium futuristic identity, and a composition that supports optional character or emblem-driven presentation.',
+          systemPrompt: 'Must match Reika loading UI and leave room for status rail and progress.',
           assets: [
             asset('art_global_loading_boot', 'Reika Boot Backdrop', 'loading.bootBackdrop', 'generated'),
             asset('art_global_loading_splash', 'Loading Splash', 'loading.background', 'generated')
@@ -394,7 +394,7 @@ function defaultProfiles(): ArtProfileRecord[] {
           icon: 'empty',
           selectionMode: 'random',
           selectedAssetId: 'art_global_empty_agents',
-          prompt: 'AgentHub empty-state illustration, compact helper or mascot-friendly composition, dark glass UI base, and clear blue accent styling.',
+          prompt: 'Reika empty-state illustration, compact helper or mascot-friendly composition, dark glass UI base, and clear blue accent styling.',
           systemPrompt: 'Should fit compact cards and avoid heavy background clutter.',
           assets: [
             asset('art_global_empty_agents', 'No Agents Connected', 'empty.noAgents', 'generated'),
@@ -410,7 +410,7 @@ function defaultProfiles(): ArtProfileRecord[] {
           icon: 'room',
           selectionMode: 'random',
           selectedAssetId: 'art_global_room_blur',
-          prompt: 'AgentHub dark navy glass background with premium futuristic room or ambient environmental styling, usable behind interface panels and overlays.',
+          prompt: 'Reika dark navy glass background with premium futuristic room or ambient environmental styling, usable behind interface panels and overlays.',
           systemPrompt: 'Support text readability and premium app shell consistency.',
           assets: [
             asset('art_global_room_blur', 'Blurred Room', 'room.blurred', 'generated'),
@@ -543,7 +543,7 @@ function agentIdentityPrompt(profile: ArtProfileRecord, categoryRecord: ArtCateg
     `Subject identity: ${baseName}.`,
     `Profile context: ${profile.subtitle}.`,
     'Reference lock: treat the attached character sheet as the source of truth. Preserve the same anime illustration style, apparent gender presentation, face shape, violet eyes, very long black hair with purple highlights, ornate black and purple gothic mission-control outfit, gold chain details, earrings, star/geometric hair accessories, ID tag/accessories, and elegant dark couture silhouette.',
-    'Do not redesign the character into a realistic person, a man, a corporate employee, a tactical uniform, a blue jacket, a generic AgentHub mascot, a glasses portrait, or a logo-first badge avatar. AgentHub UI styling may appear only as subtle background/interface framing; it must not replace the character design.',
+    'Do not redesign the character into a realistic person, a man, a corporate employee, a tactical uniform, a blue jacket, a generic Reika mascot, a glasses portrait, or a logo-first badge avatar. Reika UI styling may appear only as subtle background/interface framing; it must not replace the character design.',
     categoryRecord.prompt
   ].filter(Boolean).join('\n\n');
 }
@@ -624,7 +624,7 @@ export class ArtStore {
       name,
       subtitle: cleanName(input.subtitle, 'Draft art profile'),
       status: 'draft',
-      providerLabel: input.scope === 'global' ? 'AgentHub' : 'Custom',
+      providerLabel: input.scope === 'global' ? 'Reika' : 'Custom',
       avatarAssetKey: input.scope === 'global' ? 'brand.logo' : 'reika.avatar',
       createdAt: now,
       updatedAt: now,
@@ -679,8 +679,8 @@ export class ArtStore {
       usage: 'Custom',
       icon: 'custom',
       selectionMode: 'single',
-      prompt: `AgentHub ${name} artwork, dark navy, electric blue, premium futuristic style. Use references to preserve the intended agent or subject identity.`,
-      systemPrompt: 'Keep the wording character-neutral while preserving AgentHub visual consistency, subject identity from references, and production-ready composition.',
+      prompt: `Reika ${name} artwork, dark navy, electric blue, premium futuristic style. Use references to preserve the intended agent or subject identity.`,
+      systemPrompt: 'Keep the wording character-neutral while preserving Reika visual consistency, subject identity from references, and production-ready composition.',
       assets: []
     });
     profile.categories.push(newCategory);
@@ -956,7 +956,7 @@ export class ArtStore {
   private queueSave() {
     this.saveQueue = this.saveQueue.then(() => this.save()).catch((error) => {
       this.lastError = error instanceof Error ? error.message : String(error);
-      console.error(`Failed to save AgentHub art library: ${this.lastError}`);
+      console.error(`Failed to save Reika art library: ${this.lastError}`);
     });
   }
 

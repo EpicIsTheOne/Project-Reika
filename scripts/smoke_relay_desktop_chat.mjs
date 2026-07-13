@@ -57,7 +57,7 @@ async function main() {
     REIKA_RELAY_URL: relayDeviceUrl,
     VITE_REIKA_RELAY_URL: relayDeviceUrl,
     VITE_REIKA_RELAY_PROXY_TARGET: relayHttpUrl,
-    AGENTHUB_RELAY_TARGET: relayHttpUrl,
+    REIKA_RELAY_TARGET: relayHttpUrl,
     REIKA_RELAY_PORT: String(relayPort),
     REIKA_AGENT_PORT: String(agentPort),
     VITE_REIKA_AGENT_TARGET: `http://127.0.0.1:${agentPort}`,
@@ -90,8 +90,8 @@ async function main() {
     cwd: clientDir,
     env: {
       ...env,
-      AGENTHUB_DESKTOP_DEV: "1",
-      AGENTHUB_DESKTOP_DEV_URL: `http://127.0.0.1:${vitePort}`
+      REIKA_DESKTOP_DEV: "1",
+      REIKA_DESKTOP_DEV_URL: `http://127.0.0.1:${vitePort}`
     },
     label: "electron"
   });
