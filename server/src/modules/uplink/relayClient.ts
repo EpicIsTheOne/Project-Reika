@@ -157,7 +157,7 @@ export class RelayClient {
       return;
     }
 
-    if (parsed.type.startsWith('command.')) {
+    if (parsed.type.startsWith('command.') && parsed.type !== 'command.status.request') {
       this.events.emit('uplink.command_status', { type: parsed.type, replyTo: parsed.replyTo, payload: parsed.payload });
       return;
     }

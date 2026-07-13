@@ -16,6 +16,7 @@ const serverMain = read("server/src/main.ts");
 const dispatcher = read("server/src/modules/commands/dispatcher.ts");
 const chatView = read("client/src/features/chat/ChatView.tsx");
 const relayClient = read("client/src/data/relay.ts");
+const deviceUplink = read("server/src/modules/uplink/relayClient.ts");
 
 for (const forbidden of [
   "You are talking in AgentHub",
@@ -35,6 +36,11 @@ for (const forbidden of [
 assert(
   dispatcher.includes("message: payload.message"),
   "Relay dispatcher should pass the user message through unchanged."
+);
+
+assert(
+  deviceUplink.includes("parsed.type !== 'command.status.request'"),
+  "Device uplink must dispatch command.status.request for durable restart recovery."
 );
 
 assert(
