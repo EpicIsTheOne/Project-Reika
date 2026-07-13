@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { mapDevice } from "../src/data/api";
 import { resolveAgentVoice, shouldSpeakAgentReply } from "../src/lib/voicePlayback";
 import type { ReikaSettings } from "../src/lib/reikaApi";
 
@@ -48,5 +49,42 @@ assert.equal(shouldSpeakAgentReply(inheritedAgent.key, settings), true);
 delete settings.voice.agents[inheritedAgent.key];
 settings.voice.defaultVoice = { provider: "system", voiceId: "", voiceLabel: "" };
 assert.equal(resolveAgentVoice({ ...inheritedAgent, voiceId: "" }, settings).source, "fallback");
+
+const mappedAgent = mapDevice({
+  id: "device",
+  name: "Device",
+  type: "server",
+  status: "online",
+  location: "remote",
+  lastSeenAt: new Date(0).toISOString(),
+  agentVersion: "test",
+  providers: [{
+    id: "commandcenter",
+    deviceId: "device",
+    kind: "commandcenter",
+    name: "CommandCenter",
+    status: "online",
+    lastSeenAt: new Date(0).toISOString(),
+    capabilities: ["voice"],
+    remote: true,
+    agents: [{
+      id: "orchestrator",
+      providerId: "commandcenter",
+      deviceId: "device",
+      name: "Astra",
+      role: "orchestrator",
+      status: "online",
+      capabilities: ["voice"],
+      updatedAt: new Date(0).toISOString(),
+      voiceProvider: "fish",
+      voiceId: "exact-inherited-id",
+      voiceLabel: "Exact inherited voice",
+      voiceAvailable: true
+    }]
+  }]
+} as never).providers[0]?.agents[0];
+assert.equal(mappedAgent?.voiceProvider, "fish");
+assert.equal(mappedAgent?.voiceId, "exact-inherited-id");
+assert.equal(mappedAgent?.voiceLabel, "Exact inherited voice");
 
 console.log("voice resolution contracts passed");

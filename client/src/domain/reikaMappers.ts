@@ -63,7 +63,12 @@ export function mapReikaProvider(provider: ReikaProviderRecord, deviceId: string
       role: String(agent.role || agent.source || agent.model || provider.name),
       status: mapProviderStatus(provider.status),
       lastActivity: provider.notes || "Detected by Reika server",
-      characterId: inferAgentCharacterId(agent, provider)
+      characterId: inferAgentCharacterId(agent, provider),
+      voiceProvider: typeof agent.voiceProvider === "string" ? agent.voiceProvider : undefined,
+      voiceId: typeof agent.voiceId === "string" ? agent.voiceId : undefined,
+      voiceLabel: typeof agent.voiceLabel === "string" ? agent.voiceLabel : undefined,
+      voiceAvailable: typeof agent.voiceAvailable === "boolean" ? agent.voiceAvailable : undefined,
+      voiceSettings: isVoiceSettings(agent.voiceSettings) ? agent.voiceSettings : undefined
     }))
   };
 }
@@ -285,7 +290,12 @@ export function mapRelayAgent(agent: RelayDeviceRecord["agents"][number], fallba
     lastActivity: agent.lastActivity ?? "Relay roster",
     characterId: agent.characterId,
     relayAgentId: agent.id,
-    relayProviderId: agent.providerId
+    relayProviderId: agent.providerId,
+    voiceProvider: agent.voiceProvider,
+    voiceId: agent.voiceId,
+    voiceLabel: agent.voiceLabel,
+    voiceAvailable: agent.voiceAvailable,
+    voiceSettings: agent.voiceSettings
   };
 }
 
@@ -327,6 +337,10 @@ function getRelayOriginalProviderId(value: { providerId?: string; id?: string; r
 
 function getRelayOriginalAgentId(value: { id?: string; relayAgentId?: unknown }) {
   return typeof value.relayAgentId === "string" && value.relayAgentId ? value.relayAgentId : value.id ?? "";
+}
+
+function isVoiceSettings(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function providerNameToKind(name: Provider["name"]): ReikaProviderKind {

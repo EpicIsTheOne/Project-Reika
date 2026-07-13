@@ -57,7 +57,12 @@ function mapProvider(provider: AgentHubProvider, deviceStatus: Device["status"] 
       role: agent.role,
       status: providerStatus === "online" ? agent.status : "offline",
       lastActivity: agent.lastActivity ?? "Discovered by backend",
-      characterId: agent.characterId
+      characterId: agent.characterId,
+      voiceProvider: agent.voiceProvider,
+      voiceId: agent.voiceId,
+      voiceLabel: agent.voiceLabel,
+      voiceAvailable: agent.voiceAvailable,
+      voiceSettings: agent.voiceSettings
     }))
   };
 }
