@@ -57,7 +57,7 @@ export function MemoryView() {
     }
   };
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => { void syncDiscovery(true); }, []);
 
   useEffect(() => {
     if ((tab !== "recent" && tab !== "global") || !query.trim()) {
@@ -73,12 +73,12 @@ export function MemoryView() {
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [query, tab]);
 
-  const syncDiscovery = async () => {
+  const syncDiscovery = async (silent = false) => {
     setBusy(true);
     setNotice(null);
     try {
       const result = await syncMemoryMeshDiscovery();
-      setNotice(result.discovery.warning || `Discovery synced ${result.discovery.syncedRelayDevices} relay device${result.discovery.syncedRelayDevices === 1 ? "" : "s"}.`);
+      if (result.discovery.warning || !silent) setNotice(result.discovery.warning || `Discovery synced ${result.discovery.syncedRelayDevices} relay device${result.discovery.syncedRelayDevices === 1 ? "" : "s"}.`);
       await refresh();
     } catch (syncError) {
       setError(syncError instanceof Error ? syncError.message : String(syncError));
@@ -112,7 +112,7 @@ export function MemoryView() {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search memory mesh..." />
             <Search size={18} />
           </label>
-          <button className="secondary-action small" onClick={syncDiscovery} disabled={busy}>
+          <button className="secondary-action small" onClick={() => void syncDiscovery(false)} disabled={busy}>
             <RefreshCw size={18} className={busy ? "spin" : ""} />
             Sync discovery
           </button>
