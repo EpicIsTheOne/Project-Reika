@@ -20,6 +20,7 @@ import type {
   RouteDecision,
   RoutingTask
 } from './types.js';
+import type { ProjectDiscoverySnapshotPayload } from '../../shared/protocol/messages.js';
 
 const defaultStorePath = join(homedir(), '.local', 'share', 'project-reika', 'memory-mesh.sqlite');
 
@@ -147,11 +148,12 @@ export class MemoryMeshStore {
     const existing = this.getProject(id);
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO mesh_projects (id, name, aliases_json, description, status, repository_url, technology_stack_json, permissions_json, primary_agent_id, primary_device_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO mesh_projects (id, name, aliases_json, description, status, repository_url, technology_stack_json, permissions_json, primary_agent_id, primary_device_id, created_at, updated_at, discovery_origin, discovery_confidence, last_discovered_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name, aliases_json=excluded.aliases_json, description=excluded.description, status=excluded.status,
         repository_url=excluded.repository_url, technology_stack_json=excluded.technology_stack_json, permissions_json=excluded.permissions_json,
-        primary_agent_id=excluded.primary_agent_id, primary_device_id=excluded.primary_device_id, updated_at=excluded.updated_at
+        primary_agent_id=excluded.primary_agent_id, primary_device_id=excluded.primary_device_id, updated_at=excluded.updated_at,
+        discovery_origin=excluded.discovery_origin, discovery_confidence=excluded.discovery_confidence, last_discovered_at=excluded.last_discovered_at
     `).run(
       id,
       cleanText(input.name) || existing?.name || id,
@@ -164,7 +166,10 @@ export class MemoryMeshStore {
       optionalText(input.primaryAgentId ?? existing?.primaryAgentId) ?? null,
       optionalText(input.primaryDeviceId ?? existing?.primaryDeviceId) ?? null,
       existing?.createdAt ?? now,
-      now
+      now,
+      input.origin ?? existing?.origin ?? 'manual',
+      input.discoveryConfidence ?? existing?.discoveryConfidence ?? null,
+      input.lastDiscoveredAt ?? existing?.lastDiscoveredAt ?? null
     );
     return this.getProject(id)!;
   }
@@ -172,7 +177,8 @@ export class MemoryMeshStore {
   updateProject(id: string, input: Partial<MeshProject>) {
     const existing = this.getProject(id);
     if (!existing) return undefined;
-    return this.createProject({ ...existing, ...input, id, name: input.name ?? existing.name });
+    const origin = input.origin ?? (existing.origin === 'discovered' ? 'mixed' : existing.origin);
+    return this.createProject({ ...existing, ...input, origin, id, name: input.name ?? existing.name });
   }
 
   deleteProject(id: string) {
@@ -196,18 +202,75 @@ export class MemoryMeshStore {
     return this.getProject(projectId);
   }
 
-  assignDeviceToProject(projectId: string, deviceId: string, options: { isPrimary?: boolean; path?: string } = {}) {
+  assignDeviceToProject(projectId: string, deviceId: string, options: { isPrimary?: boolean; path?: string; source?: 'manual' | 'discovered'; status?: 'active' | 'stale'; branch?: string; lastSeenAt?: string } = {}) {
     this.requireProject(projectId);
     if (!this.getDevice(deviceId)) throw new Error(`Device not found: ${deviceId}`);
     const primary = options.isPrimary ? 1 : 0;
     this.db.prepare(`INSERT INTO mesh_project_devices (project_id, device_id, is_primary) VALUES (?, ?, ?)
       ON CONFLICT(project_id, device_id) DO UPDATE SET is_primary=excluded.is_primary`).run(projectId, deviceId, primary);
     if (options.path?.trim()) {
-      this.db.prepare(`INSERT INTO mesh_project_paths (project_id, device_id, local_path, is_primary) VALUES (?, ?, ?, ?)
-        ON CONFLICT(project_id, device_id, local_path) DO UPDATE SET is_primary=excluded.is_primary`).run(projectId, deviceId, options.path.trim(), primary);
+      this.db.prepare(`INSERT INTO mesh_project_paths (project_id, device_id, local_path, is_primary, source, status, branch, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(project_id, device_id, local_path) DO UPDATE SET is_primary=excluded.is_primary,
+          source=CASE WHEN mesh_project_paths.source = 'manual' THEN 'manual' ELSE excluded.source END,
+          status=excluded.status, branch=excluded.branch, last_seen_at=excluded.last_seen_at`)
+        .run(projectId, deviceId, options.path.trim(), primary, options.source ?? 'manual', options.status ?? 'active', options.branch ?? null, options.lastSeenAt ?? null);
     }
     if (primary) this.db.prepare('UPDATE mesh_projects SET primary_device_id = ?, updated_at = ? WHERE id = ?').run(deviceId, new Date().toISOString(), projectId);
     return this.getProject(projectId)!;
+  }
+
+  reconcileProjectDiscovery(snapshot: ProjectDiscoverySnapshotPayload) {
+    const activeKeys = new Set<string>();
+    let created = 0;
+    let updated = 0;
+    let stale = 0;
+    this.transaction(() => {
+      for (const entry of snapshot.projects) {
+        const sameRepository = entry.repositoryUrl
+          ? this.db.prepare('SELECT id FROM mesh_projects WHERE LOWER(repository_url) = LOWER(?) LIMIT 1').get(entry.repositoryUrl) as Row | undefined
+          : undefined;
+        const existing = this.getProject(String(sameRepository?.id || entry.projectId));
+        const projectId = existing?.id || entry.projectId;
+        activeKeys.add(`${projectId}\u0000${entry.path}`);
+        const origin = existing ? existing.origin === 'discovered' ? 'discovered' : 'mixed' : 'discovered';
+        const preserveManual = existing?.origin === 'manual' || existing?.origin === 'mixed';
+        const project = this.createProject({
+          id: projectId,
+          name: preserveManual ? existing!.name : entry.name,
+          aliases: Array.from(new Set([...(existing?.aliases || []), ...entry.aliases])),
+          description: preserveManual && existing!.description ? existing!.description : entry.description,
+          repositoryUrl: existing?.repositoryUrl || entry.repositoryUrl,
+          technologyStack: Array.from(new Set([...(existing?.technologyStack || []), ...entry.technologyStack])),
+          permissions: existing?.permissions || [],
+          status: 'active', origin, discoveryConfidence: entry.confidence, lastDiscoveredAt: snapshot.scannedAt
+        });
+        this.assignDeviceToProject(project.id, snapshot.deviceId, {
+          isPrimary: project.deviceAssignments.length === 0,
+          path: entry.path,
+          source: 'discovered', status: 'active', branch: entry.branch, lastSeenAt: snapshot.scannedAt
+        });
+        if (snapshot.defaultAgentId && this.getAgent(snapshot.defaultAgentId)?.deviceId === snapshot.deviceId && !project.agentAssignments.some((assignment) => assignment.agentId === snapshot.defaultAgentId)) {
+          this.assignAgentToProject(project.id, snapshot.defaultAgentId, { role: project.agentAssignments.length ? 'collaborator' : 'primary', access: 'read_write' });
+        }
+        if (existing) updated += 1; else created += 1;
+      }
+
+      if (snapshot.complete !== false) {
+        const discoveredPaths = this.db.prepare("SELECT project_id, local_path FROM mesh_project_paths WHERE device_id = ? AND source = 'discovered' AND status = 'active'").all(snapshot.deviceId) as Row[];
+        for (const path of discoveredPaths) {
+          const key = `${String(path.project_id)}\u0000${String(path.local_path)}`;
+          if (activeKeys.has(key)) continue;
+          if ((snapshot.skippedPaths || []).some((prefix) => pathWithin(String(path.local_path), prefix))) continue;
+          this.db.prepare("UPDATE mesh_project_paths SET status = 'stale' WHERE project_id = ? AND device_id = ? AND local_path = ?")
+            .run(String(path.project_id), snapshot.deviceId, String(path.local_path));
+          stale += 1;
+        }
+      }
+      this.db.exec(`UPDATE mesh_projects SET status = 'stale' WHERE discovery_origin IN ('discovered', 'mixed') AND id NOT IN (
+        SELECT project_id FROM mesh_project_paths WHERE status = 'active'
+      )`);
+    });
+    return { deviceId: snapshot.deviceId, scannedAt: snapshot.scannedAt, discovered: snapshot.projects.length, created, updated, stale };
   }
 
   unassignDeviceFromProject(projectId: string, deviceId: string) {
@@ -346,7 +409,7 @@ export class MemoryMeshStore {
       const agent = this.getAgent(assignment.agentId);
       if (!agent) return { agentId: assignment.agentId, eligible: false, score: 0, reasons: ['Agent registry record is missing.'] };
       const device = this.getDevice(agent.deviceId);
-      const paths = project.paths.filter((path) => path.deviceId === agent.deviceId);
+      const paths = project.paths.filter((path) => path.deviceId === agent.deviceId && path.status === 'active');
       const reasons: string[] = [];
       let score = 0;
       const missing = required.filter((capability) => !agent.capabilities.map(normalizeSearch).includes(capability));
@@ -369,7 +432,7 @@ export class MemoryMeshStore {
     if (!winner) return { status: 'unavailable', project, executeLocally: false, reasons: ['No assigned agent currently satisfies the capability, permission, device, path, and online checks.'], considered };
     const agent = this.getAgent(winner.agentId)!;
     const device = this.getDevice(agent.deviceId)!;
-    const localPath = project.paths.find((path) => path.deviceId === device.id && path.isPrimary)?.path ?? project.paths.find((path) => path.deviceId === device.id)?.path;
+    const localPath = project.paths.find((path) => path.deviceId === device.id && path.status === 'active' && path.isPrimary)?.path ?? project.paths.find((path) => path.deviceId === device.id && path.status === 'active')?.path;
     const approvalRequired = project.permissions.includes('route:approval') || agent.permissions.includes('route:approval');
     const approvalReason = approvalRequired ? `${project.name} requires user approval before delegated work begins.` : undefined;
     return {
@@ -487,6 +550,9 @@ export class MemoryMeshStore {
       permissions: parseList(row.permissions_json),
       primaryAgentId: optionalText(row.primary_agent_id),
       primaryDeviceId: optionalText(row.primary_device_id),
+      origin: row.discovery_origin === 'discovered' || row.discovery_origin === 'mixed' ? row.discovery_origin : 'manual',
+      discoveryConfidence: row.discovery_confidence === 'explicit' || row.discovery_confidence === 'high' || row.discovery_confidence === 'medium' ? row.discovery_confidence : undefined,
+      lastDiscoveredAt: optionalText(row.last_discovered_at),
       paths,
       agentAssignments,
       deviceAssignments,
@@ -598,6 +664,21 @@ export class MemoryMeshStore {
         this.db.prepare('INSERT INTO mesh_schema_migrations (version, applied_at) VALUES (2, ?)').run(new Date().toISOString());
       });
     }
+    if (version < 3) {
+      this.transaction(() => {
+        this.db.exec(`
+          ALTER TABLE mesh_projects ADD COLUMN discovery_origin TEXT NOT NULL DEFAULT 'manual';
+          ALTER TABLE mesh_projects ADD COLUMN discovery_confidence TEXT;
+          ALTER TABLE mesh_projects ADD COLUMN last_discovered_at TEXT;
+          ALTER TABLE mesh_project_paths ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
+          ALTER TABLE mesh_project_paths ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+          ALTER TABLE mesh_project_paths ADD COLUMN branch TEXT;
+          ALTER TABLE mesh_project_paths ADD COLUMN last_seen_at TEXT;
+          CREATE INDEX mesh_project_paths_device_status_idx ON mesh_project_paths(device_id, status);
+        `);
+        this.db.prepare('INSERT INTO mesh_schema_migrations (version, applied_at) VALUES (3, ?)').run(new Date().toISOString());
+      });
+    }
   }
 }
 
@@ -609,7 +690,7 @@ function mapDevice(row: Row): MeshDevice {
   return { id: String(row.id), name: String(row.name), operatingSystem: String(row.operating_system), status: cleanStatus(row.status), availableProviders: parseList(row.available_providers_json), availableTools: parseList(row.available_tools_json), relayEndpoint: optionalText(row.relay_endpoint), lastSeenAt: optionalText(row.last_seen_at), createdAt: String(row.created_at), updatedAt: String(row.updated_at) };
 }
 
-function mapProjectPath(row: Row): ProjectPath { return { projectId: String(row.project_id), deviceId: String(row.device_id), path: String(row.local_path), isPrimary: Number(row.is_primary) === 1 }; }
+function mapProjectPath(row: Row): ProjectPath { return { projectId: String(row.project_id), deviceId: String(row.device_id), path: String(row.local_path), isPrimary: Number(row.is_primary) === 1, source: row.source === 'discovered' ? 'discovered' : 'manual', status: row.status === 'stale' ? 'stale' : 'active', branch: optionalText(row.branch), lastSeenAt: optionalText(row.last_seen_at) }; }
 function mapProjectAgentAssignment(row: Row): ProjectAgentAssignment { return { projectId: String(row.project_id), agentId: String(row.agent_id), role: row.role === 'primary' ? 'primary' : 'collaborator', access: row.access === 'read_only' ? 'read_only' : 'read_write' }; }
 function mapProjectDeviceAssignment(row: Row): ProjectDeviceAssignment { return { projectId: String(row.project_id), deviceId: String(row.device_id), isPrimary: Number(row.is_primary) === 1 }; }
 
@@ -685,6 +766,11 @@ function overlapScore(left: string[], right: string[]) {
 function uniqueById(value: MemoryRecord, index: number, array: MemoryRecord[]) { return array.findIndex((item) => item.id === value.id) === index; }
 function tokens(value: string) { return normalizeSearch(value).split(/[^a-z0-9]+/u).filter((part) => part.length > 1); }
 function normalizeSearch(value: unknown) { return String(value || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' '); }
+function pathWithin(path: string, prefix: string) {
+  const normalizedPath = path.replace(/\\/g, '/').replace(/\/$/u, '').toLowerCase();
+  const normalizedPrefix = prefix.replace(/\\/g, '/').replace(/\/$/u, '').toLowerCase();
+  return normalizedPath === normalizedPrefix || normalizedPath.startsWith(`${normalizedPrefix}/`);
+}
 function slug(value: string) { return normalizeSearch(value).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 function cleanText(value: unknown) { return String(value ?? '').trim(); }
 function cleanId(value: unknown) { const id = cleanText(value); if (!id) throw new Error('ID is required.'); return id; }

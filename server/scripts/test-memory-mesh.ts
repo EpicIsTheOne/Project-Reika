@@ -102,6 +102,37 @@ try {
   assert.equal(updated?.version, 2, 'memory edits retain version history metadata');
   assert.equal(store.deleteMemory(updated!.id), true, 'user can delete an incorrect memory');
 
+  const discovered = store.reconcileProjectDiscovery({
+    deviceId: 'server-b', scannedAt: '2026-07-13T12:00:00.000Z', complete: true, roots: ['/srv'], defaultAgentId: 'astra',
+    projects: [{
+      projectId: 'project-shared-a', identityKey: 'git:https://example.test/epic/shared', name: 'Shared Project', description: 'Discovered project.', aliases: [],
+      path: '/srv/shared', repositoryUrl: 'https://example.test/epic/shared.git', branch: 'main', technologyStack: ['TypeScript'], source: 'git', confidence: 'high', discoveredAt: '2026-07-13T12:00:00.000Z'
+    }]
+  });
+  assert.equal(discovered.created, 1, 'project discovery creates a new registry project');
+  const shared = store.getProject('project-shared-a')!;
+  assert.equal(shared.origin, 'discovered');
+  assert.equal(shared.paths[0]?.status, 'active');
+  assert.equal(shared.paths[0]?.branch, 'main');
+  assert(shared.agentAssignments.some((assignment) => assignment.agentId === 'astra'), 'configured default agent is assigned');
+  store.updateProject(shared.id, { name: 'Epic Shared Project', description: 'Manual description wins.' });
+  assert.equal(store.getProject(shared.id)?.origin, 'mixed', 'manual edits mark discovered projects as mixed');
+  store.reconcileProjectDiscovery({
+    deviceId: 'desktop-a', scannedAt: '2026-07-13T12:05:00.000Z', complete: true, roots: ['C:\\Projects'],
+    projects: [{
+      projectId: 'different-device-id', identityKey: 'git:https://example.test/epic/shared', name: 'Shared Project Clone', description: 'Should not replace manual data.', aliases: ['Shared'],
+      path: 'C:\\Projects\\shared', repositoryUrl: 'https://example.test/epic/shared.git', branch: 'feature', technologyStack: ['Electron'], source: 'git', confidence: 'high', discoveredAt: '2026-07-13T12:05:00.000Z'
+    }]
+  });
+  const mergedShared = store.getProject(shared.id)!;
+  assert.equal(mergedShared.name, 'Epic Shared Project', 'manual project name survives later scans');
+  assert.equal(mergedShared.paths.length, 2, 'same repository merges device-qualified paths');
+  assert.deepEqual(mergedShared.technologyStack.sort(), ['Electron', 'TypeScript'], 'discovery safely enriches stack metadata');
+  store.reconcileProjectDiscovery({ deviceId: 'server-b', scannedAt: '2026-07-13T12:09:00.000Z', complete: true, roots: ['/srv'], skippedPaths: ['/srv'], projects: [] });
+  assert.equal(store.getProject(shared.id)?.paths.find((path) => path.deviceId === 'server-b')?.status, 'active', 'skipped subtrees do not stale prior paths');
+  store.reconcileProjectDiscovery({ deviceId: 'server-b', scannedAt: '2026-07-13T12:10:00.000Z', complete: true, roots: ['/srv'], projects: [] });
+  assert.equal(store.getProject(shared.id)?.paths.find((path) => path.deviceId === 'server-b')?.status, 'stale', 'missing discovered paths become stale');
+
   store.updateAgentStatus('astra', 'online');
   const toolRuntime = new ReikaMemoryToolRuntime(store, {
     delegateTask: async (input) => store.createRoutingTask({
@@ -150,7 +181,7 @@ try {
   assert.equal(persistenceReader.getRoutingTask(interrupted.id)?.progress, 'Queued for restart recovery.', 'restart recovery is explicitly identified');
   persistenceReader.close();
 
-  console.log('Memory Mesh focused tests passed: registry, scope isolation, project resolution, permissions, tools, routing, cancellation, persistence, and promotion.');
+  console.log('Memory Mesh focused tests passed: registry, discovery reconciliation, scope isolation, project resolution, permissions, tools, routing, cancellation, persistence, and promotion.');
 } finally {
   store.close();
   rmSync(root, { recursive: true, force: true });

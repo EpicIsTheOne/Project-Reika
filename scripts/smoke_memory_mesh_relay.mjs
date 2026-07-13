@@ -24,7 +24,7 @@ mkdirSync(stateDir, { recursive: true });
 
 try {
   await main();
-  console.log("Memory Mesh relay smoke passed: natural chat resolution, remote selection, websocket execution, lifecycle metadata, correlated result, and project-memory writeback.");
+  console.log("Memory Mesh relay smoke passed: remote project discovery, natural chat resolution, remote selection, websocket execution, lifecycle metadata, correlated result, and project-memory writeback.");
 } finally {
   deviceSocket?.close();
   await stopProcesses();
@@ -69,19 +69,11 @@ async function main() {
   assert(remoteAgent, "Remote Astra registry record is missing.");
   assert(remoteDevice?.status === "online", "Remote device is not online in Memory Mesh.");
   assert(localDevice, "Local source device is missing.");
-
-  const project = (await jsonFetch(`${agentHttpUrl}/memory-mesh/projects`, {
-    method: "POST",
-    body: JSON.stringify({ id: `${smokeId}-project`, name: "Remote Mesh Project", aliases: ["RMP"], description: "Relay smoke project." })
-  })).project;
-  await jsonFetch(`${agentHttpUrl}/memory-mesh/projects/${project.id}/agents`, {
-    method: "POST",
-    body: JSON.stringify({ agentId: remoteAgent.id, role: "primary", access: "read_write" })
-  });
-  await jsonFetch(`${agentHttpUrl}/memory-mesh/projects/${project.id}/devices`, {
-    method: "POST",
-    body: JSON.stringify({ deviceId, isPrimary: true, path: "/srv/remote-mesh-project" })
-  });
+  const project = overview.projects.find((item) => item.id === `${smokeId}-project`);
+  assert(project, "Remote project snapshot was not reconciled into Memory Mesh.");
+  assert(project.origin === "discovered", "Remote discovered project provenance is missing.");
+  assert(project.paths.some((item) => item.deviceId === deviceId && item.path === "/srv/remote-mesh-project" && item.status === "active"), "Remote discovered project path is missing.");
+  assert(project.agentAssignments.some((item) => item.agentId === remoteAgent.id && item.access === "read_write"), "Remote default project agent was not assigned.");
   await jsonFetch(`${agentHttpUrl}/memory-mesh/memories`, {
     method: "POST",
     body: JSON.stringify({
@@ -212,6 +204,27 @@ async function connectMockDevice(pairingCode) {
   }];
   sendEnvelope(socket, "device.provider.snapshot", { deviceId, activeProviderId: providerId, providers });
   sendEnvelope(socket, "agent.roster.snapshot", { deviceId, providerId, agents: providers[0].agents.map((agent) => ({ ...agent, providerId, deviceId })) });
+  sendEnvelope(socket, "device.project.snapshot", {
+    deviceId,
+    scannedAt: new Date().toISOString(),
+    complete: true,
+    roots: ["/srv"],
+    defaultAgentId: `${deviceId}:${providerId}:${astraId}`,
+    projects: [{
+      projectId: `${smokeId}-project`,
+      identityKey: `git:https://example.test/${smokeId}/remote-mesh-project`,
+      name: "Remote Mesh Project",
+      description: "Relay smoke project discovered on Linux.",
+      aliases: ["RMP"],
+      path: "/srv/remote-mesh-project",
+      repositoryUrl: `https://example.test/${smokeId}/remote-mesh-project.git`,
+      branch: "main",
+      technologyStack: ["TypeScript"],
+      source: "git",
+      confidence: "high",
+      discoveredAt: new Date().toISOString()
+    }]
+  });
   socket.addEventListener("message", (event) => {
     void (async () => {
     const envelope = JSON.parse(await readSocketData(event.data));

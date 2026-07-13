@@ -58,6 +58,7 @@ Implemented:
 - local development endpoints for health/state/providers/uplink/events
 - local Agent Art Studio endpoints for art profiles, categories, prompts, uploads, references, saved image auth, and OpenAI-backed image generation
 - SQLite-backed Memory Mesh registries, scoped memory permissions, project resolution, and explainable local/relay task routing
+- automatic bounded Windows/Linux project discovery with cross-device Git identity, relay manifests, stale-path safety, and manual-metadata preservation
 - provider-independent `reika.*` memory/discovery/routing tools with OpenAI, Command Center, and Hermes schema adapters
 - natural chat delegation with visible lifecycle, cancellation, result correlation, and sourced project-memory writeback
 - tested outbound connection against the dev relay

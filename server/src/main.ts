@@ -13,6 +13,7 @@ import { ReikaMemoryToolRuntime, createReikaToolCall, reikaMemoryToolDefinitions
 import type { MemoryAccessContext, MemoryRecord, MeshAgent, MeshDevice, MeshProject, ReikaMemoryToolName, RouteDecision, RoutingTask } from './modules/memoryMesh/types.js';
 import { findProvider, getProviderHistoryMessages, listProviderHistorySessions, runProviderChat, type ProviderChatEvent, type ProviderChatMessage, type ProviderHistoryMessage, type ProviderHistorySession } from './modules/provider/providerRuntime.js';
 import { SettingsStore } from './modules/settings/settingsStore.js';
+import { scanProjects } from './modules/projectDiscovery/projectScanner.js';
 import { SessionStore, type ChatMessageRecord, type ChatSessionRecord } from './modules/session/sessionStore.js';
 import { RelayClient } from './modules/uplink/relayClient.js';
 import { applyGitHubUpdate, getUpdateStatus, updateTargetsEnabled } from './modules/update/updateService.js';
@@ -21,6 +22,7 @@ import { shouldOpenPairingUi } from './platform/runtime.js';
 import { disableStartup, enableStartup, formatStartupStatus, getStartupStatus } from './platform/startup.js';
 import { pairingPage } from './ui/pairingPage.js';
 import { createEnvelope, type AgentHubMessageType } from './shared/protocol/envelope.js';
+import type { ProjectDiscoverySnapshotPayload } from './shared/protocol/messages.js';
 
 type ChatMessage = ChatMessageRecord;
 type ChatSession = ChatSessionRecord;
@@ -210,6 +212,8 @@ const recoverAgentChat = async (input: { providerId: string; agent: string; sess
 };
 const dispatcher = new CommandDispatcher(state, deviceEndpoint, handleAgentChat, undefined, recoverAgentChat);
 const relayClient = new RelayClient(state, events, handleAgentChat, recoverAgentChat);
+let projectDiscoveryTimer: NodeJS.Timeout | undefined;
+let projectDiscoveryInFlight: Promise<Awaited<ReturnType<typeof scanProjects>>> | undefined;
 
 events.emit('server.boot', { serviceName: serverConfig.serviceName });
 
@@ -238,6 +242,7 @@ async function boot() {
   } else {
     void autoPairLocalRelay();
   }
+  void syncMemoryMeshDiscovery().finally(scheduleProjectDiscovery);
   events.emit('server.ready', fullSnapshot());
   void runConfiguredUpdateCheck();
 }
@@ -337,7 +342,8 @@ async function relayFetch<T = unknown>(baseUrl: string, path: string, method = '
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body)
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(5_000)
   });
   const payload = await response.json().catch(() => undefined) as T & { error?: string; ok?: boolean };
   if (!response.ok || payload?.ok === false) throw new Error(payload?.error || `Relay request failed (${response.status}).`);
@@ -391,11 +397,13 @@ function syncLocalStateToMemoryMesh() {
 
 async function syncMemoryMeshDiscovery() {
   syncLocalStateToMemoryMesh();
+  const localProjects = await runLocalProjectDiscovery();
   const baseUrl = relayApiBaseUrl(settings.get().relayUrl);
-  if (!baseUrl) return { syncedLocal: true, syncedRelayDevices: 0, warning: 'Relay URL is not usable for HTTP discovery.' };
+  if (!baseUrl) return { syncedLocal: true, syncedRelayDevices: 0, syncedProjects: localProjects.snapshot.projects.length, warnings: localProjects.warnings, warning: 'Relay URL is not usable for HTTP discovery.' };
   try {
-    const response = await relayFetch<{ devices?: Array<{ device?: Record<string, unknown>; socketConnected?: boolean; lastHeartbeatAt?: string }> }>(baseUrl, '/devices');
+    const response = await relayFetch<{ devices?: Array<{ device?: Record<string, unknown>; socketConnected?: boolean; lastHeartbeatAt?: string; projectSnapshot?: ProjectDiscoverySnapshotPayload }> }>(baseUrl, '/devices');
     let syncedRelayDevices = 0;
+    let syncedProjects = localProjects.snapshot.projects.length;
     for (const record of response.devices || []) {
       const device = record.device || {};
       const deviceId = String(device.id || '').trim();
@@ -435,12 +443,39 @@ async function syncMemoryMeshDiscovery() {
           });
         }
       }
+      if (deviceId !== localProjects.snapshot.deviceId && record.projectSnapshot?.deviceId === deviceId && Array.isArray(record.projectSnapshot.projects)) {
+        memoryMesh.reconcileProjectDiscovery(record.projectSnapshot);
+        syncedProjects += record.projectSnapshot.projects.length;
+      }
       syncedRelayDevices += 1;
     }
-    return { syncedLocal: true, syncedRelayDevices };
+    return { syncedLocal: true, syncedRelayDevices, syncedProjects, warnings: localProjects.warnings };
   } catch (error) {
-    return { syncedLocal: true, syncedRelayDevices: 0, warning: error instanceof Error ? error.message : String(error) };
+    return { syncedLocal: true, syncedRelayDevices: 0, syncedProjects: localProjects.snapshot.projects.length, warnings: localProjects.warnings, warning: error instanceof Error ? error.message : String(error) };
   }
+}
+
+async function runLocalProjectDiscovery() {
+  if (projectDiscoveryInFlight) return projectDiscoveryInFlight;
+  projectDiscoveryInFlight = scanProjects(relayClient.snapshot().deviceId, settings.get().projectDiscovery);
+  try {
+    const result = await projectDiscoveryInFlight;
+    memoryMesh.reconcileProjectDiscovery(result.snapshot);
+    relayClient.setProjectSnapshot(result.snapshot);
+    return result;
+  } finally {
+    projectDiscoveryInFlight = undefined;
+  }
+}
+
+function scheduleProjectDiscovery() {
+  if (projectDiscoveryTimer) clearTimeout(projectDiscoveryTimer);
+  if (!settings.get().projectDiscovery.enabled) return;
+  const delay = settings.get().projectDiscovery.scanIntervalMinutes * 60_000;
+  projectDiscoveryTimer = setTimeout(() => {
+    void syncMemoryMeshDiscovery().finally(scheduleProjectDiscovery);
+  }, delay);
+  projectDiscoveryTimer.unref();
 }
 
 function summarizeUpdateFiles(files: { path: string }[]) {
@@ -1778,6 +1813,9 @@ const server = http.createServer(async (req, res) => {
         agentSelector: typeof body.agentSelector === 'object' && body.agentSelector
           ? body.agentSelector as typeof before.agentSelector
           : undefined,
+        projectDiscovery: typeof body.projectDiscovery === 'object' && body.projectDiscovery
+          ? body.projectDiscovery as typeof before.projectDiscovery
+          : undefined,
         autoUpdateServer: typeof body.autoUpdateServer === 'boolean' ? body.autoUpdateServer : undefined,
         autoUpdateClient: typeof body.autoUpdateClient === 'boolean' ? body.autoUpdateClient : undefined,
         developerDiagnostics: typeof body.developerDiagnostics === 'boolean' ? body.developerDiagnostics : undefined
@@ -1804,6 +1842,10 @@ const server = http.createServer(async (req, res) => {
           tone: 'blue',
           data: { relayUrl: next.relayUrl }
         });
+      }
+      if (JSON.stringify(before.projectDiscovery) !== JSON.stringify(next.projectDiscovery)) {
+        scheduleProjectDiscovery();
+        void syncMemoryMeshDiscovery();
       }
       if ((!before.autoUpdateServer && next.autoUpdateServer) || (!before.autoUpdateClient && next.autoUpdateClient)) {
         void runConfiguredUpdateCheck();

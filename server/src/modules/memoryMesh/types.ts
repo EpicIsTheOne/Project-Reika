@@ -43,6 +43,10 @@ export interface ProjectPath {
   deviceId: string;
   path: string;
   isPrimary: boolean;
+  source: 'manual' | 'discovered';
+  status: 'active' | 'stale';
+  branch?: string;
+  lastSeenAt?: string;
 }
 
 export interface ProjectAgentAssignment {
@@ -69,6 +73,9 @@ export interface MeshProject {
   permissions: string[];
   primaryAgentId?: string;
   primaryDeviceId?: string;
+  origin: 'manual' | 'discovered' | 'mixed';
+  discoveryConfidence?: 'explicit' | 'high' | 'medium';
+  lastDiscoveredAt?: string;
   paths: ProjectPath[];
   agentAssignments: ProjectAgentAssignment[];
   deviceAssignments: ProjectDeviceAssignment[];

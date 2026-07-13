@@ -4,7 +4,7 @@ import type { StateStore } from '../../core/stateStore.js';
 import { CommandDispatcher, type AgentChatHandler, type AgentChatRecoveryHandler } from '../commands/dispatcher.js';
 import { deviceAgentCapabilities } from '../../shared/protocol/capabilities.js';
 import { createEnvelope, isAgentHubEnvelope, type AgentHubEndpoint, type AgentHubEnvelope } from '../../shared/protocol/envelope.js';
-import type { DeviceHeartbeatPayload, DeviceHelloPayload } from '../../shared/protocol/messages.js';
+import type { DeviceHeartbeatPayload, DeviceHelloPayload, ProjectDiscoverySnapshotPayload } from '../../shared/protocol/messages.js';
 
 export type RelayClientStatus = 'disabled' | 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -38,6 +38,7 @@ export class RelayClient {
   private readonly startedAt = Date.now();
   private deviceEndpoint: AgentHubEndpoint;
   private readonly dispatcher: CommandDispatcher;
+  private projectSnapshot?: ProjectDiscoverySnapshotPayload;
 
   constructor(
     private readonly state: StateStore,
@@ -217,6 +218,22 @@ export class RelayClient {
     this.send(this.dispatcher.stateSnapshot());
     this.send(this.dispatcher.providerSnapshot());
     this.send(this.dispatcher.agentRoster());
+    if (this.projectSnapshot) this.sendProjectSnapshot(this.projectSnapshot);
+  }
+
+  setProjectSnapshot(snapshot: ProjectDiscoverySnapshotPayload) {
+    this.projectSnapshot = snapshot;
+    this.sendProjectSnapshot(snapshot);
+  }
+
+  private sendProjectSnapshot(snapshot: ProjectDiscoverySnapshotPayload) {
+    this.send(createEnvelope<ProjectDiscoverySnapshotPayload>({
+      type: 'device.project.snapshot',
+      source: this.deviceEndpoint,
+      target: { kind: 'relay', id: 'relay' },
+      deviceId: this.deviceId,
+      payload: snapshot
+    }));
   }
 
   private send(envelope: AgentHubEnvelope) {

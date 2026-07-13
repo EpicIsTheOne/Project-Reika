@@ -13,6 +13,23 @@ The first slice deliberately reuses the existing product seams:
 - A routed agent receives a compact task context assembled through permission-filtered retrieval.
 - Completed task results are stored in routing history and promoted to project memory with source attribution.
 - The desktop Memory view presents records as memory cards, project relationships, registry cards, and routing explanations.
+- Each device performs bounded local project discovery and publishes a sanitized project manifest through the relay. Reika reconciles those manifests into device-qualified project paths.
+
+## Automatic project discovery
+
+Project discovery is enabled by default and configured per device in the Memory Mesh Projects view. Windows scans the user's Documents directory. Linux scans `~/.agenthub` and `~/.openclaw/workspace`. Operators can replace those roots, choose a scan depth and interval, and optionally select a default project agent.
+
+The scanner recognizes `.reika/project.json`, Git worktrees and repositories, and common project descriptors such as `package.json`, `pyproject.toml`, `Cargo.toml`, solution files, and project files. It never follows symlinks and excludes dependency, cache, build, release, and version-control directories. A scan is bounded to 500 projects and eight levels even if settings are malformed.
+
+Cross-device identity uses this order:
+
+1. Explicit ID from `.reika/project.json`
+2. Sanitized, normalized Git remote
+3. Device-qualified absolute path
+
+Only inventory metadata is relayed: identity, name, path, repository URL without credentials, branch, technology stack, confidence, source, and timestamps. Source files, environment files, Git credentials, and file contents are never included.
+
+Complete snapshots mark previously discovered missing paths as stale. Unavailable, unreadable, over-budget, or intentionally skipped subtrees are included in the manifest and do not stale prior paths beneath them. Manual project names and descriptions survive reconciliation; editing an automatically discovered project changes its origin to `mixed`. Routing ignores stale paths.
 
 SQLite uses Node 22's built-in `node:sqlite` module. This avoids a native addon and keeps the packaged single-file server self-contained. Node 22 currently labels that module experimental, so the packaged server must remain pinned and the database migration tests must run before changing Node versions.
 
@@ -130,7 +147,7 @@ Focused automated coverage lives in `server/scripts/test-memory-mesh.ts` and run
 
 `npm run test:memory-mesh`
 
-It verifies registry persistence, agent-private isolation, project authorization, read-only assignments, exact/alias/token project resolution, route explanation, device-qualified paths, offline fail-closed behavior, routing task results, session promotion, version increments, and deletion.
+It verifies registry persistence, project-manifest reconciliation, stale-path handling, manual metadata preservation, agent-private isolation, project authorization, read-only assignments, exact/alias/token project resolution, route explanation, device-qualified paths, offline fail-closed behavior, routing task results, session promotion, version increments, and deletion. `npm run test:project-discovery` separately covers bounded scanning, exclusions, explicit metadata, branch detection, and repository credential removal.
 
 The real relay delegation contract runs with:
 

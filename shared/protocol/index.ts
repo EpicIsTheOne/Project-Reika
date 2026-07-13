@@ -8,6 +8,7 @@ export const agentHubEnvelopeTypes = [
   "device.state.request",
   "device.state.snapshot",
   "device.provider.snapshot",
+  "device.project.snapshot",
   "provider.refresh.request",
   "agent.roster.request",
   "agent.roster.snapshot",
@@ -90,6 +91,34 @@ export interface CommandStatusPayload {
   legacy?: boolean;
 }
 
+export type ProjectDiscoverySource = "explicit" | "git" | "marker";
+export type ProjectDiscoveryConfidence = "explicit" | "high" | "medium";
+
+export interface ProjectDiscoveryEntry {
+  projectId: string;
+  identityKey: string;
+  name: string;
+  description: string;
+  aliases: string[];
+  path: string;
+  repositoryUrl?: string;
+  branch?: string;
+  technologyStack: string[];
+  source: ProjectDiscoverySource;
+  confidence: ProjectDiscoveryConfidence;
+  discoveredAt: string;
+}
+
+export interface ProjectDiscoverySnapshotPayload {
+  deviceId: string;
+  scannedAt: string;
+  complete: boolean;
+  roots: string[];
+  skippedPaths?: string[];
+  defaultAgentId?: string;
+  projects: ProjectDiscoveryEntry[];
+}
+
 export type DeliveryState = "accepted" | "delivered" | "executing" | "completed" | "failed";
 
 export interface CommandStatusRequestPayload {
@@ -127,6 +156,7 @@ export type DeviceHeartbeatEnvelope = AgentHubEnvelope<{ status?: string }> & { 
 export type DeviceStateRequestEnvelope = AgentHubEnvelope<Record<string, never>> & { type: "device.state.request" };
 export type DeviceStateSnapshotEnvelope = AgentHubEnvelope<DeviceStateSnapshotPayload> & { type: "device.state.snapshot" };
 export type DeviceProviderSnapshotEnvelope = AgentHubEnvelope<ProviderSnapshot> & { type: "device.provider.snapshot" };
+export type DeviceProjectSnapshotEnvelope = AgentHubEnvelope<ProjectDiscoverySnapshotPayload> & { type: "device.project.snapshot" };
 export type ProviderRefreshRequestEnvelope = AgentHubEnvelope<Record<string, never>> & { type: "provider.refresh.request" };
 export type AgentRosterRequestEnvelope = AgentHubEnvelope<Record<string, never>> & { type: "agent.roster.request" };
 export type AgentRosterSnapshotEnvelope = AgentHubEnvelope<AgentRosterSnapshotPayload> & { type: "agent.roster.snapshot" };
@@ -146,6 +176,7 @@ export type KnownAgentHubEnvelope =
   | DeviceStateRequestEnvelope
   | DeviceStateSnapshotEnvelope
   | DeviceProviderSnapshotEnvelope
+  | DeviceProjectSnapshotEnvelope
   | ProviderRefreshRequestEnvelope
   | AgentRosterRequestEnvelope
   | AgentRosterSnapshotEnvelope

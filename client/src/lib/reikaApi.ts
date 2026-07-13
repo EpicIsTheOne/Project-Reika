@@ -93,7 +93,10 @@ export interface MemoryMeshProject {
   permissions: string[];
   primaryAgentId?: string;
   primaryDeviceId?: string;
-  paths: Array<{ projectId: string; deviceId: string; path: string; isPrimary: boolean }>;
+  origin: "manual" | "discovered" | "mixed";
+  discoveryConfidence?: "explicit" | "high" | "medium";
+  lastDiscoveredAt?: string;
+  paths: Array<{ projectId: string; deviceId: string; path: string; isPrimary: boolean; source: "manual" | "discovered"; status: "active" | "stale"; branch?: string; lastSeenAt?: string }>;
   agentAssignments: Array<{ projectId: string; agentId: string; role: "primary" | "collaborator"; access: "read_only" | "read_write" }>;
   deviceAssignments: Array<{ projectId: string; deviceId: string; isPrimary: boolean }>;
   createdAt: string;
@@ -282,6 +285,14 @@ export interface ReikaSettings {
   mockEnabled: boolean;
   notificationPreferences: ReikaNotificationPreferences;
   agentSelector: ReikaAgentSelectorSettings;
+  projectDiscovery: {
+    enabled: boolean;
+    roots: string[];
+    excludeDirectories: string[];
+    maxDepth: number;
+    scanIntervalMinutes: number;
+    defaultAgentId?: string;
+  };
   autoUpdateServer: boolean;
   autoUpdateClient: boolean;
   developerDiagnostics: boolean;
@@ -540,7 +551,7 @@ export async function getMemoryMeshOverview() {
 }
 
 export async function syncMemoryMeshDiscovery() {
-  return request<{ ok: true; discovery: { syncedLocal: boolean; syncedRelayDevices: number; warning?: string }; storage: MemoryMeshOverview["storage"] }>("/memory-mesh/discovery/sync", { method: "POST" });
+  return request<{ ok: true; discovery: { syncedLocal: boolean; syncedRelayDevices: number; syncedProjects: number; warnings?: string[]; warning?: string }; storage: MemoryMeshOverview["storage"] }>("/memory-mesh/discovery/sync", { method: "POST" });
 }
 
 export async function createMemoryMeshProject(input: { name: string; aliases?: string[]; description?: string; repositoryUrl?: string; technologyStack?: string[] }) {

@@ -11,6 +11,7 @@ export const agentHubEnvelopeTypes = [
   'device.state.request',
   'device.state.snapshot',
   'device.provider.snapshot',
+  'device.project.snapshot',
   'provider.refresh.request',
   'agent.roster.request',
   'agent.roster.snapshot',

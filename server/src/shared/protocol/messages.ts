@@ -54,6 +54,34 @@ export interface AgentChatRequestPayload {
   };
 }
 
+export type ProjectDiscoverySource = 'explicit' | 'git' | 'marker';
+export type ProjectDiscoveryConfidence = 'explicit' | 'high' | 'medium';
+
+export interface ProjectDiscoveryEntry {
+  projectId: string;
+  identityKey: string;
+  name: string;
+  description: string;
+  aliases: string[];
+  path: string;
+  repositoryUrl?: string;
+  branch?: string;
+  technologyStack: string[];
+  source: ProjectDiscoverySource;
+  confidence: ProjectDiscoveryConfidence;
+  discoveredAt: string;
+}
+
+export interface ProjectDiscoverySnapshotPayload {
+  deviceId: string;
+  scannedAt: string;
+  complete: boolean;
+  roots: string[];
+  skippedPaths?: string[];
+  defaultAgentId?: string;
+  projects: ProjectDiscoveryEntry[];
+}
+
 export type DeliveryState = 'accepted' | 'delivered' | 'executing' | 'completed' | 'failed';
 
 export interface CommandStatusPayload {

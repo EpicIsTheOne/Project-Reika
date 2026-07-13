@@ -1,6 +1,15 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, platform } from 'node:os';
+
+export interface ProjectDiscoverySettings {
+  enabled: boolean;
+  roots: string[];
+  excludeDirectories: string[];
+  maxDepth: number;
+  scanIntervalMinutes: number;
+  defaultAgentId?: string;
+}
 
 export interface ReikaSettings {
   version: 1;
@@ -12,6 +21,7 @@ export interface ReikaSettings {
   mockEnabled: boolean;
   notificationPreferences: NotificationPreferences;
   agentSelector: AgentSelectorSettings;
+  projectDiscovery: ProjectDiscoverySettings;
   autoUpdateServer: boolean;
   autoUpdateClient: boolean;
   developerDiagnostics: boolean;
@@ -59,6 +69,16 @@ const defaultSettings: ReikaSettings = {
     hideCommandCenterDuplicates: true,
     duplicatePreference: 'agent'
   },
+  projectDiscovery: {
+    enabled: true,
+    roots: defaultProjectDiscoveryRoots(),
+    excludeDirectories: [
+      'node_modules', '.git', '.svn', '.hg', '.next', '.nuxt', '.cache', '.venv', 'venv',
+      'dist', 'build', 'release', 'coverage', 'target', 'bin', 'obj', 'vendor', 'packages'
+    ],
+    maxDepth: 4,
+    scanIntervalMinutes: 15
+  },
   autoUpdateServer: false,
   autoUpdateClient: false,
   developerDiagnostics: false,
@@ -87,11 +107,39 @@ function normalizeSettings(input: Partial<ReikaSettings> = {}): ReikaSettings {
     mockEnabled: typeof input.mockEnabled === 'boolean' ? input.mockEnabled : defaultSettings.mockEnabled,
     notificationPreferences: normalizeNotificationPreferences(input.notificationPreferences),
     agentSelector: normalizeAgentSelector(input.agentSelector),
+    projectDiscovery: normalizeProjectDiscovery(input.projectDiscovery),
     autoUpdateServer: typeof input.autoUpdateServer === 'boolean' ? input.autoUpdateServer : defaultSettings.autoUpdateServer,
     autoUpdateClient: typeof input.autoUpdateClient === 'boolean' ? input.autoUpdateClient : defaultSettings.autoUpdateClient,
     developerDiagnostics: typeof input.developerDiagnostics === 'boolean' ? input.developerDiagnostics : defaultSettings.developerDiagnostics,
     updatedAt: typeof input.updatedAt === 'string' ? input.updatedAt : new Date().toISOString()
   };
+}
+
+function defaultProjectDiscoveryRoots() {
+  if (platform() === 'win32') return [join(homedir(), 'Documents')];
+  return [join(homedir(), '.agenthub'), join(homedir(), '.openclaw', 'workspace')];
+}
+
+function normalizeProjectDiscovery(value: unknown): ProjectDiscoverySettings {
+  const input = typeof value === 'object' && value ? value as Partial<ProjectDiscoverySettings> : {};
+  return {
+    enabled: typeof input.enabled === 'boolean' ? input.enabled : defaultSettings.projectDiscovery.enabled,
+    roots: cleanStringList(input.roots, defaultSettings.projectDiscovery.roots),
+    excludeDirectories: cleanStringList(input.excludeDirectories, defaultSettings.projectDiscovery.excludeDirectories),
+    maxDepth: boundedInteger(input.maxDepth, defaultSettings.projectDiscovery.maxDepth, 1, 8),
+    scanIntervalMinutes: boundedInteger(input.scanIntervalMinutes, defaultSettings.projectDiscovery.scanIntervalMinutes, 1, 1440),
+    defaultAgentId: typeof input.defaultAgentId === 'string' && input.defaultAgentId.trim() ? input.defaultAgentId.trim() : undefined
+  };
+}
+
+function cleanStringList(value: unknown, fallback: string[]) {
+  if (!Array.isArray(value)) return [...fallback];
+  return Array.from(new Set(value.map((item) => typeof item === 'string' ? item.trim() : '').filter(Boolean)));
+}
+
+function boundedInteger(value: unknown, fallback: number, minimum: number, maximum: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
 }
 
 function normalizeTheme(value: unknown): ReikaSettings['theme'] {
@@ -187,6 +235,7 @@ export class SettingsStore {
     this.settings = normalizeSettings({
       ...this.settings,
       ...cleanInput,
+      projectDiscovery: cleanInput.projectDiscovery ? { ...this.settings.projectDiscovery, ...cleanInput.projectDiscovery } : this.settings.projectDiscovery,
       updatedAt: new Date().toISOString()
     });
     this.queueSave();

@@ -19,7 +19,8 @@ import {
   isRelayRequestType,
   type AgentHubEnvelope,
   type AgentHubEnvelopeType,
-  type DeviceHelloPayload
+  type DeviceHelloPayload,
+  type ProjectDiscoverySnapshotPayload
 } from "../shared/protocol/index.js";
 
 const relayConfig = {
@@ -60,6 +61,7 @@ interface RelayDeviceRecord {
   activeProviderId?: string;
   latestProviders: ProviderSnapshot["providers"];
   latestRoster: AgentHubAgent[];
+  latestProjectSnapshot?: ProjectDiscoverySnapshotPayload;
   queuedEnvelopes: QueuedEnvelope[];
 }
 
@@ -191,6 +193,8 @@ const server = createServer(async (request, response) => {
           activeProviderId: record.activeProviderId,
           providerCount: record.latestProviders.length,
           agentCount: record.latestRoster.length,
+          projectCount: record.latestProjectSnapshot?.projects.length ?? 0,
+          projectSnapshot: record.latestProjectSnapshot,
           socketConnected: record.socket?.readyState === WebSocket.OPEN,
           lastHeartbeatAt: record.lastHeartbeatAt
         }))
@@ -458,6 +462,19 @@ deviceSocketServer.on("connection", (socket, request) => {
       updateProviderSnapshot(deviceId, snapshot.providers ?? [], snapshot.activeProviderId);
       saveRelayStore();
       broadcastRelayState(parsed);
+      return;
+    }
+
+    if (parsed.type === "device.project.snapshot") {
+      const snapshot = parsed.payload as ProjectDiscoverySnapshotPayload;
+      const record = devices.get(deviceId);
+      if (!record || snapshot.deviceId !== deviceId || !Array.isArray(snapshot.projects)) {
+        sendEnvelope(socket, createCommandStatus("command.rejected", "Invalid project discovery snapshot.", parsed.id, deviceId));
+        return;
+      }
+      record.latestProjectSnapshot = snapshot;
+      saveRelayStore();
+      broadcastToApps(parsed);
       return;
     }
 
@@ -751,6 +768,7 @@ function upsertDevice(device: AgentHubDevice) {
     device,
     latestProviders: [],
     latestRoster: [],
+    latestProjectSnapshot: undefined,
     queuedEnvelopes: []
   };
   const socketOnline = existing?.socket?.readyState === WebSocket.OPEN;
@@ -866,6 +884,17 @@ function sendRelayState(socket: WebSocket) {
           },
           { accountId: record.device.accountId, deviceId: record.device.id }
         )
+      );
+    }
+
+
+    if (record.latestProjectSnapshot) {
+      sendEnvelope(
+        socket,
+        createEnvelope("device.project.snapshot", record.latestProjectSnapshot, {
+          accountId: record.device.accountId,
+          deviceId: record.device.id
+        })
       );
     }
   }
@@ -1004,6 +1033,7 @@ function loadRelayStore() {
         activeProviderId: record.activeProviderId,
         latestProviders: record.latestProviders ?? [],
         latestRoster: record.latestRoster ?? [],
+        latestProjectSnapshot: record.latestProjectSnapshot,
         queuedEnvelopes: record.queuedEnvelopes ?? [],
         lastHeartbeatAt: record.lastHeartbeatAt
       });
@@ -1027,6 +1057,7 @@ function saveRelayStore() {
       activeProviderId: record.activeProviderId,
       latestProviders: record.latestProviders,
       latestRoster: record.latestRoster,
+      latestProjectSnapshot: record.latestProjectSnapshot,
       queuedEnvelopes: record.queuedEnvelopes,
       lastHeartbeatAt: record.lastHeartbeatAt
     })),

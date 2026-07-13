@@ -46,6 +46,13 @@ export const defaultSettings: ReikaSettings = {
     hideCommandCenterDuplicates: true,
     duplicatePreference: "agent"
   },
+  projectDiscovery: {
+    enabled: true,
+    roots: [],
+    excludeDirectories: ["node_modules", ".git", "dist", "build", "release"],
+    maxDepth: 4,
+    scanIntervalMinutes: 15
+  },
   autoUpdateServer: false,
   autoUpdateClient: false,
   developerDiagnostics: false,

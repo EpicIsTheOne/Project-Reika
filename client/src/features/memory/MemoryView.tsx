@@ -10,6 +10,9 @@ import {
   deleteMemoryMeshMemory,
   executeMemoryMeshTask,
   getMemoryMeshOverview,
+  getSettings,
+  getState,
+  patchSettings,
   previewMemoryMeshRoute,
   searchMemoryMeshMemories,
   syncMemoryMeshDiscovery,
@@ -21,7 +24,8 @@ import {
   type MemoryMeshProject,
   type MemoryMeshRouteDecision,
   type MemoryMeshScope,
-  type MemoryMeshRoutingTask
+  type MemoryMeshRoutingTask,
+  type ReikaSettings
 } from "../../lib/reikaApi";
 import { cx, pageMotionClass } from "../../lib/motion";
 
@@ -46,6 +50,8 @@ export function MemoryView() {
   const [memoryEditorOpen, setMemoryEditorOpen] = useState(false);
   const [projectEditorOpen, setProjectEditorOpen] = useState(false);
   const [memorySearchResults, setMemorySearchResults] = useState<MemoryMeshMemory[] | null>(null);
+  const [discoverySettings, setDiscoverySettings] = useState<ReikaSettings["projectDiscovery"] | null>(null);
+  const [localDeviceId, setLocalDeviceId] = useState("");
 
   const refresh = async () => {
     try {
@@ -57,7 +63,11 @@ export function MemoryView() {
     }
   };
 
-  useEffect(() => { void syncDiscovery(true); }, []);
+  useEffect(() => {
+    void syncDiscovery(true);
+    void getSettings().then((response) => setDiscoverySettings(response.settings.projectDiscovery)).catch(() => undefined);
+    void getState().then((response) => setLocalDeviceId(response.device.id || "")).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if ((tab !== "recent" && tab !== "global") || !query.trim()) {
@@ -78,7 +88,8 @@ export function MemoryView() {
     setNotice(null);
     try {
       const result = await syncMemoryMeshDiscovery();
-      if (result.discovery.warning || !silent) setNotice(result.discovery.warning || `Discovery synced ${result.discovery.syncedRelayDevices} relay device${result.discovery.syncedRelayDevices === 1 ? "" : "s"}.`);
+      const discoveryWarning = result.discovery.warning || (!silent ? result.discovery.warnings?.[0] : undefined);
+      if (discoveryWarning || !silent) setNotice(discoveryWarning || `Discovery synced ${result.discovery.syncedProjects} project path${result.discovery.syncedProjects === 1 ? "" : "s"} across ${result.discovery.syncedRelayDevices} relay device${result.discovery.syncedRelayDevices === 1 ? "" : "s"}.`);
       await refresh();
     } catch (syncError) {
       setError(syncError instanceof Error ? syncError.message : String(syncError));
@@ -153,7 +164,17 @@ export function MemoryView() {
           {(tab === "recent" || tab === "global") && (
             <MemoryList memories={visibleMemories} overview={overview} onChanged={refresh} />
           )}
-          {tab === "projects" && <ProjectList overview={overview} query={search} onChanged={refresh} />}
+          {tab === "projects" && (
+            <div className="project-workspace-stack">
+              <ProjectDiscoveryPanel
+                settings={discoverySettings}
+                agents={(overview?.agents ?? []).filter((agent) => !localDeviceId || agent.deviceId === localDeviceId)}
+                onSaved={setDiscoverySettings}
+                onScanned={() => syncDiscovery(false)}
+              />
+              <ProjectList overview={overview} query={search} onChanged={refresh} />
+            </div>
+          )}
           {tab === "agents" && <AgentList agents={overview?.agents ?? []} query={search} overview={overview} />}
           {tab === "devices" && <DeviceList overview={overview} query={search} />}
           {tab === "routing" && <RoutingWorkbench overview={overview} onChanged={refresh} />}
@@ -168,6 +189,52 @@ export function MemoryView() {
 
 function MemoryStat({ icon: Icon, label, value }: { icon: typeof Bot; label: string; value: number }) {
   return <article><Icon size={19} /><span><strong>{value}</strong><small>{label}</small></span></article>;
+}
+
+function ProjectDiscoveryPanel({ settings, agents, onSaved, onScanned }: {
+  settings: ReikaSettings["projectDiscovery"] | null;
+  agents: MemoryMeshAgent[];
+  onSaved: (settings: ReikaSettings["projectDiscovery"]) => void;
+  onScanned: () => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [roots, setRoots] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setRoots((settings?.roots ?? []).join("\n")), [settings?.roots]);
+  if (!settings) return null;
+  const save = async () => {
+    setBusy(true); setError(null);
+    try {
+      const next = { ...settings, roots: roots.split(/\r?\n/u).map((root) => root.trim()).filter(Boolean) };
+      const response = await patchSettings({ projectDiscovery: next });
+      onSaved(response.settings.projectDiscovery);
+      setEditing(false);
+      await onScanned();
+    } catch (saveError) { setError(saveError instanceof Error ? saveError.message : String(saveError)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <section className="project-discovery-panel">
+      <header>
+        <span><RefreshCw size={18} /><strong>Automatic project discovery</strong><small>{settings.enabled ? `${settings.roots.length} local scan root${settings.roots.length === 1 ? "" : "s"} · every ${settings.scanIntervalMinutes} min` : "Disabled"}</small></span>
+        <button className="secondary-action small" onClick={() => setEditing((value) => !value)}>{editing ? "Close" : "Configure"}</button>
+      </header>
+      {error ? <div className="memory-banner error">{error}</div> : null}
+      {editing ? (
+        <div className="memory-form compact-form discovery-form">
+          <label className="toggle-label"><input type="checkbox" checked={settings.enabled} onChange={(event) => onSaved({ ...settings, enabled: event.target.checked })} /> Enable automatic scanning on this device</label>
+          <label>Scan roots, one absolute path per line<textarea value={roots} onChange={(event) => setRoots(event.target.value)} /></label>
+          <div className="memory-form-grid">
+            <label>Maximum depth<input type="number" min={1} max={8} value={settings.maxDepth} onChange={(event) => onSaved({ ...settings, maxDepth: Number(event.target.value) })} /></label>
+            <label>Interval in minutes<input type="number" min={1} max={1440} value={settings.scanIntervalMinutes} onChange={(event) => onSaved({ ...settings, scanIntervalMinutes: Number(event.target.value) })} /></label>
+          </div>
+          <label>Default project agent<select value={settings.defaultAgentId ?? ""} onChange={(event) => onSaved({ ...settings, defaultAgentId: event.target.value || undefined })}><option value="">Do not auto-assign</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.displayName} · {agent.providerId}</option>)}</select></label>
+          <button className="primary-action small" disabled={busy} onClick={() => void save()}><Save size={17} />{busy ? "Saving..." : "Save and rescan"}</button>
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function MemoryList({ memories, overview, onChanged }: { memories: MemoryMeshMemory[]; overview: MemoryMeshOverview | null; onChanged: () => Promise<void> }) {
@@ -226,7 +293,7 @@ function ProjectDetail({ project, overview, onChanged }: { project: MemoryMeshPr
   return (
     <article className="project-detail-card">
       <header>
-        <span><span className="memory-scope scope-project">{project.status}</span><h2>{project.name}</h2><p>{project.description || "No description yet."}</p></span>
+        <span><span className="memory-scope scope-project">{project.status} · {project.origin}</span><h2>{project.name}</h2><p>{project.description || "No description yet."}</p></span>
         <button className="icon-button compact" onClick={() => setEditing((value) => !value)} aria-label="Edit project"><Pencil size={18} /></button>
       </header>
       {error ? <div className="memory-banner error">{error}</div> : null}
@@ -258,7 +325,7 @@ function ProjectDetail({ project, overview, onChanged }: { project: MemoryMeshPr
           {project.deviceAssignments.map((assignment) => {
             const device = overview.devices.find((item) => item.id === assignment.deviceId);
             const devicePaths = project.paths.filter((item) => item.deviceId === assignment.deviceId);
-            return <div key={assignment.deviceId}><StatusDot status={device?.status ?? "unknown"} /><span><strong>{device?.name ?? assignment.deviceId}</strong><small>{devicePaths.map((item) => item.path).join(" · ") || "No path registered"}</small></span></div>;
+            return <div key={assignment.deviceId}><StatusDot status={device?.status ?? "unknown"} /><span><strong>{device?.name ?? assignment.deviceId}</strong>{devicePaths.map((item) => <small key={item.path}>{item.path} · {item.status}{item.branch ? ` · ${item.branch}` : ""} · {item.source}</small>)}{!devicePaths.length ? <small>No path registered</small> : null}</span></div>;
           })}
           {!project.deviceAssignments.length ? <small>No device assignments.</small> : null}
         </div>
@@ -268,7 +335,7 @@ function ProjectDetail({ project, overview, onChanged }: { project: MemoryMeshPr
           <button onClick={() => void run(() => assignMemoryMeshDevice(project.id, { deviceId, path, isPrimary: project.deviceAssignments.length === 0 }))} disabled={!deviceId || !path.trim()}><Link2 size={16} />Attach</button>
         </div>
       </section>
-      <footer className="project-meta-row"><span>Aliases: {project.aliases.join(", ") || "none"}</span><span>Updated {relativeTime(project.updatedAt)}</span></footer>
+      <footer className="project-meta-row"><span>{project.repositoryUrl || `Aliases: ${project.aliases.join(", ") || "none"}`}</span><span>{project.lastDiscoveredAt ? `Scanned ${relativeTime(project.lastDiscoveredAt)}` : `Updated ${relativeTime(project.updatedAt)}`}</span></footer>
     </article>
   );
 }
