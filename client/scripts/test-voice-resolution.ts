@@ -21,13 +21,13 @@ const inheritedAgent = {
 };
 
 assert.deepEqual(resolveAgentVoice(inheritedAgent, settings), {
-  provider: "commandcenter",
+  provider: "fish",
   voiceId: "provider-voice",
   voiceLabel: "Astra",
   source: "provider-inherited",
   available: true,
   inheritedProvider: "fish",
-  transport: "commandcenter"
+  transport: "local"
 });
 assert.equal(resolveAgentVoice({ ...inheritedAgent, voiceId: "" }, settings).source, "reika-default");
 

@@ -34,14 +34,15 @@ export function resolveAgentVoice(agent: VoiceAgentContext, settings: ReikaSetti
   const inheritedVoiceId = typeof agent.voiceId === "string" ? agent.voiceId.trim() : "";
   const inheritedProvider = typeof agent.voiceProvider === "string" ? agent.voiceProvider.trim().toLowerCase() : "";
   if (inheritedVoiceId) {
+    const useLocalFishAdapter = inheritedProvider === "fish";
     return {
-      provider: "commandcenter",
+      provider: useLocalFishAdapter ? "fish" : "commandcenter",
       voiceId: inheritedVoiceId,
       voiceLabel: typeof agent.voiceLabel === "string" && agent.voiceLabel.trim() ? agent.voiceLabel.trim() : inheritedVoiceId,
       source: "provider-inherited",
       available: agent.voiceAvailable !== false,
       inheritedProvider: inheritedProvider || "commandcenter",
-      transport: "commandcenter"
+      transport: useLocalFishAdapter ? "local" : "commandcenter"
     };
   }
   if (settings.voice.defaultVoice?.voiceId) {
