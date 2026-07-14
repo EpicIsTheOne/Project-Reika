@@ -44,7 +44,7 @@ export const defaultSettings: ReikaSettings = {
     labelMode: "agent-provider",
     showRole: true,
     hideCommandCenterDuplicates: true,
-    duplicatePreference: "agent"
+    duplicatePreference: "commandcenter"
   },
   projectDiscovery: {
     enabled: true,
