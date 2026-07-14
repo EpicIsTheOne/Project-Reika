@@ -99,9 +99,11 @@ export function ChatView({
   const [playback, setPlayback] = useState<PlaybackState>(() => speechPlayback.snapshot());
   const [callOpen, setCallOpen] = useState(false);
   const [callMuted, setCallMuted] = useState(false);
-  const [callState, setCallState] = useState<"idle" | "listening" | "processing" | "speaking" | "muted" | "error">("idle");
+  const [callState, setCallState] = useState<"idle" | "listening" | "processing" | "speaking" | "muted" | "reconnecting" | "offline" | "error">("idle");
   const [callTranscript, setCallTranscript] = useState("");
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const recognitionRetryRef = useRef(0);
+  const recognitionRetryTimerRef = useRef<number | null>(null);
   const callActiveRef = useRef(false);
   const callMutedRef = useRef(false);
   const providerSessionIdRef = useRef<string | undefined>(undefined);
@@ -202,7 +204,12 @@ export function ChatView({
   const callAllowed = selectedVoiceContext ? settings.voice.agents[selectedVoiceContext.key]?.callEnabled !== false : false;
 
   useEffect(() => speechPlayback.subscribe(setPlayback), []);
-  useEffect(() => () => { callActiveRef.current = false; recognitionRef.current?.abort(); void speechPlayback.stop(); }, []);
+  useEffect(() => () => {
+    callActiveRef.current = false;
+    recognitionRef.current?.abort();
+    if (recognitionRetryTimerRef.current !== null) window.clearTimeout(recognitionRetryTimerRef.current);
+    void speechPlayback.stop();
+  }, []);
   useEffect(() => { void speechPlayback.stop(); }, [selectedAgentOptionKey]);
 
   const normalizeChatError = (value: unknown, fallback = "Something went wrong.") => {
@@ -677,6 +684,7 @@ export function ChatView({
       const cleaned = transcript.trim();
       if (cleaned) setCallTranscript(cleaned);
       if (complete && cleaned && callActiveRef.current) {
+        recognitionRetryRef.current = 0;
         recognitionRef.current = null;
         recognition.stop();
         void sendMessage(cleaned, true);
@@ -685,8 +693,23 @@ export function ChatView({
     recognition.onerror = (event) => {
       recognitionRef.current = null;
       if (!callActiveRef.current || event.error === "aborted") return;
+      if (event.error === "network" && !navigator.onLine) {
+        setCallState("offline");
+        setCallTranscript("Speech recognition is offline. Reconnect to continue the call.");
+        return;
+      }
+      if (event.error === "network" && recognitionRetryRef.current < 2) {
+        recognitionRetryRef.current += 1;
+        setCallState("reconnecting");
+        setCallTranscript(`Speech recognition disconnected. Reconnecting (${recognitionRetryRef.current}/2)...`);
+        recognitionRetryTimerRef.current = window.setTimeout(() => {
+          recognitionRetryTimerRef.current = null;
+          if (callActiveRef.current && !callMutedRef.current) startListening();
+        }, recognitionRetryRef.current * 1000);
+        return;
+      }
       setCallState("error");
-      setCallTranscript(event.error === "not-allowed" ? "Microphone permission was denied." : `Microphone error: ${event.error}`);
+      setCallTranscript(event.error === "not-allowed" ? "Microphone permission was denied." : event.error === "network" ? "Speech recognition service is unreachable after 2 retries." : `Microphone error: ${event.error}`);
     };
     recognition.onend = () => { if (recognitionRef.current === recognition) recognitionRef.current = null; };
     recognitionRef.current = recognition;
@@ -703,6 +726,7 @@ export function ChatView({
     await speechPlayback.stop();
     callActiveRef.current = true;
     callMutedRef.current = false;
+    recognitionRetryRef.current = 0;
     setCallOpen(true);
     setCallMuted(false);
     window.setTimeout(startListening, 0);
@@ -713,6 +737,8 @@ export function ChatView({
     callMutedRef.current = false;
     recognitionRef.current?.abort();
     recognitionRef.current = null;
+    if (recognitionRetryTimerRef.current !== null) window.clearTimeout(recognitionRetryTimerRef.current);
+    recognitionRetryTimerRef.current = null;
     await speechPlayback.stop();
     setCallOpen(false);
     setCallState("idle");
@@ -726,6 +752,8 @@ export function ChatView({
     if (muted) {
       recognitionRef.current?.abort();
       recognitionRef.current = null;
+      if (recognitionRetryTimerRef.current !== null) window.clearTimeout(recognitionRetryTimerRef.current);
+      recognitionRetryTimerRef.current = null;
       setCallState("muted");
     } else if (callActiveRef.current) {
       window.setTimeout(startListening, 0);
@@ -879,7 +907,7 @@ export function ChatView({
           <section className="voice-call-panel" aria-label={`Voice call with ${displayAgentName}`}>
             <div>
               <strong>{displayAgentName}</strong>
-              <span className={`voice-call-state ${callState}`}>{callState === "processing" ? "Thinking" : callState}</span>
+              <span className={`voice-call-state ${callState}`}>{callState === "processing" ? "Thinking" : callState.charAt(0).toUpperCase() + callState.slice(1)}</span>
             </div>
             <p>{callTranscript || (callState === "listening" ? "Listening..." : callState === "speaking" ? `${displayAgentName} is speaking...` : "Voice call active")}</p>
             <small>{resolvedVoice?.voiceLabel} · {resolvedVoice?.source}</small>
