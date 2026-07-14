@@ -985,7 +985,7 @@ export function ChatView({
               <strong>{displayAgentName}</strong>
               <span className={`voice-call-state ${callState}`}>{callState === "processing" ? "Thinking" : callState.charAt(0).toUpperCase() + callState.slice(1)}</span>
             </div>
-            <p>{callTranscript || (callState === "listening" ? "Listening..." : callState === "speaking" ? `${displayAgentName} is speaking...` : "Voice call active")}</p>
+            <p>{callState === "error" && playback.error ? playback.error : callTranscript || (callState === "listening" ? "Listening..." : callState === "speaking" ? `${displayAgentName} is speaking...` : "Voice call active")}</p>
             <small>{resolvedVoice?.voiceLabel} · {resolvedVoice?.source}</small>
             <div>
               <button type="button" onClick={toggleCallMute} aria-label={callMuted ? "Unmute microphone" : "Mute microphone"}>{callMuted ? <MicOff size={18} /> : <Mic size={18} />}{callMuted ? "Unmute" : "Mute"}</button>

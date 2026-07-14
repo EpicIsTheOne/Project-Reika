@@ -124,7 +124,12 @@ class SpeechPlaybackController {
     audio.onended = () => { URL.revokeObjectURL(url); if (generation === this.generation) this.update({ phase: "idle", messageId: undefined }); };
     audio.onerror = () => { URL.revokeObjectURL(url); if (generation === this.generation) this.update({ phase: "error", messageId, error: "Audio playback failed." }); };
     this.audio = audio;
-    void audio.play();
+    void audio.play().catch((error) => {
+      URL.revokeObjectURL(url);
+      if (generation === this.generation) {
+        this.update({ phase: "error", messageId, error: error instanceof Error ? error.message : "Audio playback failed." });
+      }
+    });
   }
 
   private playSystem(messageId: string, text: string, generation: number) {

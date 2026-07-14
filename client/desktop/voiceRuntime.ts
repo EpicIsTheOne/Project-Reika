@@ -4,7 +4,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tagTtsText } from "fish-audio-tts-toolkit/src/tagging.js";
 import { searchFishModelsByName } from "fish-audio-tts-toolkit/src/search.js";
-import { buildDirectFishTtsSettings, buildFishTtsPayload, callFishTTS } from "fish-audio-tts-toolkit/src/fish.js";
+import { buildDirectFishTtsSettings, buildFishTtsPayload, callFishTTS, getTtsContentType } from "fish-audio-tts-toolkit/src/fish.js";
 
 const FISH_BASE_URL = "https://api.fish.audio";
 const FISH_BACKEND = "s2-pro";
@@ -188,7 +188,14 @@ export function registerVoiceRuntime() {
       const payload = buildFishTtsPayload({ text: tagged.taggedText, settings });
       const result = await callFishTTS({ apiKey, baseUrl: FISH_BASE_URL, backend: FISH_BACKEND, payload, signal: controller.signal });
       if (activeRequests.get(requestId) !== controller || controller.signal.aborted) throw new DOMException("Voice synthesis was cancelled.", "AbortError");
-      const entry = { at: Date.now(), bytes: Buffer.from(result.buffer), contentType: result.contentType, taggedText: tagged.taggedText, spokenText: tagged.spokenText, tags: tagged.tags };
+      const entry = {
+        at: Date.now(),
+        bytes: Buffer.from(result.buffer),
+        contentType: result.contentType.startsWith("audio/") ? result.contentType : getTtsContentType(payload.format),
+        taggedText: tagged.taggedText,
+        spokenText: tagged.spokenText,
+        tags: tagged.tags
+      };
       audioCache.set(cacheKey, entry);
       pruneAudioCache();
       return { requestId, audioBase64: entry.bytes.toString("base64"), contentType: entry.contentType, taggedText: entry.taggedText, spokenText: entry.spokenText, tags: entry.tags, cacheHit: false };
