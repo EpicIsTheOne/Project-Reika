@@ -77,4 +77,4 @@ export interface ChatMessage {
   meta?: Record<string, unknown>;
 }
 
-export type View = "loading" | "home" | "chat" | "devices" | "notifications" | "memory" | "agentArt" | "settings";
+export type View = "loading" | "home" | "chat" | "commandCenter" | "devices" | "notifications" | "memory" | "agentArt" | "settings";

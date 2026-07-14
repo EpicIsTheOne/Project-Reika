@@ -55,6 +55,18 @@ async function getSecret(id: string, label: string) {
   }
 }
 
+export async function getDesktopSecret(id: string, label: string) {
+  return getSecret(id, label);
+}
+
+export async function saveDesktopSecret(id: string, value: string) {
+  if (!encryptionReady()) throw new Error("Secure operating-system secret storage is unavailable.");
+  const secret = requireText(value, "Secret", 1000);
+  const file = await readSecrets();
+  file.secrets[id] = { encrypted: safeStorage.encryptString(secret).toString("base64"), updatedAt: new Date().toISOString() };
+  await writeSecrets(file);
+}
+
 const getFishKey = () => getSecret("fishAudio", "Fish Audio");
 const getOpenRouterKey = () => getSecret("openRouter", "OpenRouter");
 

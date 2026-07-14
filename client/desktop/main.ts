@@ -1,9 +1,9 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, session, shell } from "electron";
 import { join } from "node:path";
 import { startDesktopServer, type DesktopServer } from "./localServer.js";
 import { ensureLocalAgent, stopLocalAgent, type LocalAgentRuntime } from "./localAgent.js";
 import { migrateLegacyUserData } from "./userDataMigration.js";
-import { registerVoiceRuntime } from "./voiceRuntime.js";
+import { getDesktopSecret, registerVoiceRuntime, saveDesktopSecret } from "./voiceRuntime.js";
 
 const isDev = (process.env.REIKA_DESKTOP_DEV ?? process.env.AGENTHUB_DESKTOP_DEV) === "1";
 
@@ -31,8 +31,20 @@ async function createWindow() {
       preload,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      webviewTag: true
     }
+  });
+
+  mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+    if (!isAllowedCommandCenterUrl(params.src)) {
+      event.preventDefault();
+      return;
+    }
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
   });
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
@@ -85,14 +97,52 @@ async function recoverLocalAgent() {
 
 app.setName("Reika");
 
+app.on("web-contents-created", (_event, contents) => {
+  if (contents.getType() !== "webview") return;
+  contents.on("will-navigate", (event, url) => {
+    if (!isAllowedCommandCenterUrl(url)) event.preventDefault();
+  });
+  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+});
+
+function isAllowedCommandCenterUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.origin === "https://techexplore.us" && url.pathname.startsWith("/commandcenter");
+  } catch {
+    return false;
+  }
+}
+
 app.whenReady().then(async () => {
   migrateLegacyUserData(app.getPath("appData"), app.getPath("userData"));
   registerVoiceRuntime();
+  await configureCommandCenterSession();
   await createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
 });
+
+async function configureCommandCenterSession() {
+  const partition = session.fromPartition("persist:reika-command-center");
+  const provisionedToken = String(process.env.REIKA_COMMANDCENTER_EMBED_TOKEN || "").trim();
+  if (provisionedToken) {
+    await saveDesktopSecret("commandCenterEmbed", provisionedToken);
+    delete process.env.REIKA_COMMANDCENTER_EMBED_TOKEN;
+  }
+  partition.webRequest.onBeforeSendHeaders(
+    { urls: ["https://techexplore.us/commandcenter/api/auth/reika"] },
+    async (details, callback) => {
+      try {
+        const token = await getDesktopSecret("commandCenterEmbed", "Command Center integration");
+        callback({ requestHeaders: { ...details.requestHeaders, "X-Reika-Embed-Token": token } });
+      } catch {
+        callback({ requestHeaders: details.requestHeaders });
+      }
+    }
+  );
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

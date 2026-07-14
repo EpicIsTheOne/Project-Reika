@@ -28,6 +28,7 @@ import { DevicesView } from "../features/devices/DevicesView";
 import { ChatView } from "../features/chat/ChatView";
 import { AgentArtStudio } from "../features/art/AgentArtStudio";
 import { MemoryView } from "../features/memory/MemoryView";
+import { CommandCenterView } from "../features/commandCenter/CommandCenterView";
 import { applyRelayEnvelope, connectRelayApp, listRelayDevices, sendRelayChat, type RelayDeviceRecord } from "../data/relay";
 import { normalizeRelayDeviceUrl } from "../config/relay";
 import { type AgentChatRequestPayload, type AgentHubEnvelope } from "../shared/protocol";
@@ -320,6 +321,7 @@ export function App() {
             }}
           />
         )}
+        {view === "commandCenter" && <CommandCenterView />}
         {view === "memory" && <MemoryView />}
         {view === "agentArt" && <AgentArtStudio initialLibrary={artLibrary} devices={presentationDevices} artRuntime={artRuntime} onLibraryChange={setArtLibrary} />}
         {view === "settings" && (
