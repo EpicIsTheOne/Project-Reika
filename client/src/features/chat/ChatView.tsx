@@ -701,7 +701,7 @@ export function ChatView({
       const samples = new Float32Array(analyser.fftSize);
       const capture: ActiveVadCapture = { recorder, stream, context, frame: 0, chunks: [], uploadOnStop: false };
       vadCaptureRef.current = capture;
-      let noiseFloor = 0.006;
+      let noiseFloor = 0.003;
       let calibrationFrames = 0;
       let speechFrames = 0;
       let speechStarted = false;
@@ -746,13 +746,13 @@ export function ChatView({
         for (const sample of samples) sum += sample * sample;
         const rms = Math.sqrt(sum / samples.length);
         const now = performance.now();
-        if (!speechStarted && calibrationFrames < 12) {
+        if (!speechStarted && calibrationFrames < 20 && rms < 0.012) {
           noiseFloor = Math.max(0.003, noiseFloor * 0.8 + rms * 0.2);
           calibrationFrames += 1;
         }
-        const speaking = rms > Math.max(0.015, noiseFloor * 2.8);
+        const speaking = rms > Math.max(0.009, noiseFloor + 0.007, noiseFloor * 1.8);
         speechFrames = speaking ? speechFrames + 1 : Math.max(0, speechFrames - 1);
-        if (speechFrames >= 8) { speechStarted = true; lastSpeechAt = now; }
+        if (speechFrames >= 6) { speechStarted = true; lastSpeechAt = now; }
         else if (speechStarted && speaking) lastSpeechAt = now;
         if (speechStarted && now - lastSpeechAt >= 800) stopVadCapture(true);
         else if (speechStarted && now - startedAt >= 25000) stopVadCapture(true);
