@@ -209,6 +209,20 @@ export function extractMessageText(content: unknown): string {
   return '';
 }
 
+export function extractCommandCenterResponseText(body: Record<string, unknown>): string {
+  for (const candidate of [body.response, body.reply, body.text]) {
+    const text = extractMessageText(candidate);
+    if (text) return text;
+  }
+
+  const legacyMessage = body.message;
+  if (legacyMessage && typeof legacyMessage === 'object') {
+    const role = String((legacyMessage as Record<string, unknown>).role || '').trim().toLowerCase();
+    if (role === 'user') return '';
+  }
+  return extractMessageText(legacyMessage);
+}
+
 function parseToolArguments(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object') return value as Record<string, unknown>;
   try {
@@ -318,7 +332,7 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
       commandCenterSessionId = String(body.sessionId || commandCenterSessionId).trim();
       const rawCalls = Array.isArray(body.toolCalls) ? body.toolCalls : Array.isArray(body.tool_calls) ? body.tool_calls : [];
       if (!rawCalls.length) {
-        const text = [body.text, body.reply, body.message, body.response].map(extractMessageText).find(Boolean) || '';
+        const text = extractCommandCenterResponseText(body);
         if (!text) throw new Error('Command Center returned no chat response.');
         onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text } });
         onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: commandCenterSessionId } });
