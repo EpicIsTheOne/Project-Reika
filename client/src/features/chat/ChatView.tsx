@@ -38,7 +38,7 @@ import { agentVoiceContext, resolveAgentVoice, shouldSpeakAgentReply, speechPlay
 interface ActiveVadCapture {
   recorder: MediaRecorder;
   stream: MediaStream;
-  context: AudioContext;
+  source: MediaStreamAudioSourceNode;
   frame: number;
   chunks: Blob[];
   uploadOnStop: boolean;
@@ -99,6 +99,7 @@ export function ChatView({
   const [callState, setCallState] = useState<"idle" | "listening" | "processing" | "speaking" | "muted" | "reconnecting" | "offline" | "error">("idle");
   const [callTranscript, setCallTranscript] = useState("");
   const vadCaptureRef = useRef<ActiveVadCapture | null>(null);
+  const callAudioContextRef = useRef<AudioContext | null>(null);
   const transcriptionRequestRef = useRef<string | null>(null);
   const callActiveRef = useRef(false);
   const callMutedRef = useRef(false);
@@ -205,9 +206,24 @@ export function ChatView({
     vadCaptureRef.current = null;
     capture.uploadOnStop = upload;
     cancelAnimationFrame(capture.frame);
+    capture.source.disconnect();
     for (const track of capture.stream.getTracks()) track.stop();
-    void capture.context.close().catch(() => undefined);
     if (capture.recorder.state !== "inactive") capture.recorder.stop();
+  };
+
+  const ensureCallAudioContext = () => {
+    const existing = callAudioContextRef.current;
+    if (existing && existing.state !== "closed") return existing;
+    const context = new AudioContext();
+    callAudioContextRef.current = context;
+    void context.resume().catch(() => undefined);
+    return context;
+  };
+
+  const closeCallAudioContext = () => {
+    const context = callAudioContextRef.current;
+    callAudioContextRef.current = null;
+    if (context && context.state !== "closed") void context.close().catch(() => undefined);
   };
 
   const cancelTranscription = () => {
@@ -220,6 +236,7 @@ export function ChatView({
   useEffect(() => () => {
     callActiveRef.current = false;
     stopVadCapture(false);
+    closeCallAudioContext();
     cancelTranscription();
     void speechPlayback.stop();
   }, []);
@@ -694,12 +711,14 @@ export function ChatView({
       }
       const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"].find((value) => MediaRecorder.isTypeSupported(value)) ?? "";
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 32000 } : undefined);
-      const context = new AudioContext();
+      const context = ensureCallAudioContext();
+      if (context.state === "suspended") await context.resume();
       const analyser = context.createAnalyser();
       analyser.fftSize = 512;
-      context.createMediaStreamSource(stream).connect(analyser);
+      const source = context.createMediaStreamSource(stream);
+      source.connect(analyser);
       const samples = new Float32Array(analyser.fftSize);
-      const capture: ActiveVadCapture = { recorder, stream, context, frame: 0, chunks: [], uploadOnStop: false };
+      const capture: ActiveVadCapture = { recorder, stream, source, frame: 0, chunks: [], uploadOnStop: false };
       vadCaptureRef.current = capture;
       let noiseFloor = 0.003;
       let calibrationFrames = 0;
@@ -773,12 +792,14 @@ export function ChatView({
   };
 
   const startCall = async () => {
+    ensureCallAudioContext();
     await speechPlayback.stop();
     const sttStatus = await window.reikaDesktop?.stt.secretStatus().catch(() => null);
     if (!sttStatus?.configured) {
       setCallOpen(true);
       setCallState("error");
       setCallTranscript("Configure an OpenRouter API key in Settings > Secrets to use Whisper calls.");
+      closeCallAudioContext();
       return;
     }
     callActiveRef.current = true;
@@ -792,6 +813,7 @@ export function ChatView({
     callActiveRef.current = false;
     callMutedRef.current = false;
     stopVadCapture(false);
+    closeCallAudioContext();
     cancelTranscription();
     await speechPlayback.stop();
     setCallOpen(false);
@@ -805,9 +827,11 @@ export function ChatView({
     setCallMuted(muted);
     if (muted) {
       stopVadCapture(false);
+      closeCallAudioContext();
       cancelTranscription();
       setCallState("muted");
     } else if (callActiveRef.current) {
+      ensureCallAudioContext();
       window.setTimeout(() => void startListening(), 0);
     }
   };
