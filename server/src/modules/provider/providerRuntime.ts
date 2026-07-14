@@ -214,13 +214,12 @@ export function extractCommandCenterResponseText(body: Record<string, unknown>):
     const text = extractMessageText(candidate);
     if (text) return text;
   }
+  return '';
+}
 
-  const legacyMessage = body.message;
-  if (legacyMessage && typeof legacyMessage === 'object') {
-    const role = String((legacyMessage as Record<string, unknown>).role || '').trim().toLowerCase();
-    if (role === 'user') return '';
-  }
-  return extractMessageText(legacyMessage);
+export function extractCommandCenterSessionId(body: Record<string, unknown>, fallback = ''): string {
+  const session = body.session && typeof body.session === 'object' ? body.session as Record<string, unknown> : undefined;
+  return String(body.sessionId || session?.id || fallback).trim();
 }
 
 function parseToolArguments(value: unknown): Record<string, unknown> {
@@ -329,7 +328,7 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
       });
       const body = await response.json().catch(() => ({})) as Record<string, unknown>;
       if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
-      commandCenterSessionId = String(body.sessionId || commandCenterSessionId).trim();
+      commandCenterSessionId = extractCommandCenterSessionId(body, commandCenterSessionId);
       const rawCalls = Array.isArray(body.toolCalls) ? body.toolCalls : Array.isArray(body.tool_calls) ? body.tool_calls : [];
       if (!rawCalls.length) {
         const text = extractCommandCenterResponseText(body);

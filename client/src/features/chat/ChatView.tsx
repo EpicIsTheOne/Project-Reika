@@ -103,6 +103,8 @@ export function ChatView({
   const transcriptionRequestRef = useRef<string | null>(null);
   const callActiveRef = useRef(false);
   const callMutedRef = useRef(false);
+  const lastAgentSpeechRef = useRef("");
+  const listenResumeAtRef = useRef(0);
   const providerSessionIdRef = useRef<string | undefined>(undefined);
   const suppressedRelaySessionLoadRef = useRef<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
@@ -475,6 +477,10 @@ export function ChatView({
           requestId
         }, relayUrl)
       : undefined;
+    if (callActiveRef.current) {
+      stopVadCapture(false);
+      lastAgentSpeechRef.current = message.body;
+    }
     await speechPlayback.speak({ messageId: message.id, text: message.body, voice: resolvedVoice, remoteSynthesizer, force });
   };
 
@@ -593,7 +599,13 @@ export function ChatView({
         await speakAgentMessage(latestAgentMessage, fromCall);
       }
     } catch (sendError) {
-      setSendError(normalizeChatError(sendError, "Message failed."));
+      const errorMessage = normalizeChatError(sendError, "Message failed.");
+      setSendError(errorMessage);
+      if (fromCall && callActiveRef.current) {
+        setCallState(navigator.onLine ? "reconnecting" : "offline");
+        setCallTranscript(errorMessage);
+        if (navigator.onLine) window.setTimeout(() => void startListening(), 1200);
+      }
     } finally {
       suppressedRelaySessionLoadRef.current = null;
       setBusy(false);
@@ -693,6 +705,11 @@ export function ChatView({
 
   const startListening = async () => {
     if (!callActiveRef.current || callMutedRef.current || vadCaptureRef.current || transcriptionRequestRef.current) return;
+    const cooldown = listenResumeAtRef.current - Date.now();
+    if (cooldown > 0) {
+      window.setTimeout(() => void startListening(), cooldown);
+      return;
+    }
     if (!window.reikaDesktop?.stt || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setCallState("error");
       setCallTranscript("Secure Whisper transcription is unavailable in this desktop runtime.");
@@ -749,6 +766,12 @@ export function ChatView({
           transcriptionRequestRef.current = null;
           const text = result.text.trim();
           if (!text) throw new Error("Whisper returned an empty transcription.");
+          if (isLikelyPlaybackEcho(text, lastAgentSpeechRef.current)) {
+            setCallTranscript("Playback echo ignored. Listening...");
+            listenResumeAtRef.current = Date.now() + 500;
+            window.setTimeout(() => void startListening(), 500);
+            return;
+          }
           setCallTranscript(text);
           await sendMessage(text, true);
         } catch (error) {
@@ -838,7 +861,10 @@ export function ChatView({
 
   useEffect(() => {
     if (!callOpen || !callActiveRef.current || callMuted) return;
-    if (callState === "speaking" && playback.phase === "idle") window.setTimeout(() => void startListening(), 100);
+    if (callState === "speaking" && playback.phase === "idle") {
+      listenResumeAtRef.current = Date.now() + 1000;
+      window.setTimeout(() => void startListening(), 1000);
+    }
     if (callState === "speaking" && playback.phase === "error") setCallState("error");
   }, [callOpen, callMuted, callState, playback.phase]);
 
@@ -1156,6 +1182,20 @@ function getRelayProviderId(provider: ReikaProviderRecord) {
 function getRelayAgentId(agent: ReikaProviderRecord["agents"][number] | undefined) {
   if (!agent) return undefined;
   return typeof agent.relayAgentId === "string" && agent.relayAgentId ? agent.relayAgentId : agent.id;
+}
+
+function isLikelyPlaybackEcho(transcript: string, agentSpeech: string) {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9\s]/gu, " ").replace(/\s+/gu, " ").trim();
+  const heard = normalize(transcript);
+  const spoken = normalize(agentSpeech);
+  if (!heard || !spoken) return false;
+  if (heard === spoken || (heard.length >= 18 && spoken.includes(heard)) || (spoken.length >= 18 && heard.includes(spoken))) return true;
+  const heardWords = new Set(heard.split(" "));
+  const spokenWords = new Set(spoken.split(" "));
+  if (heardWords.size < 4 || spokenWords.size < 4) return false;
+  let overlap = 0;
+  for (const word of heardWords) if (spokenWords.has(word)) overlap += 1;
+  return overlap / Math.min(heardWords.size, spokenWords.size) >= 0.8;
 }
 
 const delegationStageLabels: Record<string, string> = {
