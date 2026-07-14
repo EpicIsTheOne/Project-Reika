@@ -184,7 +184,7 @@ function openClawSessionKey(agentId: string, providerSessionId: string) {
   return `agent:${safeAgent}:reika:${safeSession}`;
 }
 
-function extractMessageText(content: unknown) {
+export function extractMessageText(content: unknown): string {
   if (typeof content === 'string') return content.trim();
   if (Array.isArray(content)) {
     return content
@@ -196,6 +196,15 @@ function extractMessageText(content: unknown) {
       })
       .join('')
       .trim();
+  }
+  if (content && typeof content === 'object') {
+    const record = content as Record<string, unknown>;
+    for (const key of ['text', 'content', 'message', 'reply', 'response']) {
+      const candidate = record[key];
+      if (candidate === content) continue;
+      const text: string = extractMessageText(candidate);
+      if (text) return text;
+    }
   }
   return '';
 }
@@ -309,7 +318,7 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
       commandCenterSessionId = String(body.sessionId || commandCenterSessionId).trim();
       const rawCalls = Array.isArray(body.toolCalls) ? body.toolCalls : Array.isArray(body.tool_calls) ? body.tool_calls : [];
       if (!rawCalls.length) {
-        const text = String(body.text || body.reply || body.message || body.response || '').trim();
+        const text = [body.text, body.reply, body.message, body.response].map(extractMessageText).find(Boolean) || '';
         if (!text) throw new Error('Command Center returned no chat response.');
         onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text } });
         onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: commandCenterSessionId } });
