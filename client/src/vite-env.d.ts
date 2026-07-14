@@ -18,5 +18,13 @@ interface Window {
       cancel(requestId: string): Promise<{ cancelled: boolean }>;
       stopAll(): Promise<{ stopped: boolean }>;
     };
+    stt: {
+      secretStatus(): Promise<ReikaVoiceSecretStatus>;
+      saveSecret(apiKey: string): Promise<ReikaVoiceSecretStatus>;
+      testSecret(): Promise<ReikaVoiceSecretStatus>;
+      removeSecret(): Promise<ReikaVoiceSecretStatus>;
+      transcribe(input: { requestId: string; audioBase64: string; format: string }): Promise<{ requestId: string; text: string; seconds: number; cost: number }>;
+      cancel(requestId: string): Promise<{ cancelled: boolean }>;
+    };
   };
 }

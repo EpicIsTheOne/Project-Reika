@@ -35,16 +35,13 @@ import { formatClock, getReikaDeviceName, mapProviderStatus, mapReikaMessage, pr
 import type { Agent, ChatMessage } from "../../types";
 import { agentVoiceContext, resolveAgentVoice, shouldSpeakAgentReply, speechPlayback, type PlaybackState } from "../../lib/voicePlayback";
 
-interface BrowserSpeechRecognition {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: ((event: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
-  onerror: ((event: { error: string }) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
+interface ActiveVadCapture {
+  recorder: MediaRecorder;
+  stream: MediaStream;
+  context: AudioContext;
+  frame: number;
+  chunks: Blob[];
+  uploadOnStop: boolean;
 }
 
 export function ChatView({
@@ -101,9 +98,8 @@ export function ChatView({
   const [callMuted, setCallMuted] = useState(false);
   const [callState, setCallState] = useState<"idle" | "listening" | "processing" | "speaking" | "muted" | "reconnecting" | "offline" | "error">("idle");
   const [callTranscript, setCallTranscript] = useState("");
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
-  const recognitionRetryRef = useRef(0);
-  const recognitionRetryTimerRef = useRef<number | null>(null);
+  const vadCaptureRef = useRef<ActiveVadCapture | null>(null);
+  const transcriptionRequestRef = useRef<string | null>(null);
   const callActiveRef = useRef(false);
   const callMutedRef = useRef(false);
   const providerSessionIdRef = useRef<string | undefined>(undefined);
@@ -203,11 +199,28 @@ export function ChatView({
   const resolvedVoice = selectedVoiceContext ? resolveAgentVoice(selectedVoiceContext, settings) : undefined;
   const callAllowed = selectedVoiceContext ? settings.voice.agents[selectedVoiceContext.key]?.callEnabled !== false : false;
 
+  const stopVadCapture = (upload = false) => {
+    const capture = vadCaptureRef.current;
+    if (!capture) return;
+    vadCaptureRef.current = null;
+    capture.uploadOnStop = upload;
+    cancelAnimationFrame(capture.frame);
+    for (const track of capture.stream.getTracks()) track.stop();
+    void capture.context.close().catch(() => undefined);
+    if (capture.recorder.state !== "inactive") capture.recorder.stop();
+  };
+
+  const cancelTranscription = () => {
+    const requestId = transcriptionRequestRef.current;
+    transcriptionRequestRef.current = null;
+    if (requestId) void window.reikaDesktop?.stt.cancel(requestId);
+  };
+
   useEffect(() => speechPlayback.subscribe(setPlayback), []);
   useEffect(() => () => {
     callActiveRef.current = false;
-    recognitionRef.current?.abort();
-    if (recognitionRetryTimerRef.current !== null) window.clearTimeout(recognitionRetryTimerRef.current);
+    stopVadCapture(false);
+    cancelTranscription();
     void speechPlayback.stop();
   }, []);
   useEffect(() => { void speechPlayback.stop(); }, [selectedAgentOptionKey]);
@@ -661,62 +674,99 @@ export function ChatView({
     URL.revokeObjectURL(url);
   };
 
-  const startListening = () => {
-    if (!callActiveRef.current || callMutedRef.current || recognitionRef.current) return;
-    const Recognition = (window as unknown as { SpeechRecognition?: new () => BrowserSpeechRecognition; webkitSpeechRecognition?: new () => BrowserSpeechRecognition }).SpeechRecognition
-      ?? (window as unknown as { webkitSpeechRecognition?: new () => BrowserSpeechRecognition }).webkitSpeechRecognition;
-    if (!Recognition) {
+  const startListening = async () => {
+    if (!callActiveRef.current || callMutedRef.current || vadCaptureRef.current || transcriptionRequestRef.current) return;
+    if (!window.reikaDesktop?.stt || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setCallState("error");
-      setCallTranscript("Speech recognition is unavailable in this desktop runtime.");
+      setCallTranscript("Secure Whisper transcription is unavailable in this desktop runtime.");
       return;
     }
-    const recognition = new Recognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = navigator.language || "en-US";
-    recognition.onresult = (event) => {
-      let transcript = "";
-      let complete = false;
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        transcript += event.results[index][0]?.transcript ?? "";
-        complete ||= event.results[index].isFinal;
-      }
-      const cleaned = transcript.trim();
-      if (cleaned) setCallTranscript(cleaned);
-      if (complete && cleaned && callActiveRef.current) {
-        recognitionRetryRef.current = 0;
-        recognitionRef.current = null;
-        recognition.stop();
-        void sendMessage(cleaned, true);
-      }
-    };
-    recognition.onerror = (event) => {
-      recognitionRef.current = null;
-      if (!callActiveRef.current || event.error === "aborted") return;
-      if (event.error === "network" && !navigator.onLine) {
-        setCallState("offline");
-        setCallTranscript("Speech recognition is offline. Reconnect to continue the call.");
+    if (!navigator.onLine) {
+      setCallState("offline");
+      setCallTranscript("Whisper transcription is offline. Reconnect to continue the call.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+      if (!callActiveRef.current || callMutedRef.current) {
+        for (const track of stream.getTracks()) track.stop();
         return;
       }
-      if (event.error === "network" && recognitionRetryRef.current < 2) {
-        recognitionRetryRef.current += 1;
-        setCallState("reconnecting");
-        setCallTranscript(`Speech recognition disconnected. Reconnecting (${recognitionRetryRef.current}/2)...`);
-        recognitionRetryTimerRef.current = window.setTimeout(() => {
-          recognitionRetryTimerRef.current = null;
-          if (callActiveRef.current && !callMutedRef.current) startListening();
-        }, recognitionRetryRef.current * 1000);
-        return;
-      }
-      setCallState("error");
-      setCallTranscript(event.error === "not-allowed" ? "Microphone permission was denied." : event.error === "network" ? "Speech recognition service is unreachable after 2 retries." : `Microphone error: ${event.error}`);
-    };
-    recognition.onend = () => { if (recognitionRef.current === recognition) recognitionRef.current = null; };
-    recognitionRef.current = recognition;
-    setCallTranscript("");
-    setCallState("listening");
-    try { recognition.start(); } catch (error) {
-      recognitionRef.current = null;
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"].find((value) => MediaRecorder.isTypeSupported(value)) ?? "";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 32000 } : undefined);
+      const context = new AudioContext();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      context.createMediaStreamSource(stream).connect(analyser);
+      const samples = new Float32Array(analyser.fftSize);
+      const capture: ActiveVadCapture = { recorder, stream, context, frame: 0, chunks: [], uploadOnStop: false };
+      vadCaptureRef.current = capture;
+      let noiseFloor = 0.006;
+      let calibrationFrames = 0;
+      let speechFrames = 0;
+      let speechStarted = false;
+      let lastSpeechAt = 0;
+      const startedAt = performance.now();
+      recorder.ondataavailable = (event) => { if (event.data.size) capture.chunks.push(event.data); };
+      recorder.onerror = () => {
+        if (vadCaptureRef.current === capture) stopVadCapture(false);
+        setCallState("error");
+        setCallTranscript("Microphone recording failed.");
+      };
+      recorder.onstop = async () => {
+        if (!capture.uploadOnStop || !callActiveRef.current || callMutedRef.current) return;
+        try {
+          const blob = new Blob(capture.chunks, { type: recorder.mimeType || "audio/webm" });
+          if (blob.size < 256) throw new Error("The recorded utterance was empty.");
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          let binary = "";
+          for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+          const requestId = crypto.randomUUID();
+          transcriptionRequestRef.current = requestId;
+          setCallState("processing");
+          setCallTranscript("Transcribing with Whisper...");
+          const result = await window.reikaDesktop!.stt.transcribe({ requestId, audioBase64: btoa(binary), format: recorder.mimeType.includes("ogg") ? "ogg" : "webm" });
+          if (transcriptionRequestRef.current !== requestId || !callActiveRef.current) return;
+          transcriptionRequestRef.current = null;
+          const text = result.text.trim();
+          if (!text) throw new Error("Whisper returned an empty transcription.");
+          setCallTranscript(text);
+          await sendMessage(text, true);
+        } catch (error) {
+          transcriptionRequestRef.current = null;
+          if (!callActiveRef.current) return;
+          setCallState(navigator.onLine ? "error" : "offline");
+          setCallTranscript(error instanceof Error ? error.message : "Whisper transcription failed.");
+        }
+      };
+      const measure = () => {
+        if (vadCaptureRef.current !== capture || recorder.state === "inactive") return;
+        analyser.getFloatTimeDomainData(samples);
+        let sum = 0;
+        for (const sample of samples) sum += sample * sample;
+        const rms = Math.sqrt(sum / samples.length);
+        const now = performance.now();
+        if (!speechStarted && calibrationFrames < 12) {
+          noiseFloor = Math.max(0.003, noiseFloor * 0.8 + rms * 0.2);
+          calibrationFrames += 1;
+        }
+        const speaking = rms > Math.max(0.015, noiseFloor * 2.8);
+        speechFrames = speaking ? speechFrames + 1 : Math.max(0, speechFrames - 1);
+        if (speechFrames >= 8) { speechStarted = true; lastSpeechAt = now; }
+        else if (speechStarted && speaking) lastSpeechAt = now;
+        if (speechStarted && now - lastSpeechAt >= 800) stopVadCapture(true);
+        else if (speechStarted && now - startedAt >= 25000) stopVadCapture(true);
+        else if (!speechStarted && now - startedAt >= 15000) {
+          stopVadCapture(false);
+          if (callActiveRef.current && !callMutedRef.current) window.setTimeout(() => void startListening(), 100);
+        } else capture.frame = requestAnimationFrame(measure);
+      };
+      recorder.start(200);
+      setCallTranscript("Listening... (local VAD)");
+      setCallState("listening");
+      capture.frame = requestAnimationFrame(measure);
+    } catch (error) {
+      stopVadCapture(false);
       setCallState("error");
       setCallTranscript(error instanceof Error ? error.message : "Could not start microphone capture.");
     }
@@ -724,21 +774,25 @@ export function ChatView({
 
   const startCall = async () => {
     await speechPlayback.stop();
+    const sttStatus = await window.reikaDesktop?.stt.secretStatus().catch(() => null);
+    if (!sttStatus?.configured) {
+      setCallOpen(true);
+      setCallState("error");
+      setCallTranscript("Configure an OpenRouter API key in Settings > Secrets to use Whisper calls.");
+      return;
+    }
     callActiveRef.current = true;
     callMutedRef.current = false;
-    recognitionRetryRef.current = 0;
     setCallOpen(true);
     setCallMuted(false);
-    window.setTimeout(startListening, 0);
+    window.setTimeout(() => void startListening(), 0);
   };
 
   const endCall = async () => {
     callActiveRef.current = false;
     callMutedRef.current = false;
-    recognitionRef.current?.abort();
-    recognitionRef.current = null;
-    if (recognitionRetryTimerRef.current !== null) window.clearTimeout(recognitionRetryTimerRef.current);
-    recognitionRetryTimerRef.current = null;
+    stopVadCapture(false);
+    cancelTranscription();
     await speechPlayback.stop();
     setCallOpen(false);
     setCallState("idle");
@@ -750,19 +804,17 @@ export function ChatView({
     callMutedRef.current = muted;
     setCallMuted(muted);
     if (muted) {
-      recognitionRef.current?.abort();
-      recognitionRef.current = null;
-      if (recognitionRetryTimerRef.current !== null) window.clearTimeout(recognitionRetryTimerRef.current);
-      recognitionRetryTimerRef.current = null;
+      stopVadCapture(false);
+      cancelTranscription();
       setCallState("muted");
     } else if (callActiveRef.current) {
-      window.setTimeout(startListening, 0);
+      window.setTimeout(() => void startListening(), 0);
     }
   };
 
   useEffect(() => {
     if (!callOpen || !callActiveRef.current || callMuted) return;
-    if (callState === "speaking" && playback.phase === "idle") window.setTimeout(startListening, 100);
+    if (callState === "speaking" && playback.phase === "idle") window.setTimeout(() => void startListening(), 100);
     if (callState === "speaking" && playback.phase === "error") setCallState("error");
   }, [callOpen, callMuted, callState, playback.phase]);
 

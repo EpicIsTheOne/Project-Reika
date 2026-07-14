@@ -23,5 +23,13 @@ contextBridge.exposeInMainWorld("reikaDesktop", {
     synthesize: (input: { requestId: string; text: string; voiceId: string }) => invokeVoice("reika-voice:synthesize", input),
     cancel: (requestId: string) => invokeVoice("reika-voice:cancel", { requestId }),
     stopAll: () => invokeVoice("reika-voice:stop-all")
+  },
+  stt: {
+    secretStatus: () => invokeVoice("reika-stt:secret-status"),
+    saveSecret: (apiKey: string) => invokeVoice("reika-stt:save-secret", { apiKey }),
+    testSecret: () => invokeVoice("reika-stt:test-secret"),
+    removeSecret: () => invokeVoice("reika-stt:remove-secret"),
+    transcribe: (input: { requestId: string; audioBase64: string; format: string }) => invokeVoice("reika-stt:transcribe", input),
+    cancel: (requestId: string) => invokeVoice("reika-stt:cancel", { requestId })
   }
 });

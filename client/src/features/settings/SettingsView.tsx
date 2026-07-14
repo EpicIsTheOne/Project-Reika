@@ -62,6 +62,9 @@ export function SettingsView({
   const [fishKeyDraft, setFishKeyDraft] = useState("");
   const [fishStatus, setFishStatus] = useState<ReikaVoiceSecretStatus | null>(null);
   const [fishBusy, setFishBusy] = useState(false);
+  const [openRouterKeyDraft, setOpenRouterKeyDraft] = useState("");
+  const [openRouterStatus, setOpenRouterStatus] = useState<ReikaVoiceSecretStatus | null>(null);
+  const [openRouterBusy, setOpenRouterBusy] = useState(false);
   const [agentSearch, setAgentSearch] = useState("");
   const [agentProviderFilter, setAgentProviderFilter] = useState("all");
   const artInstanceKey = useMemo(() => makeArtRuntimeSeed(), []);
@@ -109,6 +112,7 @@ export function SettingsView({
       })
       .catch(() => undefined);
     window.reikaDesktop?.voice.secretStatus().then((status) => { if (active) setFishStatus(status); }).catch(() => undefined);
+    window.reikaDesktop?.stt.secretStatus().then((status) => { if (active) setOpenRouterStatus(status); }).catch(() => undefined);
     return () => {
       active = false;
     };
@@ -149,6 +153,29 @@ export function SettingsView({
       setSettingsError(error instanceof Error ? error.message : String(error));
     } finally {
       setFishBusy(false);
+    }
+  };
+
+  const runOpenRouterSecretAction = async (action: "save" | "test" | "remove") => {
+    if (!window.reikaDesktop?.stt) {
+      setSettingsError("Secure OpenRouter settings require the packaged Reika desktop app.");
+      return;
+    }
+    setOpenRouterBusy(true);
+    setSettingsError(null);
+    try {
+      const status = action === "save"
+        ? await window.reikaDesktop.stt.saveSecret(openRouterKeyDraft.trim())
+        : action === "test"
+          ? await window.reikaDesktop.stt.testSecret()
+          : await window.reikaDesktop.stt.removeSecret();
+      setOpenRouterStatus(status);
+      setOpenRouterKeyDraft("");
+      setSettingsError(action === "remove" ? "OpenRouter key removed." : "OpenRouter connection validated.");
+    } catch (error) {
+      setSettingsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOpenRouterBusy(false);
     }
   };
 
@@ -435,7 +462,16 @@ export function SettingsView({
                     <button className="secondary-action small" onClick={() => void runFishSecretAction("remove")} disabled={fishBusy || !fishStatus?.configured}>Remove</button>
                   </div>
                 </SettingRow>
-                <p className="boot-note">The renderer can save, test, replace, or remove this key, but it cannot read it back. Fish requests run inside Reika's trusted desktop process.</p>
+                <SettingRow title="OpenRouter API key" detail={openRouterStatus?.configured ? `Configured securely${openRouterStatus.lastValidatedAt ? ` · validated ${new Date(openRouterStatus.lastValidatedAt).toLocaleString()}` : ""}` : openRouterStatus?.secureStorageAvailable === false ? "Secure operating-system storage is unavailable." : "Required for Whisper voice-call transcription."}>
+                  <div className="relay-url-control secret-control">
+                    <KeyRound size={18} />
+                    <input value={openRouterKeyDraft} onChange={(event) => setOpenRouterKeyDraft(event.target.value)} type="password" autoComplete="off" spellCheck={false} placeholder={openRouterStatus?.configured ? "Replace configured key" : "OpenRouter API key"} />
+                    <button className="primary-action small" onClick={() => void runOpenRouterSecretAction("save")} disabled={openRouterBusy || !openRouterKeyDraft.trim()}>Save</button>
+                    <button className="secondary-action small" onClick={() => void runOpenRouterSecretAction("test")} disabled={openRouterBusy || !openRouterStatus?.configured}>Test</button>
+                    <button className="secondary-action small" onClick={() => void runOpenRouterSecretAction("remove")} disabled={openRouterBusy || !openRouterStatus?.configured}>Remove</button>
+                  </div>
+                </SettingRow>
+                <p className="boot-note">Keys are write-only from the renderer. Fish synthesis and OpenRouter Whisper transcription run inside Reika's trusted desktop process.</p>
               </>
             ) : null}
             {activeTab === "Devices" ? (

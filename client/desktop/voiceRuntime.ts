@@ -8,6 +8,8 @@ import { buildDirectFishTtsSettings, buildFishTtsPayload, callFishTTS } from "fi
 
 const FISH_BASE_URL = "https://api.fish.audio";
 const FISH_BACKEND = "s2-pro";
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const OPENROUTER_STT_MODEL = "openai/whisper-large-v3";
 const MAX_CACHE_ENTRIES = 24;
 const MAX_CACHE_BYTES = 32 * 1024 * 1024;
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -42,19 +44,22 @@ async function writeSecrets(value: SecretFile) {
   await rename(temporary, secretPath());
 }
 
-async function getFishKey() {
+async function getSecret(id: string, label: string) {
   if (!encryptionReady()) throw new Error("Secure operating-system secret storage is unavailable.");
-  const record = (await readSecrets()).secrets.fishAudio;
-  if (!record?.encrypted) throw new Error("Fish Audio API key is not configured.");
+  const record = (await readSecrets()).secrets[id];
+  if (!record?.encrypted) throw new Error(`${label} API key is not configured.`);
   try {
     return safeStorage.decryptString(Buffer.from(record.encrypted, "base64"));
   } catch {
-    throw new Error("Fish Audio secret could not be decrypted on this device.");
+    throw new Error(`${label} secret could not be decrypted on this device.`);
   }
 }
 
-function publicStatus(file: SecretFile) {
-  const record = file.secrets.fishAudio;
+const getFishKey = () => getSecret("fishAudio", "Fish Audio");
+const getOpenRouterKey = () => getSecret("openRouter", "OpenRouter");
+
+function publicStatus(file: SecretFile, id = "fishAudio") {
+  const record = file.secrets[id];
   return { configured: Boolean(record?.encrypted), secureStorageAvailable: encryptionReady(), updatedAt: record?.updatedAt, lastValidatedAt: record?.lastValidatedAt };
 }
 
@@ -62,6 +67,7 @@ function cleanError(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error || "Voice operation failed.");
   return raw
     .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/sk-or-v1-[A-Za-z0-9_-]+/gi, "[redacted]")
     .replace(/[a-f0-9]{32,}/gi, "[redacted]")
     .replace(/api[_ -]?key\s*[:=]\s*\S+/gi, "API key [redacted]")
     .slice(0, 500);
@@ -85,6 +91,14 @@ async function testFishKey(apiKey: string, signal?: AbortSignal) {
     apiKey, baseUrl: FISH_BASE_URL, cache: new Map(), limit: 1, pageSize: 1, maxCacheEntries: 2, signal: signal ?? AbortSignal.timeout(20000)
   });
   return Boolean(result && Array.isArray(result.items));
+}
+
+async function testOpenRouterKey(apiKey: string, signal?: AbortSignal) {
+  const response = await fetch(`${OPENROUTER_BASE_URL}/key`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: signal ?? AbortSignal.timeout(20000)
+  });
+  if (!response.ok) throw new Error(response.status === 401 ? "OpenRouter authentication failed." : `OpenRouter validation failed (${response.status}).`);
 }
 
 function pruneAudioCache() {
@@ -190,5 +204,72 @@ export function registerVoiceRuntime() {
     for (const controller of activeRequests.values()) controller.abort();
     activeRequests.clear();
     return { stopped: true };
+  });
+  ipcMain.handle("reika-stt:secret-status", async () => publicStatus(await readSecrets(), "openRouter"));
+  ipcMain.handle("reika-stt:save-secret", async (_event, input = {}) => {
+    if (!encryptionReady()) throw new Error("Secure operating-system secret storage is unavailable.");
+    const apiKey = requireText((input as { apiKey?: unknown }).apiKey, "OpenRouter API key", 500);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      await testOpenRouterKey(apiKey, controller.signal);
+      const file = await readSecrets();
+      file.secrets.openRouter = { encrypted: safeStorage.encryptString(apiKey).toString("base64"), updatedAt: new Date().toISOString(), lastValidatedAt: new Date().toISOString() };
+      await writeSecrets(file);
+      return publicStatus(file, "openRouter");
+    } catch (error) { throw new Error(cleanError(error)); }
+    finally { clearTimeout(timeout); }
+  });
+  ipcMain.handle("reika-stt:test-secret", async () => {
+    try {
+      const apiKey = await getOpenRouterKey();
+      await testOpenRouterKey(apiKey);
+      const file = await readSecrets();
+      if (file.secrets.openRouter) file.secrets.openRouter.lastValidatedAt = new Date().toISOString();
+      await writeSecrets(file);
+      return publicStatus(file, "openRouter");
+    } catch (error) { throw new Error(cleanError(error)); }
+  });
+  ipcMain.handle("reika-stt:remove-secret", async () => {
+    const file = await readSecrets();
+    delete file.secrets.openRouter;
+    if (Object.keys(file.secrets).length) await writeSecrets(file); else await rm(secretPath(), { force: true });
+    return publicStatus(file, "openRouter");
+  });
+  ipcMain.handle("reika-stt:transcribe", async (_event, input = {}) => {
+    const request = input as { requestId?: unknown; audioBase64?: unknown; format?: unknown };
+    const requestId = requireText(request.requestId, "Transcription request ID", 160);
+    const audioBase64 = requireText(request.audioBase64, "Audio", 16 * 1024 * 1024);
+    const format = requireText(request.format, "Audio format", 12).toLowerCase();
+    if (!["webm", "ogg", "wav", "mp3", "m4a", "aac"].includes(format)) throw new Error("Unsupported transcription audio format.");
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(audioBase64)) throw new Error("Invalid transcription audio encoding.");
+    const bytes = Buffer.from(audioBase64, "base64");
+    if (bytes.length < 256 || bytes.length > 12 * 1024 * 1024) throw new Error("Transcription audio size is invalid.");
+    const controller = new AbortController();
+    activeRequests.get(requestId)?.abort();
+    activeRequests.set(requestId, controller);
+    const timeout = setTimeout(() => controller.abort(), 60000);
+    try {
+      const apiKey = await getOpenRouterKey();
+      const response = await fetch(`${OPENROUTER_BASE_URL}/audio/transcriptions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-OpenRouter-Title": "Reika" },
+        body: JSON.stringify({ model: OPENROUTER_STT_MODEL, input_audio: { data: audioBase64, format }, temperature: 0 }),
+        signal: controller.signal
+      });
+      const payload = await response.json().catch(() => ({})) as { text?: unknown; error?: { message?: unknown }; usage?: { seconds?: unknown; cost?: unknown } };
+      if (!response.ok) throw new Error(typeof payload.error?.message === "string" ? payload.error.message : `OpenRouter transcription failed (${response.status}).`);
+      const text = requireText(payload.text, "Transcription", 4000);
+      return { requestId, text, seconds: Number(payload.usage?.seconds || 0), cost: Number(payload.usage?.cost || 0) };
+    } catch (error) { throw new Error(cleanError(error)); }
+    finally {
+      clearTimeout(timeout);
+      if (activeRequests.get(requestId) === controller) activeRequests.delete(requestId);
+    }
+  });
+  ipcMain.handle("reika-stt:cancel", async (_event, input = {}) => {
+    const requestId = typeof (input as { requestId?: unknown }).requestId === "string" ? String((input as { requestId: string }).requestId) : "";
+    if (requestId) { activeRequests.get(requestId)?.abort(); activeRequests.delete(requestId); }
+    return { cancelled: Boolean(requestId) };
   });
 }
