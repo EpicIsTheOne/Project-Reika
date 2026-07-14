@@ -380,20 +380,20 @@ export function ChatView({
         .then((result) => {
           providerSessionIdRef.current = [...result].reverse().map((item) => item.meta?.providerSessionId).find((value): value is string => typeof value === "string" && Boolean(value.trim()));
           setMessages(result.map(mapReikaMessage));
-          setSendError(null);
+          setSessionListError(null);
         })
         .catch((loadError) => {
-          setSendError(normalizeChatError(loadError, "Could not load that relay conversation."));
+          setSessionListError(normalizeChatError(loadError, "Could not load that relay conversation."));
         });
       return;
     }
     getSessionMessages(selectedSessionId)
       .then((result) => {
         setMessages(result.messages.map(mapReikaMessage));
-        setSendError(null);
+        setSessionListError(null);
       })
       .catch((loadError) => {
-        setSendError(normalizeChatError(loadError, "Could not load that conversation."));
+        setSessionListError(normalizeChatError(loadError, "Could not load that conversation."));
       });
   }, [relayUrl, selectedIsRelayProvider, selectedSessionId]);
 
@@ -1012,8 +1012,8 @@ export function ChatView({
             <span />
           </div>
           {stateError && !selectedIsRelayProvider ? <div className="chat-error-banner">Reika server offline. {stateError}</div> : null}
-          {!stateError && selectedProvider && !selectedProviderCanChat ? <div className="chat-error-banner">{selectedProvider.name} is not chat-capable yet.</div> : null}
-          {!stateError && selectedProvider && selectedProviderStatus !== "online" ? <div className="chat-error-banner">{selectedProvider.name} is {statusLabels[selectedProviderStatus].toLowerCase()}.</div> : null}
+          {!stateError && !selectedIsRelayProvider && selectedProvider && !selectedProviderCanChat ? <div className="chat-error-banner">{selectedProvider.name} is not chat-capable yet.</div> : null}
+          {!stateError && !selectedIsRelayProvider && selectedProvider && selectedProviderStatus !== "online" ? <div className="chat-error-banner">{selectedProvider.name} is {statusLabels[selectedProviderStatus].toLowerCase()}.</div> : null}
           {developerDiagnostics && selectedIsRelayProvider ? <div className="chat-inline-note">Relay chat active: {relayRouteSummary}</div> : null}
           {sendError ? <div className="chat-error-banner">{sendError}</div> : null}
           <div
