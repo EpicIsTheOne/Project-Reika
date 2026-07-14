@@ -1,14 +1,16 @@
-import { app, BrowserWindow, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, session, shell } from "electron";
 import { join } from "node:path";
 import { startDesktopServer, type DesktopServer } from "./localServer.js";
 import { ensureLocalAgent, stopLocalAgent, type LocalAgentRuntime } from "./localAgent.js";
 import { migrateLegacyUserData } from "./userDataMigration.js";
-import { getDesktopSecret, registerVoiceRuntime, saveDesktopSecret } from "./voiceRuntime.js";
+import { registerVoiceRuntime } from "./voiceRuntime.js";
+import { ensureLocalCommandCenter, stopLocalCommandCenter, type LocalCommandCenterRuntime } from "./localCommandCenter.js";
 
 const isDev = (process.env.REIKA_DESKTOP_DEV ?? process.env.AGENTHUB_DESKTOP_DEV) === "1";
 
 let desktopServer: DesktopServer | undefined;
 let localAgent: LocalAgentRuntime | undefined;
+let commandCenter: LocalCommandCenterRuntime | undefined;
 let mainWindow: BrowserWindow | undefined;
 
 async function createWindow() {
@@ -74,6 +76,8 @@ async function createWindow() {
     target: process.env.REIKA_NODE_TARGET ?? process.env.AGENTHUB_AGENT_TARGET,
     waitMs: 10000
   });
+  commandCenter = await ensureLocalCommandCenter(localAgent.url);
+  configureCommandCenterSession(commandCenter.url, commandCenter.embedToken);
 
   desktopServer = await startDesktopServer({
     distDir,
@@ -108,7 +112,7 @@ app.on("web-contents-created", (_event, contents) => {
 function isAllowedCommandCenterUrl(value: string) {
   try {
     const url = new URL(value);
-    return url.origin === "https://techexplore.us" && url.pathname.startsWith("/commandcenter");
+    return Boolean(commandCenter) && url.origin === new URL(commandCenter.url).origin;
   } catch {
     return false;
   }
@@ -117,29 +121,20 @@ function isAllowedCommandCenterUrl(value: string) {
 app.whenReady().then(async () => {
   migrateLegacyUserData(app.getPath("appData"), app.getPath("userData"));
   registerVoiceRuntime();
-  await configureCommandCenterSession();
+  ipcMain.handle("reika-command-center:url", () => commandCenter?.url || "");
   await createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
 });
 
-async function configureCommandCenterSession() {
+function configureCommandCenterSession(commandCenterUrl: string, embedToken: string) {
   const partition = session.fromPartition("persist:reika-command-center");
-  const provisionedToken = String(process.env.REIKA_COMMANDCENTER_EMBED_TOKEN || "").trim();
-  if (provisionedToken) {
-    await saveDesktopSecret("commandCenterEmbed", provisionedToken);
-    delete process.env.REIKA_COMMANDCENTER_EMBED_TOKEN;
-  }
+  const authUrl = new URL("api/auth/reika", commandCenterUrl).toString();
   partition.webRequest.onBeforeSendHeaders(
-    { urls: ["https://techexplore.us/commandcenter/api/auth/reika"] },
-    async (details, callback) => {
-      try {
-        const token = await getDesktopSecret("commandCenterEmbed", "Command Center integration");
-        callback({ requestHeaders: { ...details.requestHeaders, "X-Reika-Embed-Token": token } });
-      } catch {
-        callback({ requestHeaders: details.requestHeaders });
-      }
+    { urls: [authUrl] },
+    (details, callback) => {
+      callback({ requestHeaders: { ...details.requestHeaders, "X-Reika-Embed-Token": embedToken } });
     }
   );
 }
@@ -150,5 +145,6 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   void desktopServer?.close();
+  stopLocalCommandCenter();
   if (localAgent?.started) stopLocalAgent();
 });

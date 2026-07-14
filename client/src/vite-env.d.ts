@@ -5,6 +5,9 @@ interface ReikaVoiceSearchItem { id: string; title: string; description: string;
 interface ReikaVoiceSynthesisResult { requestId: string; audioBase64: string; contentType: string; taggedText: string; spokenText: string; tags: string[]; cacheHit: boolean; }
 interface Window {
   reikaDesktop?: {
+    commandCenter?: {
+      url: () => Promise<string>;
+    };
     platform: string;
     version: string;
     voice: {

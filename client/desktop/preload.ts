@@ -13,6 +13,9 @@ async function invokeVoice(channel: string, input?: unknown) {
 contextBridge.exposeInMainWorld("reikaDesktop", {
   platform: process.platform,
   version: process.env.npm_package_version ?? "0.1.0",
+  commandCenter: {
+    url: () => ipcRenderer.invoke("reika-command-center:url") as Promise<string>
+  },
   voice: {
     secretStatus: () => invokeVoice("reika-voice:secret-status"),
     saveSecret: (apiKey: string) => invokeVoice("reika-voice:save-secret", { apiKey }),
