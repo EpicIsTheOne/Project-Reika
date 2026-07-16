@@ -16,17 +16,19 @@
     "build:desktop": "npm --prefix ../server run build:windows-exe && npm run build && npm run build:desktop:main && electron-builder --win nsis --config electron-builder.json",
     "dist:windows": "npm run build:desktop",
     "desktop:shortcut": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-shortcut.ps1",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "test:embedded-commandcenter": "tsx scripts/test-embedded-commandcenter.ts"
   },
   "main": "dist-desktop/main.cjs",
   "build": {
     "extends": "./electron-builder.json"
   },
   "dependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.62.2",
     "@vitejs/plugin-react": "^4.3.4",
     "fish-audio-tts-toolkit": "github:EpicIsTheOne/fish-audio-tts-toolkit#df7f36c918ab9c9bdeb7efc9f55bb728e93b31af",
     "lucide-react": "^0.468.0",
-    "openclaw-command-center": "github:EpicIsTheOne/CommandCenter#f56f837",
+    "openclaw-command-center": "github:EpicIsTheOne/CommandCenter#b8dbfa6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "typescript": "^5.6.3",

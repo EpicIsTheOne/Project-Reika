@@ -38,6 +38,7 @@ export async function ensureLocalCommandCenter(agentUrl: string): Promise<LocalC
       BASE_PATH: "",
       LOCAL_API_ENABLED: "false",
       DEMO_MODE: "false",
+      COMMANDCENTER_RELAY_ONLY: "true",
       NODE_ENV: "reika-embedded",
       REIKA_EMBED_TOKEN: embedToken,
       COMMANDCENTER_DATA_DIR: dataDir
@@ -68,13 +69,14 @@ function provisionEmbeddedAuth(dataDir: string) {
 }
 
 async function provisionRelaySettings(dataDir: string, agentUrl: string) {
-  let relayUrl = String(process.env.REIKA_RELAY_TARGET || process.env.AGENTHUB_RELAY_TARGET || "").trim();
+  const configuredRelayTarget = String(process.env.REIKA_RELAY_TARGET || process.env.AGENTHUB_RELAY_TARGET || "").trim();
+  let discoveredRelayUrl = "";
   try {
     const response = await fetch(`${agentUrl}/state`, { signal: AbortSignal.timeout(2500) });
     const state = await response.json() as { settings?: { relayUrl?: string }; uplink?: { relayUrl?: string } };
-    relayUrl = String(state.settings?.relayUrl || state.uplink?.relayUrl || relayUrl).trim();
+    discoveredRelayUrl = String(state.settings?.relayUrl || state.uplink?.relayUrl || "").trim();
   } catch {}
-  if (!relayUrl) relayUrl = "https://relay.techexplore.us/v1/app";
+  const relayUrl = resolveEmbeddedRelayUrl({ configuredRelayTarget, discoveredRelayUrl }) || "wss://relay.techexplore.us/v1/app";
   writeFileSync(join(dataDir, "direct-chat-settings.json"), JSON.stringify({
     relayEnabled: true,
     relayUrl,
@@ -104,4 +106,47 @@ async function waitForReady(url: string, timeoutMs: number) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 200));
   }
   return false;
+}
+
+
+function resolveEmbeddedRelayUrl(input: { configuredRelayTarget?: string; discoveredRelayUrl?: string }) {
+  const configured = normalizeCommandCenterRelayUrl(input.configuredRelayTarget);
+  const discovered = normalizeCommandCenterRelayUrl(input.discoveredRelayUrl);
+  if (configured && !isLocalLoopbackUrl(configured)) return configured;
+  if (discovered && !isLocalLoopbackUrl(discovered)) return discovered;
+  if (configured) return configured;
+  return discovered;
+}
+
+function normalizeCommandCenterRelayUrl(value?: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    if (url.protocol === "ws:") url.protocol = "http:";
+    else if (url.protocol === "wss:") url.protocol = "https:";
+    else if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    if (!url.pathname || url.pathname === "/") {
+      url.pathname = "/v1/app";
+    } else if (/\/v1\/device\/?$/iu.test(url.pathname)) {
+      url.pathname = url.pathname.replace(/\/v1\/device\/?$/iu, "/v1/app");
+    } else if (!/\/v1\/app\/?$/iu.test(url.pathname)) {
+      url.pathname = `${url.pathname.replace(/\/+$/u, "")}/v1/app`;
+    }
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function isLocalLoopbackUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  } catch {
+    return false;
+  }
 }
