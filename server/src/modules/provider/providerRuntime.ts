@@ -552,19 +552,32 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
   if (provider.kind === 'hermes') {
     const profile = String((agent as { hermesProfile?: string; profile?: string }).hermesProfile || (agent as { profile?: string }).profile || (agentId.startsWith('hermes:') ? agentId.slice('hermes:'.length) : agentId === 'hermes' ? 'default' : agentId)).trim();
     const model = String(request.model || agent.model || process.env.HERMES_AGENT_MODEL || '').trim();
-    const args = [
+    const buildArgs = (resumeSessionId = '') => [
       ...(profile ? ['--profile', profile] : []),
       'chat', '--cli', '-q', request.message,
       '-Q',
       '--source', hermesSessionSource,
-      ...(request.providerSessionId ? ['--resume', request.providerSessionId] : []),
+      ...(resumeSessionId ? ['--resume', resumeSessionId] : []),
       ...(model ? ['--model', model] : [])
     ];
-    const { stdout, stderr } = await runCommand(hermesBin, args);
-    const parsed = parseHermesOutput(stdout, stderr);
+
+    const requestedHermesSessionId = String(request.providerSessionId || '').trim();
+    let recoveredStaleSession = false;
+    let commandResult;
+    try {
+      commandResult = await runCommand(hermesBin, buildArgs(requestedHermesSessionId));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || '');
+      if (!requestedHermesSessionId || !/session\s+not\s+found/i.test(message)) throw error;
+      recoveredStaleSession = true;
+      onEvent?.({ type: 'thinking', data: { providerId: provider.id, agent: agentId, status: 'Recovering expired Hermes session...' } });
+      commandResult = await runCommand(hermesBin, buildArgs());
+    }
+
+    const parsed = parseHermesOutput(commandResult.stdout, commandResult.stderr);
     if (!parsed.text) throw new Error('Hermes returned no chat response.');
-    const hermesSessionId = parsed.hermesSessionId || request.providerSessionId || '';
-    if (!request.providerSessionId && parsed.hermesSessionId) {
+    const hermesSessionId = parsed.hermesSessionId || (recoveredStaleSession ? '' : requestedHermesSessionId);
+    if ((!requestedHermesSessionId || recoveredStaleSession) && parsed.hermesSessionId) {
       await renameHermesSession(parsed.hermesSessionId, `Reika - ${String(agent.name || agentId || 'Reika').trim()}`);
     }
     onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text: parsed.text } });
