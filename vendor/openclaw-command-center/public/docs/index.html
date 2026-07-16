@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CommandCenter API Docs</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: rgba(18, 25, 51, 0.92);
+      --text: #eaf0ff;
+      --muted: #a9b4d0;
+      --accent: #74c0ff;
+      --ok: #7ee787;
+      --warn: #ffd866;
+      --code: #0f1530;
+      --border: rgba(255,255,255,0.08);
+      --shadow: 0 20px 60px rgba(0,0,0,0.25);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; background: linear-gradient(180deg, #0a0f1d 0%, #0e1630 100%); color: var(--text); line-height: 1.55; }
+    .shell { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 100vh; }
+    .sidebar { position: sticky; top: 0; align-self: start; height: 100vh; padding: 28px 20px; border-right: 1px solid var(--border); background: rgba(8, 12, 24, 0.75); backdrop-filter: blur(12px); }
+    .brand { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.3rem; }
+    .sub { color: var(--muted); font-size: 0.92rem; margin-bottom: 1.2rem; }
+    .sidebar nav a { display: block; color: var(--muted); text-decoration: none; padding: 0.55rem 0.7rem; border-radius: 10px; margin-bottom: 0.25rem; }
+    .sidebar nav a:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 40px 24px 80px; }
+    h1, h2, h3 { line-height: 1.2; }
+    h1 { font-size: 2.4rem; margin-bottom: 0.3rem; }
+    h2 { margin-top: 2.2rem; padding-bottom: 0.45rem; border-bottom: 1px solid var(--border); scroll-margin-top: 24px; }
+    p, li { color: var(--muted); }
+    .hero, .card { background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 24px; box-shadow: var(--shadow); }
+    .hero-actions, .grid, .code-grid, .stats { display: grid; gap: 16px; }
+    .hero-actions { grid-auto-flow: column; justify-content: start; }
+    .grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .code-grid, .stats { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .stat { padding: 14px; border-radius: 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); }
+    .stat strong { display: block; font-size: 1.05rem; color: var(--text); }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    code { background: var(--code); padding: 0.15rem 0.35rem; border-radius: 6px; color: #d6e4ff; }
+    pre { background: var(--code); padding: 16px; border-radius: 12px; overflow: auto; border: 1px solid var(--border); color: #dce8ff; margin: 0; }
+    .code-block { position: relative; }
+    .copy-btn { position: absolute; top: 10px; right: 10px; border: 1px solid var(--border); background: rgba(255,255,255,0.06); color: var(--text); border-radius: 10px; padding: 0.45rem 0.7rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+    .copy-btn:hover { background: rgba(255,255,255,0.12); }
+    .copy-btn.copied { color: var(--ok); border-color: rgba(126, 231, 135, 0.35); }
+    .endpoint, .badge, .btn { display: inline-block; }
+    .endpoint { font-weight: 700; font-size: 0.9rem; padding: 0.2rem 0.55rem; border-radius: 999px; margin-right: 0.6rem; }
+    .get { background: rgba(126, 231, 135, 0.15); color: var(--ok); }
+    .post { background: rgba(116, 192, 255, 0.15); color: var(--accent); }
+    .badge { padding: 0.25rem 0.55rem; border-radius: 999px; background: rgba(126, 231, 135, 0.12); color: var(--ok); font-size: 0.82rem; font-weight: 700; margin-right: 8px; }
+    .btn { padding: 0.7rem 1rem; border-radius: 999px; text-decoration: none; font-weight: 600; border: 1px solid var(--border); }
+    .btn-primary { background: rgba(116, 192, 255, 0.14); color: var(--accent); }
+    .btn-secondary { background: rgba(255,255,255,0.04); color: var(--text); }
+    .note { border-left: 3px solid var(--warn); padding-left: 12px; margin: 16px 0; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; background: var(--panel); border-radius: 12px; overflow: hidden; }
+    th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    a { color: var(--accent); text-decoration: none; }
+    @media (max-width: 920px) { .shell { grid-template-columns: 1fr; } .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); } .hero-actions { grid-auto-flow: row; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">CommandCenter API</div>
+      <div class="sub">Session-based agent messaging for OpenClaw</div>
+      <nav>
+        <a href="#overview">Overview</a>
+        <a href="#quickstart">Quick Start</a>
+        <a href="#endpoints">Endpoints</a>
+        <a href="#attachments">Attachments</a>
+        <a href="#streaming">Streaming</a>
+        <a href="#python">Python</a>
+        <a href="#unified-script">Unified Script</a>
+        <a href="#voice-audio">Voice + Audio</a>
+        <a href="#openapi">OpenAPI</a>
+        <a href="#errors">Errors</a>
+      </nav>
+    </aside>
+    <main>
+      <div class="wrap">
+        <section id="overview" class="hero">
+          <span class="badge">LIVE</span>
+          <h1>CommandCenter API</h1>
+          <p>HTTP API for listing agents, creating chat sessions, sending messages, streaming responses, searching past sessions, and reusing files already stored in CommandCenter’s chat library.</p>
+          <p><strong>Public Base URL:</strong> <code>https://your-domain.example/commandcenter/api/v1</code></p>
+          <p><strong>Local Base URL:</strong> <code>http://127.0.0.1:3001/api/v1</code> <span class="muted">(optional localhost-only listener for same-machine apps)</span></p>
+          <p><strong>Auth:</strong> public listener uses <code>Authorization: Bearer YOUR_COMMANDCENTER_API_KEY</code>; the optional localhost-only listener can be used without a bearer token.</p>
+          <div class="note"><strong>Recommended setup:</strong> keep the public <code>/api/v1</code> listener keyed, and enable the localhost-only listener for trusted local programs like desktop companions, automations, or your own super app.</div>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="./openapi.json">OpenAPI JSON</a>
+            <a class="btn btn-secondary" href="/commandcenter/">Back to CommandCenter</a>
+          </div>
+          <div class="stats">
+            <div class="stat"><strong>Agents</strong><span>List and search available agents</span></div>
+            <div class="stat"><strong>Sessions</strong><span>Create, reuse, inspect, and search conversation threads</span></div>
+            <div class="stat"><strong>Streaming</strong><span>SSE lifecycle events for accepted/thinking/response/done/error</span></div>
+            <div class="stat"><strong>Attachments</strong><span>Pass reusable chat-library file IDs into API turns</span></div>
+            <div class="stat"><strong>Voice Audio</strong><span>Return agent speech using the voice assigned in CommandCenter</span></div>
+          </div>
+        </section>
+
+        <h2 id="api-settings">API Settings</h2>
+        <div class="card">
+          <p>Manage your Command Center API key directly from docs (requires being logged into Command Center UI auth).</p>
+          <p><strong>Current key:</strong> <code id="api-key-masked">(loading...)</code></p>
+          <div class="hero-actions" style="margin-top:0.8rem;">
+            <button id="api-key-refresh" class="btn btn-secondary" type="button">Refresh</button>
+            <button id="api-key-reveal" class="btn btn-secondary" type="button">View key</button>
+            <button id="api-key-copy" class="btn btn-secondary" type="button">Copy key</button>
+            <button id="api-key-rotate" class="btn btn-primary" type="button">Rotate key</button>
+          </div>
+          <p id="api-key-status" class="muted" style="margin-top:0.7rem;">Tip: rotating key invalidates old bearer tokens immediately.</p>
+        </div>
+
+        <h2 id="quickstart">Quick Start</h2>
+        <div class="card"><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre># public / remote usage (requires bearer token)
+export COMMANDCENTER_API_KEY="YOUR_COMMANDCENTER_API_KEY"
+
+curl https://your-domain.example/commandcenter/api/v1/agents \
+  -H "Authorization: Bearer $COMMANDCENTER_API_KEY"
+
+# local same-machine usage (no bearer token on localhost-only listener)
+curl http://127.0.0.1:3001/api/v1/agents
+
+# create a session locally
+curl -X POST http://127.0.0.1:3001/api/v1/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"anby","title":"Quickstart session"}'
+
+# send a message locally
+curl -X POST http://127.0.0.1:3001/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"agent":"anby","message":"Where are you from?","audio":true}'</pre></div></div>
+
+        <h2 id="agent-discovery">Agent Discovery + Super App Integration</h2>
+        <div class="card">
+          <p><code>GET /agents</code> is the best first call for any companion app, desktop shell, mobile wrapper, or super app.</p>
+          <p>CommandCenter merges agents from two possible sources into one roster:</p>
+          <ul>
+            <li><strong>OpenClaw</strong> — loaded from <code>~/.openclaw/openclaw.json</code> → <code>agents.list</code></li>
+            <li><strong>Hermes</strong> — loaded from <code>hermes profile list</code> plus <code>hermes profile show &lt;profile&gt;</code></li>
+          </ul>
+          <p>Every returned agent includes a <code>source</code> field so your app can tell whether it came from OpenClaw or Hermes without doing silly name-guessing.</p>
+          <p><strong>Recommended app flow:</strong></p>
+          <ol>
+            <li>Call <code>GET /agents</code></li>
+            <li>Use <code>primaryAgentId</code> as the default target</li>
+            <li>Let the user pick an agent by <code>id</code> / <code>label</code></li>
+            <li>Create a session with <code>POST /sessions</code></li>
+            <li>Send turns through <code>POST /sessions/:id/messages</code> or <code>POST /chat</code></li>
+          </ol>
+<div class="code-block"><button class="copy-btn" type="button">Copy</button><pre># local same-machine example
+curl http://127.0.0.1:3001/api/v1/agents
+
+# useful fields to keep in your app model
+# - id
+# - label
+# - name
+# - source
+# - bridge
+# - workspace
+# - model
+# - aliases
+# - primaryAgentId (top-level response)
+</pre></div>
+        </div>
+
+        <h2 id="client-contract">External Client Contract</h2>
+        <div class="card">
+          <p>If you are building a local device client, desktop wrapper, companion app, or another app-layer bridge, these are the most useful parts of CommandCenter’s API surface.</p>
+          <ul>
+            <li><code>GET /agents</code> — roster discovery + <code>primaryAgentId</code></li>
+            <li><code>POST /sessions</code> — create a stable chat session</li>
+            <li><code>GET /sessions</code> and <code>GET /sessions/:id/messages</code> — recent history and transcript loading</li>
+            <li><code>POST /sessions/:id/messages</code> — normal chat turns</li>
+            <li><code>POST /sessions/:id/messages/stream</code> — SSE event flow for live UI/state updates</li>
+            <li><code>POST /chat</code> — convenience wrapper if you want less session bookkeeping</li>
+            <li><code>/voice</code> + <code>/voice/options</code> — optional voice resolution and assignment</li>
+            <li><code>/files</code> endpoints — reusable attachment/link workflows</li>
+          </ul>
+          <p><strong>Stable fields worth building against:</strong></p>
+          <ul>
+            <li>Agent: <code>id</code>, <code>label</code>, <code>name</code>, <code>source</code>, <code>bridge</code>, <code>workspace</code>, <code>model</code>, <code>aliases</code></li>
+            <li>Session: <code>id</code>, <code>agent</code>, <code>title</code>, <code>createdAt</code>, <code>updatedAt</code>, <code>messageCount</code>, <code>lastMessagePreview</code>, <code>metadata</code></li>
+            <li>Message: <code>id</code>, <code>role</code>, <code>text</code>, <code>timestamp</code>, <code>meta</code></li>
+            <li>Top-level roster field: <code>primaryAgentId</code></li>
+          </ul>
+          <p><strong>Presentation-only fields:</strong> treat <code>color</code>, <code>voice</code>, and <code>visual</code> as UI metadata, not your routing contract.</p>
+        </div>
+
+        <h2 id="endpoints">Endpoints</h2>
+        <div class="grid">
+          <div class="card"><span class="endpoint get">GET</span><code>/agents</code><p>List available agents.</p></div>
+          <div class="card"><span class="endpoint get">GET</span><code>/agents/search?q=anby</code><p>Search agents by id, label, or name.</p></div>
+          <div class="card"><span class="endpoint post">POST</span><code>/sessions</code><p>Create a new chat session for an agent.</p></div>
+          <div class="card"><span class="endpoint get">GET</span><code>/files</code><p>List reusable files and links available for <code>fileIds</code>.</p></div>
+          <div class="card"><span class="endpoint post">POST</span><code>/files/upload</code><p>Upload files directly into the API file library.</p></div>
+          <div class="card"><span class="endpoint post">POST</span><code>/files/link</code><p>Save a reusable link directly into the API file library.</p></div>
+          <div class="card"><span class="endpoint get">GET</span><code>/files/:id/download</code><p>Download uploaded files or redirect to saved links.</p></div>
+          <div class="card"><span class="endpoint get">GET</span><code>/sessions</code><p>List recent sessions.</p></div>
+          <div class="card"><span class="endpoint get">GET</span><code>/sessions/:id</code><p>Get session metadata.</p></div>
+          <div class="card"><span class="endpoint get">GET</span><code>/sessions/:id/messages</code><p>Get session transcript.</p></div>
+          <div class="card"><span class="endpoint post">POST</span><code>/sessions/:id/messages</code><p>Send a non-streaming message to an existing session. Supports <code>fileIds</code>.</p></div>
+          <div class="card"><span class="endpoint post">POST</span><code>/sessions/:id/messages/stream</code><p>Send a message and receive SSE lifecycle events. Supports <code>fileIds</code>.</p></div>
+          <div class="card"><span class="endpoint post">POST</span><code>/chat</code><p>Convenience endpoint that auto-creates or resumes a session. Supports <code>fileIds</code>.</p></div>
+          <div class="card"><span class="endpoint get">GET</span><code>/sessions/search?q=nicole</code><p>Search sessions by transcript content.</p></div>
+        </div>
+
+        <h2 id="attachments">Attachments</h2>
+        <div class="card">
+          <p>The API now supports attachments by passing <code>fileIds</code> that refer to files or links stored in CommandCenter’s reusable file library.</p>
+          <p><strong>Response shape note:</strong> <code>GET /api/v1/files</code> currently returns its collection under <code>items</code>.</p>
+          <p>You can now manage that file library directly through <code>/api/v1</code> too:</p>
+          <ul>
+            <li><code>GET /commandcenter/api/v1/files</code></li>
+            <li><code>POST /commandcenter/api/v1/files/upload</code></li>
+            <li><code>POST /commandcenter/api/v1/files/link</code></li>
+          </ul>
+          <p>When <code>fileIds</code> are supplied, the API injects attachment context into the prompt and stores attachment references in the session transcript metadata.</p>
+<div class="code-block"><button class="copy-btn" type="button">Copy</button><pre># upload a file to the v1 API file library
+curl -X POST https://your-domain.example/commandcenter/api/v1/files/upload \
+  -H "Authorization: Bearer YOUR_COMMANDCENTER_API_KEY" \
+  -F "files=@./spec.pdf"
+
+# save a reusable link
+curl -X POST https://your-domain.example/commandcenter/api/v1/files/link \
+  -H "Authorization: Bearer YOUR_COMMANDCENTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/doc","name":"Example Doc","notes":"reference"}'
+
+# download a stored file
+curl -L -X GET https://your-domain.example/commandcenter/api/v1/files/YOUR_FILE_ID/download \
+  -H "Authorization: Bearer YOUR_COMMANDCENTER_API_KEY" \
+  -o downloaded-file.bin
+
+# note: returned file items currently include a downloadUrl that may point at
+# /commandcenter/api/chat/files/<id>/download — clients can safely follow that URL
+# directly instead of rebuilding it.
+
+# use returned fileIds in a chat request
+{
+  "message": "Summarize this doc for me.",
+  "fileIds": ["f3d2...", "9ab1..."]
+}</pre></div>
+        </div>
+
+                <h2 id="voice-audio">Voice + Audio</h2>
+        <div class="card">
+          <p>You can ask chat endpoints to return audio too by sending <code>"audio": true</code>. The API will synthesize the reply with the selected agent’s current CommandCenter voice settings.</p>
+          <p>You can also update the voice assigned to an agent through the v1 API.</p>
+          <ul>
+            <li><code>GET /commandcenter/api/v1/voice?agent=anby</code> — inspect current voice settings and resolve the voice for an agent</li>
+            <li><code>GET /commandcenter/api/v1/voice/options?provider=elevenlabs</code> — list selectable voices, or <code>?provider=fish&amp;q=yuna</code> to search Fish voices</li>
+            <li><code>POST /commandcenter/api/v1/voice</code> — update the provider and/or assign a voice to an agent</li>
+            <li><code>POST /commandcenter/api/v1/chat</code> with <code>"audio": true</code> — receive text plus base64 audio in the same response</li>
+            <li><code>POST /commandcenter/api/v1/sessions/:id/messages/stream</code> with <code>"audio": true</code> — receive an extra SSE <code>audio</code> event</li>
+          </ul>
+<div class="code-block"><button class="copy-btn" type="button">Copy</button><pre># inspect the resolved voice for an agent
+curl "https://your-domain.example/commandcenter/api/v1/voice?agent=anby"   -H "Authorization: Bearer YOUR_COMMANDCENTER_API_KEY"
+
+# assign a new voice to an agent
+curl -X POST https://your-domain.example/commandcenter/api/v1/voice   -H "Authorization: Bearer YOUR_COMMANDCENTER_API_KEY"   -H "Content-Type: application/json"   -d '{"provider":"fish","agent":"anby","voiceId":"YOUR_FISH_OR_ELEVENLABS_VOICE_ID"}'
+
+# request text + audio from the convenience chat endpoint
+curl -X POST https://your-domain.example/commandcenter/api/v1/chat   -H "Authorization: Bearer YOUR_COMMANDCENTER_API_KEY"   -H "Content-Type: application/json"   -d '{"agent":"anby","message":"Say hi and introduce yourself.","audio":true}'</pre></div>
+        </div>
+
+<h2 id="streaming">Streaming</h2>
+        <div class="card">
+          <p>Streaming uses <strong>Server-Sent Events (SSE)</strong>.</p>
+          <p>V1 streams lifecycle events such as <code>accepted</code>, <code>thinking</code>, <code>response</code>, <code>done</code>, and <code>error</code>. It is not guaranteed to be token-by-token model streaming.</p>
+          <p>For external clients, this is the best endpoint when you want to forward live state into your own WebSocket/event layer without polling like a goblin.</p>
+          <p>Event order is provider/runtime dependent, and failures may emit <code>error</code> before any final <code>response</code> or <code>done</code> event.</p>
+<div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>event: accepted
+data: {"sessionId":"ccs_...","messageId":"msg_...","agent":"anby","files":[]}
+
+event: thinking
+data: {"agent":"anby","status":"Processing..."}
+
+event: response
+data: {"agent":"anby","text":"New Eridu. That's where I'm from."}
+
+event: audio
+data: {"contentType":"audio/mpeg","base64":"...","provider":"fish","voiceId":"..."}
+
+event: error
+data: {"ok":false,"error":"Provider or runtime failure message","code":"INTERNAL_ERROR"}
+
+event: done
+data: {"ok":true,"sessionId":"ccs_...","responseId":"msg_..."}</pre></div>
+        </div>
+
+        <h2 id="history-auth">History + Auth Notes</h2>
+        <div class="card">
+          <p><strong>History:</strong> use <code>GET /sessions</code> for recent conversations, <code>GET /sessions/:id</code> for metadata, and <code>GET /sessions/:id/messages</code> for the transcript itself.</p>
+          <p><strong>Local auth:</strong> when the localhost-only listener is enabled, same-machine clients can call it without a bearer token.</p>
+          <p><strong>Public auth:</strong> the public/network listener requires <code>Authorization: Bearer YOUR_COMMANDCENTER_API_KEY</code>.</p>
+          <p>If both are available on the same device, prefer the local listener for trusted local clients.</p>
+        </div>
+
+        <h2 id="websocket">Realtime WebSocket</h2>
+        <div class="card">
+          <p>CommandCenter also exposes a realtime WebSocket feed for live provider status and ambient activity updates.</p>
+          <ul>
+            <li>Local example: <code>ws://127.0.0.1:3001/commandcenter/ws</code></li>
+            <li>Public example: <code>wss://your-domain.example/commandcenter/ws</code></li>
+          </ul>
+          <p>On connect, the server immediately sends a <code>status</code> message with bridge/provider state.</p>
+<div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>{
+  "type": "status",
+  "data": {
+    "connected": true,
+    "mode": "live",
+    "requestedMode": "live",
+    "gatewayUrl": "ws://127.0.0.1:18789",
+    "gatewayTokenConfigured": true,
+    "gatewayTokenSource": "env",
+    "lastError": "",
+    "lastAuthError": "",
+    "lastFallbackReason": "",
+    "configuredDemo": false,
+    "voiceEnabled": true
+  }
+}</pre></div>
+          <p><strong>Core event families:</strong></p>
+          <ul>
+            <li><code>status</code> — initial provider/bridge snapshot</li>
+            <li><code>bridge:*</code> — connectivity updates like <code>bridge:connected</code> and <code>bridge:disconnected</code></li>
+            <li><code>agent:*</code> — normalized agent activity like <code>agent:thinking</code>, <code>agent:responding</code>, <code>agent:error</code>, <code>agent:idle</code>, and <code>agent:tool_use</code></li>
+            <li><code>voice:*</code> — transcription/voice side-channel updates</li>
+            <li><code>live_task:*</code> — background/live task progress</li>
+          </ul>
+          <p><strong>Richer product-specific families:</strong> <code>call:*</code> for Fairy/live-call behavior and <code>agent_comms:*</code> for internal backchannel traffic.</p>
+          <p><strong>Recommended split:</strong> use REST for roster/history/files/voice config, SSE for per-turn chat lifecycle, and WebSocket for ambient status/activity updates.</p>
+        </div>
+
+        <h2 id="python">Python Examples</h2>
+        <div class="code-grid">
+          <div class="card"><h3>List agents</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>import requests
+BASE = "https://your-domain.example/commandcenter/api/v1"
+HEADERS = {"Authorization": "Bearer YOUR_COMMANDCENTER_API_KEY"}
+roster = requests.get(f"{BASE}/agents", headers=HEADERS, timeout=30).json()
+print(roster)
+print("primary agent:", roster.get("primaryAgentId"))
+print("sources:", [agent.get("source") for agent in roster.get("agents", [])])</pre></div></div>
+          <div class="card"><h3>Create a session</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>import requests
+BASE = "https://your-domain.example/commandcenter/api/v1"
+HEADERS = {"Authorization": "Bearer YOUR_COMMANDCENTER_API_KEY", "Content-Type": "application/json"}
+r = requests.post(f"{BASE}/sessions", headers=HEADERS, json={"agent": "anby", "title": "Test"}, timeout=30)
+print(r.json())</pre></div></div>
+          <div class="card"><h3>Upload a file</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>import requests
+BASE = "https://your-domain.example/commandcenter/api/v1"
+HEADERS = {"Authorization": "Bearer YOUR_COMMANDCENTER_API_KEY"}
+with open("spec.pdf", "rb") as f:
+    r = requests.post(f"{BASE}/files/upload", headers=HEADERS, files={"files": ("spec.pdf", f, "application/pdf")}, timeout=120)
+print(r.json())</pre></div></div>
+          <div class="card"><h3>Download a file</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>import requests
+BASE = "https://your-domain.example/commandcenter/api/v1"
+HEADERS = {"Authorization": "Bearer YOUR_COMMANDCENTER_API_KEY"}
+file_id = "your_file_id"
+r = requests.get(f"{BASE}/files/{file_id}/download", headers=HEADERS, timeout=120, allow_redirects=True)
+r.raise_for_status()
+with open("downloaded.bin", "wb") as f:
+    f.write(r.content)</pre></div></div>
+          <div class="card"><h3>Send a message</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>import requests
+BASE = "https://your-domain.example/commandcenter/api/v1"
+HEADERS = {"Authorization": "Bearer YOUR_COMMANDCENTER_API_KEY", "Content-Type": "application/json"}
+session_id = "ccs_your_session_id"
+r = requests.post(f"{BASE}/sessions/{session_id}/messages", headers=HEADERS, json={"message": "Who is Nicole to you?"}, timeout=120)
+print(r.json()["response"]["text"])</pre></div></div>
+          <div class="card"><h3>Send with attachments</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>import requests
+BASE = "https://your-domain.example/commandcenter/api/v1"
+HEADERS = {"Authorization": "Bearer YOUR_COMMANDCENTER_API_KEY", "Content-Type": "application/json"}
+session_id = "ccs_your_session_id"
+file_ids = ["your_file_id"]
+r = requests.post(f"{BASE}/sessions/{session_id}/messages", headers=HEADERS, json={"message": "Use the attached file.", "fileIds": file_ids}, timeout=120)
+print(r.json())</pre></div></div>
+          <div class="card"><h3>Convenience chat</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>import requests
+BASE = "https://your-domain.example/commandcenter/api/v1"
+HEADERS = {"Authorization": "Bearer YOUR_COMMANDCENTER_API_KEY", "Content-Type": "application/json"}
+r = requests.post(f"{BASE}/chat", headers=HEADERS, json={"agent": "anby", "message": "Where are you from?", "audio": True}, timeout=120)
+print(r.json())</pre></div></div>
+          <div class="card"><h3>Stream SSE</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>import httpx
+BASE = "https://your-domain.example/commandcenter/api/v1"
+HEADERS = {"Authorization": "Bearer YOUR_COMMANDCENTER_API_KEY", "Content-Type": "application/json", "Accept": "text/event-stream"}
+session_id = "ccs_your_session_id"
+with httpx.stream("POST", f"{BASE}/sessions/{session_id}/messages/stream", headers=HEADERS, json={"message": "Help me plan this job.", "fileIds": [], "audio": True}, timeout=120) as r:
+    for line in r.iter_lines():
+        if line:
+            print(line)</pre></div></div>
+          <div class="card"><h3>Roleplay quick examples</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>import requests
+BASE = "https://your-domain.example/commandcenter/api/v1"
+HEADERS = {"Authorization": "Bearer YOUR_COMMANDCENTER_API_KEY", "Content-Type": "application/json"}
+
+# 1) Create roleplay session for a specific agent
+created = requests.post(
+    f"{BASE}/sessions",
+    headers=HEADERS,
+    json={"agent": "ui", "title": "Jane RP", "mode": "roleplay", "model": "z-ai/glm-5"},
+    timeout=30,
+).json()
+session_id = created["session"]["id"]
+
+# 2) List only roleplay sessions for that agent
+sessions = requests.get(
+    f"{BASE}/sessions",
+    headers={"Authorization": "Bearer YOUR_COMMANDCENTER_API_KEY"},
+    params={"agent": "ui", "mode": "roleplay", "limit": 20},
+    timeout=30,
+).json()
+
+# 3) Send a roleplay message
+reply = requests.post(
+    f"{BASE}/sessions/{session_id}/messages",
+    headers=HEADERS,
+    json={"message": "Introduce yourself to Epic in character."},
+    timeout=120,
+).json()
+
+# 4) Search roleplay sessions for this agent
+search = requests.get(
+    f"{BASE}/sessions/search",
+    headers={"Authorization": "Bearer YOUR_COMMANDCENTER_API_KEY"},
+    params={"agent": "ui", "mode": "roleplay", "q": "Introduce", "limit": 10},
+    timeout=30,
+).json()
+
+print(created["session"]["id"])
+print(reply["response"]["text"])
+print(len(sessions.get("sessions", [])), len(search.get("results", [])))</pre></div></div>
+        </div>
+
+        
+                <h2 id="unified-script">Unified Python CLI Examples</h2>
+        <div class="grid two-col">
+          <div class="card">
+            <h3>Standard API CLI (no Fairy live calls)</h3>
+            <p>This script covers the normal CommandCenter API flow: list agents, optionally tweak voices, choose <code>agent</code> or <code>roleplay</code> mode, start or reuse a session, and chat over the auth-protected <code>/api/v1</code> surface.</p>
+<div class="code-block"><button class="copy-btn" type="button">Copy</button><pre># Standard library imports
+import base64
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Optional
+
+import requests
+
+try:
+    import httpx
+except ImportError:
+    httpx = None
+
+try:
+    import sounddevice as sd
+    import numpy as np
+except ImportError:
+    sd = None
+    np = None
+
+BASE = os.environ.get(&quot;COMMANDCENTER_BASE&quot;, &quot;https://your-domain.example/commandcenter/api/v1&quot;)
+API_KEY = os.environ.get(&quot;COMMANDCENTER_API_KEY&quot;, &quot;YOUR_COMMANDCENTER_API_KEY&quot;)
+API_KEY = API_KEY.removeprefix(&quot;Bearer &quot;).strip()
+
+
+def headers(extra=None):
+    h = {&quot;Authorization&quot;: f&quot;Bearer {API_KEY}&quot;}
+    if extra:
+        h.update(extra)
+    return h
+
+
+def get_json(path, params=None):
+    r = requests.get(f&quot;{BASE}{path}&quot;, headers=headers(), params=params, timeout=60)
+    r.raise_for_status()
+    return r.json()
+
+
+def post_json(path, payload):
+    r = requests.post(
+        f&quot;{BASE}{path}&quot;,
+        headers=headers({&quot;Content-Type&quot;: &quot;application/json&quot;}),
+        json=payload,
+        timeout=180,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def list_agents():
+    return get_json(&quot;/agents&quot;).get(&quot;agents&quot;, [])
+
+
+def choose_agent():
+    agents = list_agents()
+    if not agents:
+        raise RuntimeError(&quot;No agents returned by the API.&quot;)
+    print(&quot;\nAvailable agents:&quot;)
+    for idx, agent in enumerate(agents, 1):
+        display = agent.get(&quot;name&quot;) or agent.get(&quot;label&quot;) or agent.get(&quot;id&quot;)
+        print(f&quot;  {idx}. {display} [{agent.get(&#x27;id&#x27;)}]&quot;)
+    while True:
+        raw = input(&quot;\nChoose an agent by number: &quot;).strip()
+        if raw.isdigit() and 1 &lt;= int(raw) &lt;= len(agents):
+            return agents[int(raw) - 1]
+        print(&quot;Invalid choice. Try again.&quot;)
+
+
+def ask_yes_no(prompt, default=False):
+    suffix = &quot; [Y/n]: &quot; if default else &quot; [y/N]: &quot;
+    raw = input(prompt + suffix).strip().lower()
+    if not raw:
+        return default
+    return raw in {&quot;y&quot;, &quot;yes&quot;}
+
+
+def choose_streaming():
+    if httpx is None:
+        print(&quot;\nhttpx is not installed, so streaming is unavailable. Using non-streaming mode.&quot;)
+        return False
+    return ask_yes_no(&quot;Enable streaming?&quot;, default=True)
+
+
+def choose_audio():
+    return ask_yes_no(&quot;Enable audio replies and auto-play them?&quot;, default=False)
+
+
+def search_sessions(agent_id: Optional[str] = None):
+    query = input(&quot;Enter search text for the session: &quot;).strip()
+    if not query:
+        print(&quot;No search text entered.&quot;)
+        return None
+    params = {&quot;q&quot;: query, &quot;limit&quot;: 10}
+    if agent_id:
+        params[&quot;agent&quot;] = agent_id
+    results = get_json(&quot;/sessions/search&quot;, params=params).get(&quot;results&quot;, [])
+    if not results:
+        print(&quot;No matching sessions found.&quot;)
+        return None
+    print(&quot;\nMatching sessions:&quot;)
+    for idx, item in enumerate(results, 1):
+        title = item.get(&quot;title&quot;) or &quot;(untitled session)&quot;
+        snippet = item.get(&quot;snippet&quot;) or &quot;&quot;
+        print(f&quot;  {idx}. {title} [{item.get(&#x27;sessionId&#x27;)}]\n     {snippet}&quot;)
+    while True:
+        raw = input(&quot;Choose a session by number, or press Enter to cancel: &quot;).strip()
+        if not raw:
+            return None
+        if raw.isdigit() and 1 &lt;= int(raw) &lt;= len(results):
+            return results[int(raw) - 1][&quot;sessionId&quot;]
+        print(&quot;Invalid choice. Try again.&quot;)
+
+
+def choose_mode():
+    raw = input(&quot;Mode (agent/roleplay) [agent]: &quot;).strip().lower()
+    return &quot;roleplay&quot; if raw in {&quot;roleplay&quot;, &quot;rp&quot;} else &quot;agent&quot;
+
+
+def choose_session(agent_id: str, mode: str):
+    if not ask_yes_no(&quot;Use an existing session?&quot;, default=False):
+        title = input(&quot;Optional title for the new session (press Enter to skip): &quot;).strip()
+        session = post_json(&quot;/sessions&quot;, {&quot;agent&quot;: agent_id, &quot;title&quot;: title, &quot;mode&quot;: mode})[&quot;session&quot;]
+        print(f&quot;Created new session: {session[&#x27;id&#x27;]} ({mode})&quot;)
+        return session[&quot;id&quot;]
+    if ask_yes_no(&quot;Do you already know the session ID?&quot;, default=True):
+        session_id = input(&quot;Enter the session ID: &quot;).strip()
+        if session_id:
+            return session_id
+        print(&quot;No session ID entered. Falling back to search.&quot;)
+    found = search_sessions(agent_id=agent_id)
+    if found:
+        print(f&quot;Using session: {found}&quot;)
+        return found
+    print(&quot;No existing session selected. Creating a new one instead.&quot;)
+    session = post_json(&quot;/sessions&quot;, {&quot;agent&quot;: agent_id, &quot;mode&quot;: mode})[&quot;session&quot;]
+    print(f&quot;Created new session: {session[&#x27;id&#x27;]} ({mode})&quot;)
+    return session[&quot;id&quot;]
+
+
+def get_resolved_voice(agent_id: str):
+    return get_json(&quot;/voice&quot;, params={&quot;agent&quot;: agent_id}).get(&quot;resolved&quot;) or {}
+
+
+def list_voice_options(provider: str, query: str = &quot;&quot;):
+    params = {&quot;provider&quot;: provider}
+    if provider == &quot;fish&quot;:
+        params[&quot;q&quot;] = query
+    return get_json(&quot;/voice/options&quot;, params=params).get(&quot;items&quot;, [])
+
+
+def pick_voice_from_menu(provider: str):
+    query = &quot;&quot;
+    if provider == &quot;fish&quot;:
+        query = input(&quot;Enter a Fish voice search query (for example yuna): &quot;).strip()
+        if not query:
+            print(&quot;Fish voice search needs a query. Skipping voice update.&quot;)
+            return None
+    items = list_voice_options(provider, query=query)
+    if not items:
+        print(&quot;No voices returned for that provider/query.&quot;)
+        return None
+    print(&quot;\nAvailable voices:&quot;)
+    for idx, item in enumerate(items, 1):
+        voice_id = item.get(&quot;voice_id&quot;) or item.get(&quot;id&quot;) or item.get(&quot;ref_id&quot;) or item.get(&quot;modelId&quot;) or item.get(&quot;voiceId&quot;) or item.get(&quot;_id&quot;) or &quot;&quot;
+        label = item.get(&quot;name&quot;) or item.get(&quot;title&quot;) or item.get(&quot;label&quot;) or voice_id
+        print(f&quot;  {idx}. {label} [{voice_id}]&quot;)
+    while True:
+        raw = input(&quot;Choose a voice by number, or press Enter to cancel: &quot;).strip()
+        if not raw:
+            return None
+        if raw.isdigit() and 1 &lt;= int(raw) &lt;= len(items):
+            item = items[int(raw) - 1]
+            voice_id = item.get(&quot;voice_id&quot;) or item.get(&quot;id&quot;) or item.get(&quot;ref_id&quot;) or item.get(&quot;modelId&quot;) or item.get(&quot;voiceId&quot;) or item.get(&quot;_id&quot;) or &quot;&quot;
+            label = item.get(&quot;name&quot;) or item.get(&quot;title&quot;) or item.get(&quot;label&quot;) or voice_id
+            return {&quot;voiceId&quot;: voice_id, &quot;label&quot;: label}
+        print(&quot;Invalid choice. Try again.&quot;)
+
+
+def playable_suffix_from_content_type(content_type: str) -&gt; str:
+    normalized = (content_type or &quot;&quot;).lower()
+    if &quot;wav&quot; in normalized:
+        return &quot;.wav&quot;
+    if &quot;mpeg&quot; in normalized or &quot;mp3&quot; in normalized:
+        return &quot;.mp3&quot;
+    if &quot;ogg&quot; in normalized or &quot;opus&quot; in normalized:
+        return &quot;.opus&quot;
+    return &quot;.bin&quot;
+
+
+def safe_filename_fragment(value: str) -&gt; str:
+    cleaned = &quot;&quot;.join(ch if ch.isalnum() or ch in {&quot;-&quot;, &quot;_&quot;} else &quot;-&quot; for ch in (value or &quot;&quot;).lower())
+    cleaned = &quot;-&quot;.join(part for part in cleaned.split(&quot;-&quot;) if part)
+    return cleaned or &quot;agent&quot;
+
+
+def play_audio_blob(audio: dict, agent_name: str):
+    if not audio or not audio.get(&quot;base64&quot;):
+        return
+    content_type = audio.get(&quot;contentType&quot;, &quot;audio/mpeg&quot;)
+    suffix = playable_suffix_from_content_type(content_type)
+    safe_agent = safe_filename_fragment(agent_name)
+    path = Path(tempfile.gettempdir()) / f&quot;commandcenter-{safe_agent}{suffix}&quot;
+    path.write_bytes(base64.b64decode(audio[&quot;base64&quot;]))
+    print(f&quot;[audio] saved {path}&quot;)
+    try:
+        if sys.platform.startswith(&quot;win&quot;):
+            os.startfile(str(path))
+        elif sys.platform == &quot;darwin&quot;:
+            subprocess.Popen([&quot;open&quot;, str(path)])
+        else:
+            subprocess.Popen([&quot;xdg-open&quot;, str(path)])
+        print(f&quot;[audio] playing {agent_name} voice reply&quot;)
+    except Exception as err:
+        print(f&quot;[audio] Could not auto-play audio: {err}&quot;)
+
+
+def send_non_stream(session_id: str, message: str, agent_name: str, want_audio: bool):
+    data = post_json(f&quot;/sessions/{session_id}/messages&quot;, {&quot;message&quot;: message, &quot;audio&quot;: want_audio})
+    print(f&quot;\n{agent_name}: {data.get(&#x27;response&#x27;, {}).get(&#x27;text&#x27;, &#x27;&#x27;)}\n&quot;)
+    if want_audio:
+        play_audio_blob(data.get(&quot;audio&quot;), agent_name)
+
+
+def send_stream(session_id: str, message: str, agent_name: str, want_audio: bool):
+    if httpx is None:
+        print(&quot;httpx is not installed. Falling back to non-streaming mode.&quot;)
+        return send_non_stream(session_id, message, agent_name, want_audio)
+    audio_payload = None
+    print()
+    with httpx.stream(
+        &quot;POST&quot;,
+        f&quot;{BASE}/sessions/{session_id}/messages/stream&quot;,
+        headers=headers({&quot;Content-Type&quot;: &quot;application/json&quot;, &quot;Accept&quot;: &quot;text/event-stream&quot;}),
+        json={&quot;message&quot;: message, &quot;audio&quot;: want_audio},
+        timeout=180,
+    ) as r:
+        r.raise_for_status()
+        event_type = None
+        for line in r.iter_lines():
+            if not line:
+                event_type = None
+                continue
+            if line.startswith(&quot;event: &quot;):
+                event_type = line[7:]
+                continue
+            if line.startswith(&quot;data: &quot;):
+                payload = line[6:]
+                try:
+                    data = json.loads(payload)
+                except json.JSONDecodeError:
+                    data = {&quot;raw&quot;: payload}
+                if event_type == &quot;thinking&quot;:
+                    print(f&quot;[thinking] {data.get(&#x27;status&#x27;, &#x27;Processing...&#x27;)}&quot;)
+                elif event_type == &quot;response&quot;:
+                    print(f&quot;{agent_name}: {data.get(&#x27;text&#x27;, &#x27;&#x27;)}\n&quot;)
+                elif event_type == &quot;audio&quot;:
+                    audio_payload = data
+                    print(f&quot;[audio] received {data.get(&#x27;contentType&#x27;, &#x27;audio&#x27;)} from {data.get(&#x27;provider&#x27;, &#x27;tts&#x27;)}&quot;)
+                elif event_type == &quot;error&quot;:
+                    print(f&quot;[error] {data}&quot;)
+                elif event_type == &quot;accepted&quot;:
+                    print(f&quot;[accepted] session={data.get(&#x27;sessionId&#x27;)}&quot;)
+                elif event_type == &quot;done&quot;:
+                    print(f&quot;[done] responseId={data.get(&#x27;responseId&#x27;)}\n&quot;)
+    if want_audio:
+        play_audio_blob(audio_payload, agent_name)
+
+
+def update_agent_voice(agent_id: str):
+    resolved = get_resolved_voice(agent_id)
+    print(f&quot;Current voice for {agent_id}: provider={resolved.get(&#x27;provider&#x27;, &#x27;unknown&#x27;)} voiceId={resolved.get(&#x27;voiceId&#x27;, &#x27;(none)&#x27;)}&quot;)
+    if not ask_yes_no(&quot;Do you want to update this agent&#x27;s voice before chatting?&quot;, default=False):
+        return
+    provider_raw = input(&quot;Voice provider (elevenlabs/fish, press Enter to keep current): &quot;).strip().lower()
+    provider = provider_raw if provider_raw in {&quot;elevenlabs&quot;, &quot;fish&quot;} else (resolved.get(&quot;provider&quot;) or &quot;elevenlabs&quot;)
+    picked = pick_voice_from_menu(provider)
+    if not picked:
+        print(&quot;No new voice selected. Keeping the current voice.&quot;)
+        return
+    result = post_json(&quot;/voice&quot;, {&quot;provider&quot;: provider, &quot;agent&quot;: agent_id, &quot;voiceId&quot;: picked[&quot;voiceId&quot;]})
+    updated = result.get(&quot;resolved&quot;) or {}
+    print(f&quot;Updated voice for {agent_id}: provider={updated.get(&#x27;provider&#x27;)} voiceId={updated.get(&#x27;voiceId&#x27;)} label={picked[&#x27;label&#x27;]}&quot;)
+
+
+def chat_loop(session_id: str, streaming: bool, agent_name: str, want_audio: bool):
+    print(&quot;\nChat ready. Type /exit to quit, /session to print the current session ID.&quot;)
+    while True:
+        message = input(&quot;You: &quot;).strip()
+        if not message:
+            continue
+        if message.lower() in {&quot;/exit&quot;, &quot;exit&quot;, &quot;quit&quot;}:
+            print(&quot;Goodbye.&quot;)
+            return
+        if message.lower() == &quot;/session&quot;:
+            print(f&quot;Current session: {session_id}&quot;)
+            continue
+        if streaming:
+            send_stream(session_id, message, agent_name, want_audio)
+        else:
+            send_non_stream(session_id, message, agent_name, want_audio)
+
+
+def main():
+    print(&quot;CommandCenter API CLI (standard)&quot;)
+    print(f&quot;Base URL: {BASE}&quot;)
+    if API_KEY == &quot;YOUR_COMMANDCENTER_API_KEY&quot;:
+        print(&quot;Warning: replace YOUR_COMMANDCENTER_API_KEY or set COMMANDCENTER_API_KEY in your environment.&quot;)
+    agent = choose_agent()
+    mode = choose_mode()
+    streaming = choose_streaming()
+    want_audio = choose_audio()
+    update_agent_voice(agent[&quot;id&quot;])
+    session_id = choose_session(agent[&quot;id&quot;], mode)
+    agent_name = agent.get(&quot;name&quot;) or agent.get(&quot;label&quot;) or agent.get(&quot;id&quot;)
+    print(f&quot;\nAgent: {agent_name}&quot;)
+    print(f&quot;Mode: {mode}&quot;)
+    print(f&quot;Streaming: {&#x27;enabled&#x27; if streaming else &#x27;disabled&#x27;}&quot;)
+    print(f&quot;Audio: {&#x27;enabled&#x27; if want_audio else &#x27;disabled&#x27;}&quot;)
+    print(f&quot;Session: {session_id}&quot;)
+    chat_loop(session_id, streaming, agent_name, want_audio)
+
+
+if __name__ == &quot;__main__&quot;:
+    try:
+        main()
+    except KeyboardInterrupt:
+        print(&quot;\nInterrupted.&quot;)
+        sys.exit(130)</pre></div>
+          </div>
+          <div class="card">
+            <h3>Fairy CLI (text-mode live calls)</h3>
+            <p>This separate script actually starts a Fairy live call, sends text turns through <code>/api/call/*</code>, waits for replies, includes default agent fallback, better timeout/error messaging, scoped Fairy memory lookups, and save-to-file session logging via <code>/save</code>.</p>
+<div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>import json
+import os
+import sys
+import time
+from pathlib import Path
+
+import requests
+
+BASE_V1 = os.environ.get(&quot;COMMANDCENTER_BASE&quot;, &quot;https://your-domain.example/commandcenter/api/v1&quot;)
+API_KEY = os.environ.get(&quot;COMMANDCENTER_API_KEY&quot;, &quot;YOUR_COMMANDCENTER_API_KEY&quot;)
+API_KEY = API_KEY.removeprefix(&quot;Bearer &quot;).strip()
+BASE_ROOT = BASE_V1[:-len(&#x27;/api/v1&#x27;)] if BASE_V1.endswith(&#x27;/api/v1&#x27;) else BASE_V1.rstrip(&#x27;/&#x27;)
+LOG_DIR = Path(os.environ.get(&quot;COMMANDCENTER_FAIRY_LOG_DIR&quot;, &quot;.&quot;))
+
+
+def headers(extra=None):
+    h = {&quot;Authorization&quot;: f&quot;Bearer {API_KEY}&quot;}
+    if extra:
+        h.update(extra)
+    return h
+
+
+def get_json(url, params=None):
+    r = requests.get(url, headers=headers(), params=params, timeout=60)
+    r.raise_for_status()
+    return r.json()
+
+
+def post_json(url, payload):
+    r = requests.post(url, headers=headers({&quot;Content-Type&quot;: &quot;application/json&quot;}), json=payload, timeout=180)
+    r.raise_for_status()
+    return r.json()
+
+
+def list_agents():
+    return get_json(f&quot;{BASE_V1}/agents&quot;).get(&quot;agents&quot;, [])
+
+
+def choose_agent():
+    agents = list_agents()
+    if not agents:
+        raise RuntimeError(&quot;No agents returned by the API.&quot;)
+    primary = next((agent for agent in agents if agent.get(&quot;id&quot;) in {&quot;main&quot;, &quot;orchestrator&quot;}), agents[0])
+    print(&quot;\nAvailable agents for Fairy handoff context:&quot;)
+    for idx, agent in enumerate(agents, 1):
+        display = agent.get(&quot;name&quot;) or agent.get(&quot;label&quot;) or agent.get(&quot;id&quot;)
+        marker = &quot; (default)&quot; if agent.get(&quot;id&quot;) == primary.get(&quot;id&quot;) else &quot;&quot;
+        print(f&quot;  {idx}. {display} [{agent.get(&#x27;id&#x27;)}]&quot; + marker)
+    while True:
+        raw = input(&quot;\nChoose an agent by number (or press Enter for default): &quot;).strip()
+        if not raw:
+            chosen = primary.get(&quot;id&quot;)
+            print(f&quot;Using default agent: {chosen}&quot;)
+            return chosen
+        if raw.isdigit() and 1 &lt;= int(raw) &lt;= len(agents):
+            return agents[int(raw) - 1][&quot;id&quot;]
+        print(&quot;Invalid choice. Try again.&quot;)
+
+
+def fairy_config():
+    return get_json(f&quot;{BASE_V1}/fairy/config&quot;)
+
+
+def fairy_settings():
+    return get_json(f&quot;{BASE_V1}/fairy/settings&quot;)
+
+
+def update_fairy_settings(patch):
+    return post_json(f&quot;{BASE_V1}/fairy/settings&quot;, patch)
+
+
+def start_fairy_call(agent=None):
+    payload = {&quot;agent&quot;: agent} if agent else {}
+    return post_json(f&quot;{BASE_V1}/fairy/calls/start&quot;, payload)
+
+
+def get_fairy_session(session_id):
+    return get_json(f&quot;{BASE_ROOT}/api/call/{session_id}&quot;)
+
+
+def send_fairy_text(session_id, text):
+    return post_json(f&quot;{BASE_V1}/fairy/calls/{session_id}/text&quot;, {&quot;text&quot;: text})
+
+
+def synthesize_and_play_fairy_text(text, agent_id=&quot;ui&quot;):
+    if not text:
+        return
+    r = requests.post(
+        f&quot;{BASE_ROOT}/api/voice/speak&quot;,
+        headers=headers({&quot;Content-Type&quot;: &quot;application/json&quot;}),
+        json={&quot;text&quot;: text, &quot;agent&quot;: agent_id},
+        timeout=180,
+    )
+    r.raise_for_status()
+    content_type = r.headers.get(&quot;content-type&quot;, &quot;audio/mpeg&quot;)
+    suffix = playable_suffix_from_content_type(content_type)
+    path = Path(tempfile.gettempdir()) / f&quot;fairy-live-reply{suffix}&quot;
+    path.write_bytes(r.content)
+    print(f&quot;[audio] saved {path}&quot;)
+    try:
+        if sys.platform.startswith(&quot;win&quot;):
+            os.startfile(str(path))
+        elif sys.platform == &quot;darwin&quot;:
+            subprocess.Popen([&quot;open&quot;, str(path)])
+        else:
+            subprocess.Popen([&quot;xdg-open&quot;, str(path)])
+    except Exception as err:
+        print(f&quot;[audio] Could not auto-play Fairy reply: {err}&quot;)
+
+
+def send_fairy_audio_chunk(session_id, pcm16_base64, mime_type=&quot;audio/pcm;rate=16000&quot;):
+    return post_json(f&quot;{BASE_V1}/fairy/calls/{session_id}/audio&quot;, {&quot;pcm16Base64&quot;: pcm16_base64, &quot;mimeType&quot;: mime_type})
+
+
+def capture_mic_pcm16_base64(seconds=4, sample_rate=16000):
+    if sd is None or np is None:
+        raise RuntimeError(&quot;Mic capture requires sounddevice + numpy (pip install sounddevice numpy)&quot;)
+    seconds = max(1, int(seconds))
+    print(f&quot;[mic] recording {seconds}s at {sample_rate} Hz...&quot;)
+    audio = sd.rec(int(seconds * sample_rate), samplerate=sample_rate, channels=1, dtype=&quot;int16&quot;)
+    sd.wait()
+    pcm_bytes = np.asarray(audio, dtype=np.int16).tobytes()
+    return base64.b64encode(pcm_bytes).decode(&quot;ascii&quot;)
+
+
+def send_fairy_screen_frame(session_id, jpeg_base64, mime_type=&quot;image/jpeg&quot;):
+    return post_json(f&quot;{BASE_V1}/fairy/calls/{session_id}/screen&quot;, {&quot;jpegBase64&quot;: jpeg_base64, &quot;mimeType&quot;: mime_type})
+
+
+def send_fairy_camera_frame(session_id, jpeg_base64, mime_type=&quot;image/jpeg&quot;):
+    return post_json(f&quot;{BASE_V1}/fairy/calls/{session_id}/camera&quot;, {&quot;jpegBase64&quot;: jpeg_base64, &quot;mimeType&quot;: mime_type})
+
+
+def mark_playback_finished(session_id):
+    return post_json(f&quot;{BASE_ROOT}/api/call/{session_id}/event&quot;, {&quot;type&quot;: &quot;assistant.playback_finished&quot;})
+
+
+def end_fairy_call(session_id):
+    return post_json(f&quot;{BASE_V1}/fairy/calls/{session_id}/end&quot;, {})
+
+
+def wait_until_ready(session_id, timeout=30):
+    started = time.time()
+    last_state = None
+    while time.time() - started &lt; timeout:
+        session = get_fairy_session(session_id).get(&quot;session&quot;, {})
+        state = session.get(&quot;state&quot;)
+        if state != last_state:
+            print(f&quot;[fairy] state -&gt; {state}&quot;)
+            last_state = state
+        if state == &quot;ready&quot;:
+            return session
+        if state == &quot;error&quot;:
+            raise RuntimeError(f&quot;Fairy session entered error state: {json.dumps(session, indent=2)}&quot;)
+        time.sleep(0.75)
+    raise TimeoutError(f&quot;Timed out waiting for Fairy session to become ready after {timeout}s.&quot;)
+
+
+def wait_for_reply(session_id, previous_text=&quot;&quot;, timeout=60):
+    started = time.time()
+    last_seen = previous_text or &quot;&quot;
+    last_state = None
+    while time.time() - started &lt; timeout:
+        session = get_fairy_session(session_id).get(&quot;session&quot;, {})
+        current = (session.get(&quot;lastAssistantText&quot;) or &quot;&quot;).strip()
+        state = session.get(&quot;state&quot;)
+        if state != last_state:
+            print(f&quot;[fairy] state -&gt; {state}&quot;)
+            last_state = state
+        if current and current != last_seen and state in {&quot;speaking&quot;, &quot;ready&quot;, &quot;task_running&quot;}:
+            return session
+        time.sleep(0.9)
+    raise TimeoutError(
+        f&quot;Timed out waiting for Fairy reply after {timeout}s. &quot;
+        f&quot;Last known state was {last_state or &#x27;unknown&#x27;}. Try /status to inspect the session.&quot;
+    )
+
+
+def print_fairy_status(session_id):
+    session = get_fairy_session(session_id).get(&quot;session&quot;, {})
+    print(json.dumps(session, indent=2))
+
+
+def save_session_log(session_id):
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    session = get_fairy_session(session_id).get(&quot;session&quot;, {})
+    path = LOG_DIR / f&quot;fairy-session-{session_id}.json&quot;
+    path.write_text(json.dumps(session, indent=2) + &quot;\n&quot;, encoding=&quot;utf-8&quot;)
+    print(f&quot;[saved] {path}&quot;)
+
+
+def print_fairy_memory(query=&quot;&quot;, scope=&quot;all&quot;):
+    params = {}
+    if query:
+        params[&quot;q&quot;] = query
+    if scope and scope != &quot;all&quot;:
+        params[&quot;scope&quot;] = scope
+    print(json.dumps(get_json(f&quot;{BASE_V1}/fairy/memory&quot;, params=params or None), indent=2))
+
+
+def fairy_chat_loop(session_id, agent_id):
+    auto_mic = False
+    auto_mic_seconds = 4
+    print(&quot;\nFairy API call mode ready (text + audio + video frame uplink).&quot;)
+    print(&quot;Commands: /status, /ready, /end, /save, /audio-file &lt;pcm16.b64.txt&gt;, /mic &lt;seconds&gt;, /auto-mic on|off [&lt;seconds&gt;], /screen-file &lt;jpeg.b64.txt&gt;, /camera-file &lt;jpeg.b64.txt&gt;, /fairy-config, /fairy-settings, /set-setting &lt;key&gt; &lt;json-value&gt;, /fairy-memory &lt;query&gt;, /fairy-memory-scope &lt;scope&gt; &lt;query&gt;, /fairy-sessions, /fairy-session &lt;id&gt;, /exit&quot;)
+    while True:
+        message = input(&quot;You → Fairy: &quot;).strip()
+        if not message and auto_mic:
+            message = f&quot;/mic {auto_mic_seconds}&quot;
+        if not message:
+            continue
+        if message.lower() in {&quot;/exit&quot;, &quot;exit&quot;, &quot;quit&quot;}:
+            print(&quot;Leaving Fairy chat. Session is still live unless you used /end.&quot;)
+            return
+        if message.lower().startswith(&#x27;/auto-mic &#x27;):
+            parts = message.split()
+            mode = parts[1].lower() if len(parts) &gt;= 2 else &quot;on&quot;
+            if mode in {&quot;on&quot;, &quot;start&quot;}:
+                auto_mic = True
+                if len(parts) &gt;= 3 and parts[2].isdigit():
+                    auto_mic_seconds = max(1, int(parts[2]))
+                print(f&quot;Auto mic enabled ({auto_mic_seconds}s chunks). Press Enter to capture/send each turn.&quot;)
+            else:
+                auto_mic = False
+                print(&quot;Auto mic disabled.&quot;)
+            continue
+        if message.lower() == &quot;/status&quot;:
+            print_fairy_status(session_id)
+            continue
+        if message.lower() == &quot;/ready&quot;:
+            data = mark_playback_finished(session_id)
+            print(json.dumps(data, indent=2))
+            continue
+        if message.lower() == &quot;/save&quot;:
+            save_session_log(session_id)
+            continue
+        if message.lower().startswith(&#x27;/audio-file &#x27;):
+            path = message.split(&#x27; &#x27;, 1)[1].strip()
+            pcm_b64 = Path(path).read_text(encoding=&quot;utf-8&quot;).strip()
+            print(json.dumps(send_fairy_audio_chunk(session_id, pcm_b64), indent=2))
+            continue
+        if message.lower().startswith(&#x27;/mic&#x27;):
+            try:
+                raw = message.split(&#x27; &#x27;, 1)[1].strip() if &#x27; &#x27; in message else &quot;4&quot;
+                seconds = int(raw)
+                before = get_fairy_session(session_id).get(&quot;session&quot;, {})
+                previous_text = (before.get(&quot;lastAssistantText&quot;) or &quot;&quot;).strip()
+                pcm_b64 = capture_mic_pcm16_base64(seconds=seconds)
+                send_fairy_audio_chunk(session_id, pcm_b64)
+                reply_session = wait_for_reply(session_id, previous_text=previous_text)
+                assistant = (reply_session.get(&quot;lastAssistantText&quot;) or &quot;&quot;).strip()
+                print(f&quot;\nFairy: {assistant}\n&quot;)
+                synthesize_and_play_fairy_text(assistant, agent_id=agent_id)
+                if reply_session.get(&quot;state&quot;) == &quot;speaking&quot;:
+                    mark_playback_finished(session_id)
+            except Exception as err:
+                print(f&quot;Mic uplink failed: {err}&quot;)
+            continue
+        if message.lower().startswith(&#x27;/screen-file &#x27;):
+            path = message.split(&#x27; &#x27;, 1)[1].strip()
+            jpg_b64 = Path(path).read_text(encoding=&quot;utf-8&quot;).strip()
+            print(json.dumps(send_fairy_screen_frame(session_id, jpg_b64), indent=2))
+            continue
+        if message.lower().startswith(&#x27;/camera-file &#x27;):
+            path = message.split(&#x27; &#x27;, 1)[1].strip()
+            jpg_b64 = Path(path).read_text(encoding=&quot;utf-8&quot;).strip()
+            print(json.dumps(send_fairy_camera_frame(session_id, jpg_b64), indent=2))
+            continue
+        if message.lower() == &quot;/fairy-config&quot;:
+            print(json.dumps(fairy_config(), indent=2))
+            continue
+        if message.lower() == &quot;/fairy-settings&quot;:
+            print(json.dumps(fairy_settings(), indent=2))
+            continue
+        if message.lower().startswith(&#x27;/set-setting &#x27;):
+            rest = message.split(&#x27; &#x27;, 1)[1].strip()
+            key, _, raw_value = rest.partition(&#x27; &#x27;)
+            if not key or not raw_value:
+                print(&quot;Usage: /set-setting &lt;key&gt; &lt;json-value&gt;&quot;)
+                continue
+            try:
+                value = json.loads(raw_value)
+            except Exception:
+                value = raw_value
+            print(json.dumps(update_fairy_settings({key: value}), indent=2))
+            continue
+        if message.lower().startswith(&#x27;/fairy-memory-scope &#x27;):
+            rest = message.split(&#x27; &#x27;, 1)[1].strip()
+            scope, _, query = rest.partition(&#x27; &#x27;)
+            if not scope:
+                print(&quot;Usage: /fairy-memory-scope &lt;scope&gt; &lt;query&gt;&quot;)
+                continue
+            print_fairy_memory(query=query.strip(), scope=scope.strip())
+            continue
+        if message.lower().startswith(&#x27;/fairy-memory&#x27;):
+            _, _, raw = message.partition(&#x27; &#x27;)
+            print_fairy_memory(query=raw.strip(), scope=&#x27;all&#x27;)
+            continue
+        if message.lower() == &#x27;/fairy-sessions&#x27;:
+            print(json.dumps(get_json(f&quot;{BASE_V1}/fairy/sessions&quot;), indent=2))
+            continue
+        if message.lower().startswith(&#x27;/fairy-session &#x27;):
+            fairy_id = message.split(&#x27; &#x27;, 1)[1].strip()
+            if not fairy_id:
+                print(&quot;Usage: /fairy-session &lt;id&gt;&quot;)
+                continue
+            print(json.dumps(get_json(f&quot;{BASE_V1}/fairy/sessions/{fairy_id}&quot;), indent=2))
+            continue
+        if message.lower() == &quot;/end&quot;:
+            print(json.dumps(end_fairy_call(session_id), indent=2))
+            return
+
+        try:
+            before = get_fairy_session(session_id).get(&quot;session&quot;, {})
+            previous_text = (before.get(&quot;lastAssistantText&quot;) or &quot;&quot;).strip()
+            result = send_fairy_text(session_id, message)
+            print(f&quot;[accepted] route={result.get(&#x27;route&#x27;)} state={result.get(&#x27;session&#x27;, {}).get(&#x27;state&#x27;)}&quot;)
+            reply_session = wait_for_reply(session_id, previous_text=previous_text)
+            assistant = (reply_session.get(&quot;lastAssistantText&quot;) or &quot;&quot;).strip()
+            print(f&quot;\nFairy: {assistant}\n&quot;)
+            synthesize_and_play_fairy_text(assistant, agent_id=agent_id)
+            if reply_session.get(&quot;state&quot;) == &quot;speaking&quot;:
+                mark_playback_finished(session_id)
+        except requests.HTTPError as err:
+            body = err.response.text if err.response is not None else str(err)
+            print(f&quot;[http-error] {body}&quot;)
+        except TimeoutError as err:
+            print(f&quot;[timeout] {err}&quot;)
+        except Exception as err:
+            print(f&quot;[error] {err}&quot;)
+
+
+def main():
+    print(&quot;CommandCenter Fairy CLI (text mode)&quot;)
+    print(f&quot;API base: {BASE_V1}&quot;)
+    print(f&quot;Call base: {BASE_ROOT}/api/call&quot;)
+    print(f&quot;Log dir: {LOG_DIR.resolve()}&quot;)
+    if API_KEY == &quot;YOUR_COMMANDCENTER_API_KEY&quot;:
+        print(&quot;Warning: replace YOUR_COMMANDCENTER_API_KEY or set COMMANDCENTER_API_KEY in your environment.&quot;)
+
+    cfg = fairy_config()
+    print(&quot;\nFairy config summary:&quot;)
+    print(json.dumps(cfg, indent=2))
+
+    agent = choose_agent()
+    started = start_fairy_call(agent=agent)
+    session = started.get(&quot;session&quot;, {})
+    session_id = session.get(&quot;id&quot;)
+    if not session_id:
+        raise RuntimeError(f&quot;Did not receive Fairy session id: {json.dumps(started, indent=2)}&quot;)
+    print(f&quot;\nStarted Fairy call: {session_id}&quot;)
+    wait_until_ready(session_id)
+    print(&quot;Fairy session is ready.&quot;)
+    fairy_chat_loop(session_id, agent)
+
+
+if __name__ == &quot;__main__&quot;:
+    try:
+        main()
+    except KeyboardInterrupt:
+        print(&quot;\nInterrupted.&quot;)
+        sys.exit(130)</pre></div>
+          </div>
+        </div>
+
+<h2 id="fairy-quickstart">Fairy API Quickstart</h2>
+        <div class="grid two-col">
+          <div class="card"><h3>1) Read Fairy config</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>curl -H "Authorization: Bearer YOUR_COMMANDCENTER_API_KEY" \
+  https://your-domain.example/commandcenter/api/v1/fairy/config</pre></div><p>Use this first to confirm Fairy/Gemini live is configured, which voice is active, whether memory is enabled, and what persona name is currently set.</p></div>
+          <div class="card"><h3>2) Inspect Fairy memory</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>curl -H "Authorization: Bearer YOUR_COMMANDCENTER_API_KEY" \
+  "https://your-domain.example/commandcenter/api/v1/fairy/memory?q=voice&scope=general"</pre></div><p>Use this to search local Fairy memory entries. Example scopes in this API/docs set are <code>general</code>, <code>ui</code>, <code>backend</code>, and <code>research</code>.</p></div>
+          <div class="card"><h3>3) List Fairy sessions</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>curl -H "Authorization: Bearer YOUR_COMMANDCENTER_API_KEY" \
+  https://your-domain.example/commandcenter/api/v1/fairy/sessions</pre></div><p>Use this to inspect active/recent Fairy call sessions and grab a session id if you want to look at one specific live call record.</p></div>
+          <div class="card"><h3>4) Inspect one Fairy session</h3><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>curl -H "Authorization: Bearer YOUR_COMMANDCENTER_API_KEY" \
+  https://your-domain.example/commandcenter/api/v1/fairy/sessions/&lt;session-id&gt;</pre></div><p>Fairy session states documented in the OpenAPI spec are <code>starting</code>, <code>ready</code>, <code>listening</code>, <code>thinking</code>, <code>speaking</code>, <code>task_running</code>, <code>ended</code>, and <code>error</code>.</p></div>
+        </div>
+
+<h2 id="openapi">OpenAPI</h2>
+        <div class="card">
+          <p>A machine-readable OpenAPI spec is now available here:</p>
+          <p><a href="./openapi.json"><code>/commandcenter/docs/openapi.json</code></a></p>
+          <p>You can use it with tooling that understands OpenAPI 3.1.</p>
+          <p>Fairy endpoints documented there include <code>/fairy/config</code>, <code>/fairy/memory</code>, <code>/fairy/sessions</code>, and <code>/fairy/sessions/{id}</code>.</p>
+          <p>The Fairy session state enum is documented as: <code>starting</code>, <code>ready</code>, <code>listening</code>, <code>thinking</code>, <code>speaking</code>, <code>task_running</code>, <code>ended</code>, <code>error</code>.</p>
+          <p>Example memory scopes used in the docs: <code>general</code>, <code>ui</code>, <code>backend</code>, <code>research</code>.</p>
+          <p>Example placeholder used in docs: <code>YOUR_COMMANDCENTER_API_KEY</code></p>
+        </div>
+
+        <h2 id="errors">Error Format</h2>
+        <div class="card"><div class="code-block"><button class="copy-btn" type="button">Copy</button><pre>{
+  "ok": false,
+  "error": "Session not found",
+  "code": "SESSION_NOT_FOUND"
+}</pre></div></div>
+
+        <div class="note">If you expose this API to the internet, set <code>COMMANDCENTER_API_KEY</code>. Otherwise you are leaving agent control routes open, which is a deeply unserious security choice.</div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    document.querySelectorAll('.copy-btn').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const pre = button.parentElement?.querySelector('pre');
+        const text = pre?.innerText || '';
+        try {
+          await navigator.clipboard.writeText(text);
+          const old = button.textContent;
+          button.textContent = 'Copied';
+          button.classList.add('copied');
+          setTimeout(() => {
+            button.textContent = old;
+            button.classList.remove('copied');
+          }, 1400);
+        } catch (_) {
+          button.textContent = 'Failed';
+          setTimeout(() => { button.textContent = 'Copy'; }, 1400);
+        }
+      });
+    });
+
+    const apiEls = {
+      masked: document.getElementById('api-key-masked'),
+      status: document.getElementById('api-key-status'),
+      refresh: document.getElementById('api-key-refresh'),
+      reveal: document.getElementById('api-key-reveal'),
+      copy: document.getElementById('api-key-copy'),
+      rotate: document.getElementById('api-key-rotate'),
+    };
+    let revealedApiKey = '';
+
+    function apiStatus(msg) {
+      if (apiEls.status) apiEls.status.textContent = msg;
+    }
+
+    async function loadApiKeyMasked() {
+      try {
+        const r = await fetch('/commandcenter/api/settings/api-key', { credentials: 'include' });
+        const data = await r.json();
+        if (!r.ok || !data?.ok) throw new Error(data?.error || 'Failed to load API key info');
+        if (apiEls.masked) apiEls.masked.textContent = data.apiKeyMasked || '(not set)';
+        apiStatus(data.hasApiKey ? 'API key loaded.' : 'No API key is currently set.');
+      } catch (err) {
+        apiStatus(`Could not load key info: ${err.message || err}`);
+      }
+    }
+
+    async function revealApiKey() {
+      try {
+        const r = await fetch('/commandcenter/api/settings/api-key/reveal', { credentials: 'include' });
+        const data = await r.json();
+        if (!r.ok || !data?.ok) throw new Error(data?.error || 'Reveal failed');
+        revealedApiKey = String(data.apiKey || '');
+        if (apiEls.masked) apiEls.masked.textContent = revealedApiKey || '(not set)';
+        apiStatus(revealedApiKey ? 'Key revealed in page. Keep this private.' : 'No API key set.');
+      } catch (err) {
+        apiStatus(`Reveal failed: ${err.message || err}`);
+      }
+    }
+
+    async function copyApiKey() {
+      try {
+        if (!revealedApiKey) await revealApiKey();
+        if (!revealedApiKey) throw new Error('No API key set');
+        await navigator.clipboard.writeText(revealedApiKey);
+        apiStatus('API key copied to clipboard.');
+      } catch (err) {
+        apiStatus(`Copy failed: ${err.message || err}`);
+      }
+    }
+
+    async function rotateApiKey() {
+      if (!confirm('Rotate Command Center API key now? Existing bearer tokens will stop working immediately.')) return;
+      try {
+        const r = await fetch('/commandcenter/api/settings/api-key/rotate', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        const data = await r.json();
+        if (!r.ok || !data?.ok) throw new Error(data?.error || 'Rotation failed');
+        revealedApiKey = String(data.apiKey || '');
+        if (apiEls.masked) apiEls.masked.textContent = data.apiKeyMasked || '(rotated)';
+        apiStatus('API key rotated. Copy the new key now.');
+      } catch (err) {
+        apiStatus(`Rotation failed: ${err.message || err}`);
+      }
+    }
+
+    apiEls.refresh?.addEventListener('click', loadApiKeyMasked);
+    apiEls.reveal?.addEventListener('click', revealApiKey);
+    apiEls.copy?.addEventListener('click', copyApiKey);
+    apiEls.rotate?.addEventListener('click', rotateApiKey);
+    loadApiKeyMasked();
+  </script>
+</body>
+</html>

@@ -27,7 +27,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "fish-audio-tts-toolkit": "github:EpicIsTheOne/fish-audio-tts-toolkit#df7f36c918ab9c9bdeb7efc9f55bb728e93b31af",
     "lucide-react": "^0.468.0",
-    "openclaw-command-center": "github:EpicIsTheOne/CommandCenter#99d40f8",
+    "openclaw-command-center": "file:../vendor/openclaw-command-center",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "typescript": "^5.6.3",

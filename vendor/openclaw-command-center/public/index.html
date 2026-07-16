@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>OpenClaw Command Center</title>
+  <script src="js/base-path.js?v=20260714-basepath1"></script>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0b1018">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Command Center">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=VT323&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css?v=20260518-fairy-image2">
+</head>
+<body>
+  <div id="command-center">
+    <div id="zone-mascot" class="zone">
+      <div class="zone-header">
+        <span class="zone-dot"></span>
+        STATUS
+        <span id="app-brand-title" class="brand-title-inline">OpenClaw Command Center</span>
+      </div>
+      <canvas id="mascot-canvas"></canvas>
+      <div id="fairy-live-camera-preview-wrap" class="fairy-live-camera-preview-wrap status-camera-preview hidden" aria-label="Camera preview">
+        <video id="fairy-live-camera-preview" class="fairy-live-camera-preview" muted playsinline></video>
+        <span id="fairy-live-camera-preview-label" class="fairy-live-camera-preview-label">BACK CAM</span>
+      </div>
+      <div id="fairy-live-image-card" class="fairy-live-image-card status-camera-preview hidden" aria-label="Fairy image display">
+        <img id="fairy-live-image-card-img" class="fairy-live-image-card-img" alt="">
+        <div class="fairy-live-image-card-meta">
+          <div id="fairy-live-image-card-title" class="fairy-live-image-card-title">IMAGE</div>
+          <div class="fairy-live-image-card-actions">
+            <a id="fairy-live-image-card-open" class="fairy-live-image-card-link" href="#" target="_blank" rel="noopener noreferrer">OPEN</a>
+            <button id="fairy-live-image-card-copy" class="fairy-live-image-card-copy" type="button">COPY LINK</button>
+            <button id="fairy-live-image-card-dismiss" class="fairy-live-image-card-copy" type="button">DISMISS</button>
+          </div>
+        </div>
+      </div>
+      <div id="mascot-label">IDLE</div>
+    </div>
+
+    <div id="zone-terminal" class="zone">
+      <div class="zone-header zone-header-terminal">
+        <div class="zone-header-title-row">
+          <span class="zone-dot"></span>
+          <span>ACTIVITY LOG</span>
+        </div>
+        <div class="zone-header-actions">
+          <span id="connection-indicator" class="connection-state state-connecting">CONNECTED</span>
+          <button id="wake-mode-btn" class="header-button" type="button">WAKE MODE: OFF</button>
+          <button id="stop-audio-btn" class="header-button" type="button">STOP VOICE</button>
+          <button id="fairy-live-launch-btn" class="header-button" type="button">FAIRY CALL</button>
+          <button id="fairy-live-mic-header-btn" class="header-button fairy-live-header-btn hidden" type="button" disabled>MIC OFF</button>
+          <button id="fairy-live-screen-header-btn" class="header-button fairy-live-header-btn hidden" type="button" disabled>SCREEN OFF</button>
+          <button id="fairy-live-camera-header-btn" class="header-button fairy-live-header-btn hidden" type="button" disabled>CAM OFF</button>
+          <button id="fairy-live-camera-facing-header-btn" class="header-button fairy-live-header-btn hidden" type="button" disabled>BACK CAM</button>
+          <button id="settings-btn" class="header-button" type="button">SETTINGS</button>
+        </div>
+      </div>
+      <div id="fairy-live-overlay" class="fairy-live-overlay hidden" aria-live="polite"></div>
+      <div id="terminal-output"></div>
+    </div>
+
+    <div id="zone-office" class="zone">
+      <div class="zone-header">
+        <span class="zone-dot"></span>
+        AGENT WORKSPACE
+        <span id="app-brand-subtitle" class="brand-subtitle-inline">Mission Control</span>
+        <img id="app-brand-logo" class="brand-logo hidden" alt="Logo">
+      </div>
+      <canvas id="office-canvas"></canvas>
+      <div id="workspace-room-nav" class="workspace-room-nav hidden">
+        <button id="workspace-room-prev" class="workspace-room-arrow" type="button" aria-label="Previous room">‹</button>
+        <button id="workspace-room-label" class="workspace-room-label" type="button">Main Office • 1 / 1</button>
+        <button id="workspace-room-next" class="workspace-room-arrow" type="button" aria-label="Next room">›</button>
+      </div>
+    </div>
+  </div>
+
+  <section id="fairy-live-panel" class="fairy-live-panel fairy-live-panel-hidden hidden" aria-label="Fairy Live">
+    <div class="fairy-live-header">
+      <div>
+        <div id="fairy-live-kicker" class="fairy-live-kicker">FAIRY LIVE</div>
+        <div id="fairy-live-model" class="fairy-live-model">Checking Gemini…</div>
+      </div>
+      <div class="fairy-live-header-actions">
+        <span id="fairy-live-state" class="fairy-live-state state-idle">IDLE</span>
+        <button id="fairy-live-toggle" class="fairy-live-toggle" type="button" aria-expanded="false" title="Expand Fairy Live">▴</button>
+      </div>
+    </div>
+    <div class="fairy-live-body">
+      <div id="fairy-live-status" class="fairy-live-status">Realtime interface offline. Start a call when you want Fairy at the desk.</div>
+      <div id="fairy-live-transcript" class="fairy-live-transcript" aria-live="polite"></div>
+      <div id="fairy-live-handoff" class="fairy-live-handoff hidden"></div>
+      <div class="fairy-live-audio-row">
+        <button id="fairy-live-mic" class="secondary-button fairy-live-mic" type="button" disabled>START MIC</button>
+        <span id="fairy-live-audio-status" class="fairy-live-audio-status">Mic off. Text test mode still works.</span>
+      </div>
+      <div class="fairy-live-audio-row">
+        <label for="fairy-live-call-mode" class="setting-hint" style="min-width:92px;">CALL MODE</label>
+        <select id="fairy-live-call-mode" class="secondary-button" disabled>
+          <option value="universal">Universal</option>
+          <option value="gaming">Gaming</option>
+          <option value="observe">Observe</option>
+          <option value="assist">Assist</option>
+          <option value="guide">Guide</option>
+          <option value="operator">Operator</option>
+          <option value="record">Record / Review</option>
+        </select>
+        <span id="fairy-live-call-mode-status" class="fairy-live-audio-status">Universal mode keeps normal Fairy behavior.</span>
+      </div>
+      <div class="fairy-live-audio-row">
+        <label for="fairy-live-intent-override" class="setting-hint" style="min-width:92px;">LIVE INTENT</label>
+        <select id="fairy-live-intent-override" class="secondary-button" disabled>
+          <option value="">Normal</option>
+          <option value="just_watch">Just Watch</option>
+          <option value="quiet">Quiet</option>
+          <option value="guide_me">Guide Me</option>
+          <option value="operator_now">Operator Now</option>
+          <option value="narrate">Narrate</option>
+        </select>
+        <span id="fairy-live-intent-status" class="fairy-live-audio-status">Normal: follow the selected call mode with no temporary override.</span>
+      </div>
+      <div class="fairy-live-audio-row">
+        <button id="fairy-live-screen" class="secondary-button fairy-live-screen" type="button" disabled>SHARE SCREEN</button>
+        <span id="fairy-live-screen-status" class="fairy-live-audio-status">Screen sharing off.</span>
+      </div>
+      <div class="fairy-live-audio-row fairy-live-camera-row">
+        <button id="fairy-live-camera" class="secondary-button fairy-live-camera" type="button" disabled>START CAMERA</button>
+        <button id="fairy-live-camera-facing" class="secondary-button fairy-live-camera-facing" type="button" disabled>BACK CAM</button>
+        <span id="fairy-live-camera-status" class="fairy-live-audio-status">Camera off.</span>
+      </div>
+      <div id="fairy-live-diagnostics" class="fairy-live-diagnostics"></div>
+      <div class="fairy-live-debug-wrap">
+        <button id="fairy-live-debug-toggle" class="fairy-live-debug-toggle" type="button" aria-expanded="false">DEBUG</button>
+        <div id="fairy-live-debug-panel" class="fairy-live-debug-panel hidden">
+          <div id="fairy-live-debug-content" class="fairy-live-debug-content"></div>
+        </div>
+      </div>
+      <div class="fairy-live-text-row">
+        <input id="fairy-live-text" type="text" autocomplete="off" placeholder="Test a Fairy turn…">
+        <button id="fairy-live-send" class="secondary-button" type="button">SEND</button>
+      </div>
+    </div>
+    <div class="fairy-live-controls">
+      <button id="fairy-live-start" class="primary-button" type="button">START CALL</button>
+      <button id="fairy-live-stop-audio" class="secondary-button" type="button">STOP AUDIO</button>
+      <button id="fairy-live-end" class="secondary-button" type="button" disabled>END</button>
+    </div>
+  </section>
+
+  <button id="global-settings-btn" class="global-settings-button" type="button" aria-label="Open settings">SETTINGS</button>
+
+  <div id="auth-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content auth-modal-content" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+      <div class="modal-header">
+        <h3 id="auth-title">CommandCenter Access</h3>
+      </div>
+      <div class="modal-body auth-modal-body">
+        <div class="auth-copy">
+          <div id="auth-mode-label" class="auth-kicker">Secure access</div>
+          <div id="auth-message" class="setting-hint">Enter your password to continue.</div>
+        </div>
+        <div class="setting-group">
+          <label for="auth-password">Password</label>
+          <input id="auth-password" type="password" autocomplete="current-password" placeholder="Enter password">
+        </div>
+        <div id="auth-confirm-group" class="setting-group hidden">
+          <label for="auth-password-confirm">Confirm password</label>
+          <input id="auth-password-confirm" type="password" autocomplete="new-password" placeholder="Confirm password">
+        </div>
+        <div id="auth-status" class="settings-status"></div>
+      </div>
+      <div class="modal-footer auth-modal-footer">
+        <button id="auth-submit-btn" class="primary-button" type="button">UNLOCK</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="password-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-password-modal="true"></div>
+    <div class="modal-content auth-modal-content" role="dialog" aria-modal="true" aria-labelledby="password-modal-title">
+      <div class="modal-header">
+        <h3 id="password-modal-title">Change Password</h3>
+        <button id="close-password-modal-btn" class="close-button" type="button" aria-label="Close password dialog">×</button>
+      </div>
+      <div class="modal-body auth-modal-body">
+        <div class="auth-copy">
+          <div class="auth-kicker">Security</div>
+          <div class="setting-hint">Update the CommandCenter password without ugly browser prompts like a civilized life form.</div>
+        </div>
+        <div class="setting-group">
+          <label for="password-current">Current password</label>
+          <input id="password-current" type="password" autocomplete="current-password" placeholder="Current password">
+        </div>
+        <div class="setting-group">
+          <label for="password-new">New password</label>
+          <input id="password-new" type="password" autocomplete="new-password" placeholder="New password">
+        </div>
+        <div class="setting-group">
+          <label for="password-confirm">Confirm new password</label>
+          <input id="password-confirm" type="password" autocomplete="new-password" placeholder="Confirm new password">
+        </div>
+        <div id="password-status" class="settings-status"></div>
+      </div>
+      <div class="modal-footer auth-modal-footer">
+        <button id="password-save-btn" class="primary-button" type="button">UPDATE PASSWORD</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="update-confirm-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-update-confirm="true"></div>
+    <div class="modal-content auth-modal-content" role="dialog" aria-modal="true" aria-labelledby="update-confirm-title">
+      <div class="modal-header">
+        <h3 id="update-confirm-title">Confirm CommandCenter Update</h3>
+        <button id="close-update-confirm-btn" class="close-button" type="button" aria-label="Close update confirmation">×</button>
+      </div>
+      <div class="modal-body auth-modal-body">
+        <div class="auth-copy">
+          <div class="auth-kicker">Updater</div>
+          <div class="setting-hint">This will pull the latest changes from the GitHub repo, optionally install updated dependencies, restart CommandCenter, and briefly kick the UI in the shins while it comes back.</div>
+        </div>
+        <div id="update-confirm-summary" class="setting-hint">No update summary loaded yet.</div>
+        <div id="update-confirm-status" class="settings-status"></div>
+      </div>
+      <div class="modal-footer auth-modal-footer">
+        <button id="confirm-update-btn" class="primary-button" type="button">YES, UPDATE COMMANDCENTER</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-settings="true"></div>
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="modal-header">
+        <h3 id="settings-title">CommandCenter Settings</h3>
+        <button id="close-settings-btn" class="close-button" type="button" aria-label="Close settings">×</button>
+      </div>
+      <div class="modal-body">
+        <details id="setup-status-group" class="setting-group setup-health-group collapsible-setting">
+          <summary class="collapsible-setting-summary">
+            <span>Setup Status</span>
+            <span id="setup-status-pill" class="setup-status-pill">Checking…</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div id="setup-status-summary" class="setting-hint">Checking CommandCenter setup state…</div>
+            <ul id="setup-issues-list" class="setup-issues-list"></ul>
+          </div>
+        </details>
+
+        <details id="agents-settings-group" class="setting-group collapsible-setting">
+          <summary class="collapsible-setting-summary">
+            <span>Agents</span>
+            <span class="setting-hint">Detected OpenClaw and Hermes agents</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row between" style="align-items:center; gap:10px; flex-wrap:wrap;">
+                <label>Available agents</label>
+                <div class="settings-inline-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <button id="detect-openclaw-agents-btn" class="secondary-button hidden" type="button">DETECT OPENCLAW</button>
+                  <button id="detect-hermes-agents-btn" class="secondary-button hidden" type="button">DETECT HERMES</button>
+                </div>
+              </div>
+              <div id="agents-settings-status" class="setting-hint">Checking agent sources...</div>
+              <div id="agents-settings-list" class="agent-voice-list"></div>
+            </div>
+          </div>
+        </details>
+
+        <details id="direct-chat-settings-group" class="setting-group collapsible-setting">
+          <summary class="collapsible-setting-summary">
+            <span>Direct Chat</span>
+            <span class="setting-hint">Relay-backed agents</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <label style="display:flex; align-items:center; gap:8px;">
+                <input id="direct-chat-relay-enabled" type="checkbox">
+                <span>Enable relay agents</span>
+              </label>
+              <div class="setting-hint">Pulls remote/device agents from a Project Reika relay.</div>
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label for="direct-chat-relay-url">Relay URL</label>
+              <input id="direct-chat-relay-url" type="text" placeholder="wss://relay.example.com/v1/app or https://relay.example.com">
+              <div class="setting-hint">CommandCenter connects server-side. Paste a base URL or full <code>/v1/app</code> websocket URL.</div>
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label style="display:flex; align-items:center; gap:8px;">
+                <input id="direct-chat-relay-show-device-labels" type="checkbox" checked>
+                <span>Show device labels for relay agents</span>
+              </label>
+              <div class="setting-hint">Hide this if you want relay agents to blend into the normal CommandCenter roster.</div>
+            </div>
+          </div>
+        </details>
+
+        <details id="app-install-settings-group" class="setting-group collapsible-setting">
+          <summary class="collapsible-setting-summary">
+            <span>Install App</span>
+            <span class="setting-hint">Add Command Center to your device</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <div id="pwa-install-status" class="setting-hint">Checking install support…</div>
+              <div class="settings-inline-actions">
+                <button id="pwa-install-btn" class="secondary-button" type="button" disabled>INSTALL COMMAND CENTER</button>
+              </div>
+              <div class="setting-hint">On iPhone/iPad, use Safari’s Share button → <strong>Add to Home Screen</strong>. Because naturally Apple made it a ritual.</div>
+            </div>
+          </div>
+        </details>
+
+        <details id="update-settings-group" class="setting-group collapsible-setting">
+          <summary class="collapsible-setting-summary">
+            <span>Updates</span>
+            <span id="update-settings-pill" class="setup-status-pill">Checking…</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <div class="update-hero-card">
+                <div>
+                  <div class="update-hero-title">CommandCenter updater</div>
+                  <div id="update-settings-status" class="setting-hint">Checking update status…</div>
+                </div>
+                <div class="settings-inline-actions update-hero-actions">
+                  <button id="refresh-update-status-btn" class="secondary-button" type="button">REFRESH STATUS</button>
+                  <button id="apply-update-btn" class="primary-button" type="button">UPDATE NOW</button>
+                </div>
+              </div>
+
+              <div class="update-toggle-row">
+                <label class="setting-inline-check"><input id="auto-update-enabled" type="checkbox" checked> Keep CommandCenter updated automatically</label>
+                <div class="setting-hint">Default: on. Great for bugfixes, less great if you enjoy manually babysitting deploys.</div>
+              </div>
+
+              <div id="update-meta" class="update-summary-grid"></div>
+              <div id="update-release-notes" class="update-release-card setting-hint"></div>
+
+              <details class="setting-group collapsible-setting nested-collapsible" open>
+                <summary class="collapsible-setting-summary">
+                  <span>Incoming commits</span>
+                  <span id="update-commits-summary" class="setting-hint">Checking…</span>
+                </summary>
+                <div class="collapsible-setting-body">
+                  <div id="update-commits-list" class="agent-voice-list"></div>
+                </div>
+              </details>
+
+              <details class="setting-group collapsible-setting nested-collapsible" open>
+                <summary class="collapsible-setting-summary">
+                  <span>Changed files</span>
+                  <span id="update-files-summary" class="setting-hint">Checking…</span>
+                </summary>
+                <div class="collapsible-setting-body">
+                  <div id="update-files-list" class="agent-voice-list"></div>
+                </div>
+              </details>
+
+              <details class="setting-group collapsible-setting nested-collapsible">
+                <summary class="collapsible-setting-summary">
+                  <span>Code diff</span>
+                  <span id="update-diff-summary" class="setting-hint">Patch preview</span>
+                </summary>
+                <div class="collapsible-setting-body">
+                  <div class="setting-hint">Preview only. It is intentionally trimmed so the settings panel does not become a war crime.</div>
+                  <pre id="update-diff-preview" class="update-diff-preview">No diff loaded yet.</pre>
+                </div>
+              </details>
+            </div>
+          </div>
+        </details>
+
+        <details id="voice-settings-group" class="setting-group collapsible-setting">
+          <summary class="collapsible-setting-summary">
+            <span>Voice Setup</span>
+            <span class="setting-hint">Listening, speaking, routing, and testing</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <details class="setting-group collapsible-setting nested-collapsible">
+              <summary class="collapsible-setting-summary">
+                <span>1. Listening</span>
+                <span class="setting-hint">How your speech becomes text</span>
+              </summary>
+              <div class="collapsible-setting-body">
+                <div class="setting-group nested-setting-group">
+                  <label for="stt-mode">Speech to text</label>
+                  <select id="stt-mode">
+                    <option value="local">Local Whisper on this server</option>
+                    <option value="api">AIChat STT API</option>
+                  </select>
+                  <div id="stt-active-status" class="setting-hint">Active path: AIChat API → Fish Audio</div>
+                  <div id="stt-ready-status" class="setting-hint">Checking STT readiness...</div>
+                  <div class="setting-hint">Local uses the current server whisper path. API sends audio to AIChat for transcription.</div>
+                  <div class="setting-hint" style="margin-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span>Using NEXUS / AIChat unlocks extra voice features.</span>
+                    <button id="aichat-learn-more-btn" class="secondary-button" type="button">LEARN MORE</button>
+                  </div>
+                  <div id="aichat-learn-more-panel" class="setting-hint hidden" style="margin-top:10px; padding:12px 14px; border:1px solid rgba(255,255,255,0.12); border-radius:12px; background:rgba(255,255,255,0.04);">
+                    <div style="font-weight:600; margin-bottom:6px;">What enabling NEXUS / AIChat unlocks</div>
+                    <ul style="margin:0; padding-left:18px; display:grid; gap:6px;">
+                      <li><strong>Auto voice tagging</strong> so replies can preserve emotion and delivery better.</li>
+                      <li><strong>Fish Audio agent voices</strong> with per-agent voice assignment and previews.</li>
+                      <li><strong>API-based speech to text</strong> through Fish Audio, OpenAI, or ElevenLabs.</li>
+                      <li><strong>Tagged Fish Audio playback</strong> through the NEXUS endpoints instead of plain fallback speech.</li>
+                      <li><strong>Smoother premium voice workflows</strong> for agents that need more personality than local fallback audio.</li>
+                    </ul>
+                    <div style="margin-top:8px;">If you want to set it up, grab NEXUS here: <a href="https://github.com/EpicIsTheOne/NEXUS" target="_blank" rel="noopener noreferrer">github.com/EpicIsTheOne/NEXUS</a>.</div>
+                    <div style="margin-top:6px;">If you leave it off, CommandCenter still works — you just fall back to the local/basic voice paths.</div>
+                  </div>
+                </div>
+
+                <div class="setting-group nested-setting-group stt-api-only">
+                  <label for="stt-api-base">STT API Base</label>
+                  <input id="stt-api-base" type="text" autocomplete="off" placeholder="https://your-domain.example/aichat">
+                  <div class="setting-hint">Base URL for the AIChat STT endpoint.</div>
+                </div>
+
+                <div class="setting-group nested-setting-group stt-api-only">
+                  <label for="stt-api-provider">STT API Provider</label>
+                  <select id="stt-api-provider">
+                    <option value="fish">Fish Audio Speech to Text</option>
+                    <option value="openai">OpenAI Whisper</option>
+                    <option value="elevenlabs">ElevenLabs Speech to Text</option>
+                  </select>
+                  <div class="setting-hint">Choose which provider AIChat should use for transcription.</div>
+                </div>
+
+                <div class="setting-group nested-setting-group stt-api-only">
+                  <label for="stt-language">STT Language</label>
+                  <select id="stt-language">
+                    <option value="auto">Universal / auto-detect</option>
+                    <option value="en">English</option>
+                    <option value="ja">Japanese</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="zh">Chinese</option>
+                    <option value="ko">Korean</option>
+                    <option value="ru">Russian</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="it">Italian</option>
+                    <option value="ar">Arabic</option>
+                    <option value="hi">Hindi</option>
+                    <option value="nl">Dutch</option>
+                    <option value="pl">Polish</option>
+                    <option value="tr">Turkish</option>
+                    <option value="vi">Vietnamese</option>
+                    <option value="id">Indonesian</option>
+                  </select>
+                  <div class="setting-hint">Default is English. Universal removes the forced language so Fish/AIChat can auto-detect supported spoken languages.</div>
+                </div>
+
+                <div class="setting-group nested-setting-group stt-provider-fish stt-api-only">
+                  <label for="stt-fish-key">Fish Audio STT API Key</label>
+                  <input id="stt-fish-key" type="password" autocomplete="off" placeholder="Paste your Fish Audio API key">
+                  <div id="saved-stt-fish-key-hint" class="setting-hint"></div>
+                </div>
+
+                <div class="setting-group nested-setting-group stt-provider-openai stt-api-only">
+                  <label for="stt-openai-key">OpenAI API Key</label>
+                  <input id="stt-openai-key" type="password" autocomplete="off" placeholder="Paste your OpenAI API key">
+                  <div id="saved-stt-openai-key-hint" class="setting-hint"></div>
+                </div>
+
+                <div class="setting-group nested-setting-group stt-provider-elevenlabs stt-api-only">
+                  <label for="stt-elevenlabs-key">ElevenLabs STT API Key</label>
+                  <input id="stt-elevenlabs-key" type="password" autocomplete="off" placeholder="Paste your ElevenLabs API key">
+                  <div id="saved-stt-elevenlabs-key-hint" class="setting-hint"></div>
+                </div>
+              </div>
+            </details>
+
+            <details class="setting-group collapsible-setting nested-collapsible">
+              <summary class="collapsible-setting-summary">
+                <span>2. Speaking</span>
+                <span class="setting-hint">How agent replies become audio</span>
+              </summary>
+              <div class="collapsible-setting-body">
+                <div class="setting-group nested-setting-group">
+                  <label for="voice-provider">TTS Provider</label>
+                  <select id="voice-provider">
+                    <option value="elevenlabs">ElevenLabs</option>
+                    <option value="fish">Fish Audio via AIChat tagged API</option>
+                  </select>
+                  <div class="setting-hint">Fish Audio uses the AIChat <code>/api/tts/audio</code> endpoint so emotion tags are preserved.</div>
+                </div>
+
+                <div class="setting-group nested-setting-group provider-elevenlabs">
+                  <label for="elevenlabs-key">ElevenLabs API Key</label>
+                  <input id="elevenlabs-key" type="password" autocomplete="off" placeholder="Paste your ElevenLabs API key">
+                  <div id="saved-key-hint" class="setting-hint"></div>
+                </div>
+
+                <div class="setting-group nested-setting-group provider-elevenlabs">
+                  <label for="default-voice-id">ElevenLabs Default Voice ID (optional)</label>
+                  <select id="default-voice-select">
+                    <option value="">Default / blank</option>
+                  </select>
+                  <input id="default-voice-id" type="text" autocomplete="off" placeholder="Or paste an ElevenLabs voice ID manually">
+                  <div class="setting-hint">Leave blank to use fallback voice behavior.</div>
+                </div>
+
+                <div class="setting-group nested-setting-group provider-fish">
+                  <label for="fish-audio-api-base">Fish Audio API Base</label>
+                  <input id="fish-audio-api-base" type="text" autocomplete="off" placeholder="https://your-domain.example/aichat">
+                  <div class="setting-hint">Put the main NEXUS / AIChat app URL here too, like <code>https://your-domain.example/aichat</code>.</div>
+                  <div class="setting-hint">CommandCenter adds the Fish endpoints automatically, so do <strong>not</strong> paste <code>/api/nexus</code>, <code>/api/fish/models</code>, or <code>/api/tts/audio</code>.</div>
+                </div>
+
+                <div class="setting-group nested-setting-group provider-fish">
+                  <label for="fish-voice-id">Fish Audio Voice ID</label>
+                  <input id="fish-voice-id" type="text" autocomplete="off" placeholder="Paste Fish Audio voice/reference ID">
+                  <div class="setting-hint">This is the Fish voice/reference ID sent to <code>/api/tts/audio</code>.</div>
+                  <div class="voice-search-toolbar">
+                    <input id="fish-voice-search" type="text" autocomplete="off" placeholder="Search Fish voices by name">
+                    <button id="fish-voice-search-btn" class="secondary-button" type="button">SEARCH FISH</button>
+                  </div>
+                  <div id="fish-voice-search-status" class="setting-hint"></div>
+                  <div id="fish-voice-results" class="agent-voice-list"></div>
+                </div>
+
+                <div class="setting-group nested-setting-group provider-fish">
+                  <label for="fish-session-cookie">AIChat Session Cookie</label>
+                  <input id="fish-session-cookie" type="password" autocomplete="off" placeholder="Paste aichat_session token or full cookie">
+                  <div id="saved-fish-cookie-hint" class="setting-hint">Needed because the tagged Fish API uses normal AIChat login sessions.</div>
+                </div>
+
+                <div class="setting-group nested-setting-group provider-fish">
+                  <label for="fish-format">Fish Audio Format</label>
+                  <select id="fish-format">
+                    <option value="mp3">MP3</option>
+                    <option value="wav">WAV</option>
+                    <option value="opus">Opus</option>
+                    <option value="pcm">PCM</option>
+                  </select>
+                  <div style="height:10px"></div>
+                  <label for="fish-playback-mode">Fish playback mode</label>
+                  <select id="fish-playback-mode">
+                    <option value="auto">Auto</option>
+                    <option value="stream">Streaming</option>
+                    <option value="full">Full audio</option>
+                  </select>
+                  <div class="setting-hint">Auto waits for full audio on shorter replies and switches to streaming for longer ones.</div>
+                  <div class="setting-row between" style="margin-top:10px;">
+                    <label for="fish-auto-stream-min-chars">Auto stream threshold</label>
+                    <span id="fish-auto-stream-min-chars-value" class="setting-hint">260 chars</span>
+                  </div>
+                  <input id="fish-auto-stream-min-chars" type="range" min="80" max="1200" step="10" value="260">
+                  <label class="setting-inline-check"><input id="fish-include-narration" type="checkbox"> Include asterisk narration in spoken audio</label>
+                </div>
+              </div>
+            </details>
+
+            <details class="setting-group collapsible-setting nested-collapsible">
+              <summary class="collapsible-setting-summary">
+                <span>3. Agent Routing & Voices</span>
+                <span class="setting-hint">Choose who speaks and with which voice</span>
+              </summary>
+              <div class="collapsible-setting-body">
+                <div class="setting-group nested-setting-group">
+                  <div class="setting-row between">
+                    <label>Per-agent voices</label>
+                    <button id="refresh-voices-btn" class="secondary-button provider-elevenlabs" type="button">LOAD ELEVENLABS VOICES</button>
+                  </div>
+                  <div class="setting-hint provider-elevenlabs">Each agent can use its own ElevenLabs voice. Leave blank to use the default voice.</div>
+                  <div class="setting-hint provider-fish">Each agent can use its own Fish reference ID. Leave blank to use the global Fish voice above.</div>
+                  <div id="agent-voice-list" class="agent-voice-list"></div>
+                </div>
+              </div>
+            </details>
+
+            <details class="setting-group collapsible-setting nested-collapsible">
+              <summary class="collapsible-setting-summary">
+                <span>4. Test</span>
+                <span class="setting-hint">Run a fast setup check before blaming the universe</span>
+              </summary>
+              <div class="collapsible-setting-body">
+                <div class="setting-group nested-setting-group">
+                  <div class="setting-row between">
+                    <label>Setup test</label>
+                    <button id="run-setup-test-btn" class="secondary-button" type="button">RUN SETUP TEST</button>
+                  </div>
+                  <div class="setting-hint">Checks gateway mode/auth plus your current STT/TTS configuration without making you trial-and-error your soul away.</div>
+                  <div id="setup-test-status" class="setting-hint">No setup test run yet.</div>
+                  <ul id="setup-test-results" class="setup-issues-list"></ul>
+                </div>
+              </div>
+            </details>
+          </div>
+        </details>
+
+        <details id="gemini-settings-group" class="setting-group collapsible-setting">
+          <summary class="collapsible-setting-summary">
+            <span>Fairy / Gemini Live</span>
+            <span class="setting-hint">Local API key for this Command Center server</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-api-key">Gemini API Key</label>
+              <input id="gemini-api-key" type="password" autocomplete="off" placeholder="Paste your Gemini API key">
+              <div id="saved-gemini-key-hint" class="setting-hint">No saved Gemini key yet.</div>
+              <div class="setting-hint">Stored locally on this Command Center server in <code>data/gemini-settings.json</code>. Mission Control is not required.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-persona-name">Persona name</label>
+              <input id="gemini-persona-name" type="text" autocomplete="off" placeholder="Fairy" maxlength="80">
+              <div class="setting-hint">What the live assistant calls herself during calls.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-operator-name">Your name</label>
+              <input id="gemini-operator-name" type="text" autocomplete="off" placeholder="Epic" maxlength="80">
+              <div class="setting-hint">What Fairy should call you during live calls instead of generic nonsense like “user.”</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-personality-prompt">Personality instructions</label>
+              <textarea id="gemini-personality-prompt" class="setting-textarea setting-textarea-lg" rows="8" placeholder="Playful-sassy, observant, confident, concise, slightly smug, useful first..."></textarea>
+              <div class="setting-hint">Extra live-call personality guidance layered on top of the base Fairy behavior for this Command Center instance.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-mood-preset">Mood preset</label>
+              <select id="gemini-mood-preset">
+                <option value="">Custom / leave unchanged</option>
+                <option value="operator">Operator</option>
+                <option value="sly">Sly</option>
+                <option value="seductive">Seductive</option>
+                <option value="clinical">Clinical</option>
+                <option value="bratty">Bratty</option>
+                <option value="support">Soft support</option>
+                <option value="mission-control">Mission control</option>
+              </select>
+              <div class="setting-hint">Fast-start a personality style, then tweak the text box if you want sharper control.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label class="setting-inline-check" for="gemini-memory-enabled">
+                <input id="gemini-memory-enabled" type="checkbox" checked>
+                <span>Enable local live memory</span>
+              </label>
+              <div class="setting-hint">Stores local, instance-specific live-call memories in <code>data/fairy-memory.json</code>. Fresh installs start empty; no OpenClaw agents are hardcoded.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-memory-notes">Pinned memory / operator context</label>
+              <textarea id="gemini-memory-notes" class="setting-textarea setting-textarea-md" rows="6" placeholder="Durable preferences or context this live persona should remember on this Command Center instance..."></textarea>
+              <div class="setting-hint">Injected into new live calls as local context. Keep secrets out of here, obviously.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row" style="gap:8px; flex-wrap:wrap; align-items:center;">
+                <label for="fairy-memory-search" style="margin:0;">Stored memory</label>
+                <input id="fairy-memory-search" type="text" autocomplete="off" placeholder="Search saved memory..." style="min-width:220px; flex:1 1 220px;">
+                <select id="fairy-memory-scope-filter">
+                  <option value="all">All scopes</option>
+                  <option value="general">General</option>
+                  <option value="ui">UI</option>
+                  <option value="backend">Backend</option>
+                  <option value="research">Research</option>
+                </select>
+                <button id="refresh-fairy-memory-btn" class="secondary-button" type="button">REFRESH MEMORY</button>
+              </div>
+              <div class="setting-hint">Review, search, and forget saved local memory. This stays local to this Command Center instance.</div>
+              <div id="fairy-memory-list" class="fairy-diagnostics-settings setting-hint">No saved memory loaded yet.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-live-model">Live model</label>
+              <input id="gemini-live-model" type="text" autocomplete="off" placeholder="gemini-3.1-flash-live-preview">
+              <div class="setting-hint">Model used by Fairy Live sessions.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-response-modalities">Response modalities</label>
+              <select id="gemini-response-modalities">
+                <option value="AUDIO">Audio</option>
+                <option value="TEXT">Text</option>
+                <option value="AUDIO,TEXT">Audio + Text</option>
+              </select>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-thinking-level">Thinking level</label>
+              <select id="gemini-thinking-level">
+                <option value="none">None</option>
+                <option value="minimal">Minimal</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-call-mode">Default call mode</label>
+              <select id="gemini-call-mode">
+                <option value="universal">Universal (default)</option>
+                <option value="gaming">Gaming</option>
+                <option value="observe">Observe</option>
+                <option value="assist">Assist</option>
+                <option value="guide">Guide</option>
+                <option value="operator">Operator</option>
+                <option value="record">Record / Review</option>
+              </select>
+              <div class="setting-hint">Universal keeps current Fairy behavior. Gaming trims chatter during intense gameplay and favors short copilot-style callouts.</div>
+            </div>
+
+            <div class="setting-item">
+              <label for="gemini-speech-output-mode">Speech output mode</label>
+              <select id="gemini-speech-output-mode">
+                <option value="gemini">Gemini native voice</option>
+                <option value="fish">Fish Audio from Gemini text</option>
+              </select>
+              <div class="setting-hint">Default stays Gemini native voice. Switch to Fish if you want Fairy to speak with a Fish voice using Gemini's text output.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-fish-voice-id">Fairy Fish voice ID</label>
+              <input id="gemini-fish-voice-id" type="text" autocomplete="off" placeholder="Paste a Fish voice/reference ID">
+              <div class="setting-hint">Used only when speech output mode is set to Fish. It reuses the Fish Audio base/session settings from the main Voice settings section.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="gemini-live-voice">Live voice</label>
+              <select id="gemini-live-voice">
+                <option value="Zephyr">Zephyr</option>
+                <option value="Kore">Kore</option>
+                <option value="Orus">Orus</option>
+                <option value="Autonoe">Autonoe</option>
+                <option value="Umbriel">Umbriel</option>
+                <option value="Erinome">Erinome</option>
+                <option value="Laomedeia">Laomedeia</option>
+                <option value="Schedar">Schedar</option>
+                <option value="Achird">Achird</option>
+                <option value="Sadachbia">Sadachbia</option>
+                <option value="Puck">Puck</option>
+                <option value="Fenrir">Fenrir</option>
+                <option value="Aoede">Aoede</option>
+                <option value="Enceladus">Enceladus</option>
+                <option value="Algieba">Algieba</option>
+                <option value="Algenib">Algenib</option>
+                <option value="Achernar">Achernar</option>
+                <option value="Gacrux">Gacrux</option>
+                <option value="Zubenelgenubi">Zubenelgenubi</option>
+                <option value="Sadaltager">Sadaltager</option>
+                <option value="Charon">Charon</option>
+                <option value="Leda">Leda</option>
+                <option value="Callirrhoe">Callirrhoe</option>
+                <option value="Iapetus">Iapetus</option>
+                <option value="Despina">Despina</option>
+                <option value="Rasalgethi">Rasalgethi</option>
+                <option value="Alnilam">Alnilam</option>
+                <option value="Pulcherrima">Pulcherrima</option>
+                <option value="Vindemiatrix">Vindemiatrix</option>
+                <option value="Sulafat">Sulafat</option>
+              </select>
+              <div class="setting-hint">Gemini Live prebuilt voice used for Fairy audio output.</div>
+              <div id="gemini-live-voice-hint" class="setting-hint">Current live voice: Sulafat.</div>
+              <div id="gemini-source-hint" class="setting-hint">Source: Command Center local settings.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row" style="gap:8px; flex-wrap:wrap;">
+                <button id="save-gemini-settings-btn" class="secondary-button" type="button">SAVE FAIRY SETTINGS</button>
+                <button id="test-fairy-live-btn" class="secondary-button" type="button">TEST FAIRY LIVE</button>
+              </div>
+              <div id="fairy-test-status" class="setting-hint">No Fairy Live test run yet.</div>
+              <div id="fairy-diagnostics-settings" class="fairy-diagnostics-settings setting-hint">Diagnostics load when settings open.</div>
+            </div>
+          </div>
+        </details>
+
+        <details id="companion-settings-group" class="setting-group collapsible-setting">
+          <summary class="collapsible-setting-summary">
+            <span>Companion Visuals</span>
+            <span class="setting-hint">Per-agent looks, imports, and assignment</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row between">
+                <label>Per-agent companion visuals</label>
+              </div>
+              <div class="setting-hint">Set each agent to keep the current CommandCenter look or use a companion-style animated character instead.</div>
+              <div class="setting-row companion-import-row">
+                <input id="companion-import-source" type="text" autocomplete="off" placeholder="Paste extracted Codex pet folder path containing pet.json + spritesheet asset">
+                <button id="import-companion-btn" class="secondary-button" type="button">IMPORT CODEX PET</button>
+              </div>
+              <div class="setting-row companion-import-row">
+                <label class="companion-upload-field">
+                  <input id="companion-import-folder" type="file" webkitdirectory directory multiple>
+                  <span>Choose Codex pet folder</span>
+                </label>
+                <select id="companion-import-agent">
+                  <option value="">Do not auto-assign</option>
+                </select>
+                <button id="import-companion-folder-btn" class="secondary-button" type="button">UPLOAD FOLDER</button>
+              </div>
+              <div class="setting-row companion-import-row">
+                <label class="companion-upload-field">
+                  <input id="companion-import-zip" type="file" accept=".zip,application/zip">
+                  <span>Choose Codex pet zip</span>
+                </label>
+                <button id="import-companion-zip-btn" class="secondary-button" type="button">UPLOAD ZIP</button>
+              </div>
+              <div id="companion-import-status" class="setting-hint"></div>
+              <div id="agent-companion-list" class="agent-voice-list"></div>
+            </div>
+          </div>
+        </details>
+
+        <details id="wake-settings-group" class="setting-group collapsible-setting">
+          <summary class="collapsible-setting-summary">
+            <span>Wake Word</span>
+            <span class="setting-hint">Access key, aliases, and built-in wake options</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <label for="porcupine-access-key">Porcupine Access Key</label>
+              <input id="porcupine-access-key" type="password" autocomplete="off" placeholder="Paste your Picovoice / Porcupine access key">
+              <div id="saved-porcupine-key-hint" class="setting-hint"></div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label>Per-agent wake behavior</label>
+              <div id="wakeword-list" class="agent-voice-list"></div>
+              <div class="setting-hint">Wake mode already works from built-in alias detection and transcription matching. Use the built-in dropdown only if you want a Porcupine keyword override for a specific agent.</div>
+            </div>
+          </div>
+        </details>
+
+        <details class="setting-group collapsible-setting" id="workspace-settings-group">
+          <summary class="collapsible-setting-summary">
+            <span>Workspace Background</span>
+            <span class="setting-hint">Change the office scene background</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <label for="workspace-background-select">Workspace background</label>
+              <select id="workspace-background-select">
+                <option value="default-office">Default office</option>
+              </select>
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label class="companion-upload-field music-upload-field">
+                <input id="workspace-background-upload-input" type="file" accept="image/*,.png,.jpg,.jpeg,.webp">
+                <span>Choose workspace background</span>
+              </label>
+              <button id="workspace-background-upload-btn" class="secondary-button" type="button">UPLOAD BACKGROUND</button>
+              <div id="workspace-background-upload-status" class="setting-hint">Pick or upload a workspace background.</div>
+            </div>
+          </div>
+        </details>
+
+        <details class="setting-group collapsible-setting" id="theme-settings-group">
+          <summary class="collapsible-setting-summary">
+            <span>Color Themes</span>
+            <span class="setting-hint">Switch themes or build your own</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <label for="appearance-theme-select">Theme</label>
+              <select id="appearance-theme-select"></select>
+            </div>
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row between">
+                <label for="appearance-panel-opacity">Panel opacity</label>
+                <span id="appearance-panel-opacity-value" class="setting-hint">85%</span>
+              </div>
+              <input id="appearance-panel-opacity" type="range" min="30" max="100" step="1" value="85">
+            </div>
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row between">
+                <label for="appearance-blur-strength">Blur strength</label>
+                <span id="appearance-blur-strength-value" class="setting-hint">12px</span>
+              </div>
+              <input id="appearance-blur-strength" type="range" min="0" max="24" step="1" value="12">
+            </div>
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row between">
+                <label for="appearance-glow-intensity">Glow intensity</label>
+                <span id="appearance-glow-intensity-value" class="setting-hint">100%</span>
+              </div>
+              <input id="appearance-glow-intensity" type="range" min="0" max="200" step="1" value="100">
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label for="appearance-ui-density">UI density</label>
+              <select id="appearance-ui-density">
+                <option value="compact">Compact</option>
+                <option value="normal">Normal</option>
+                <option value="spacious">Spacious</option>
+              </select>
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label for="appearance-border-style">Border style</label>
+              <select id="appearance-border-style">
+                <option value="sharp">Sharp</option>
+                <option value="rounded">Rounded</option>
+              </select>
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label for="appearance-font-preset">Font preset</label>
+              <select id="appearance-font-preset">
+                <option value="modern">Modern</option>
+                <option value="terminal">Terminal</option>
+                <option value="pixel">Pixel</option>
+                <option value="clean">Clean</option>
+              </select>
+            </div>
+            <details class="setting-group collapsible-setting nested-collapsible" id="custom-theme-settings-group">
+              <summary class="collapsible-setting-summary">
+                <span>Custom Theme Builder</span>
+                <span class="setting-hint">Make a modular color theme</span>
+              </summary>
+              <div class="collapsible-setting-body">
+                <div class="setting-group nested-setting-group">
+                  <label for="custom-theme-name">Theme name</label>
+                  <input id="custom-theme-name" type="text" placeholder="My cool theme">
+                </div>
+                <div id="custom-theme-colors" class="theme-color-grid"></div>
+                <button id="save-custom-theme-btn" class="secondary-button" type="button">SAVE CUSTOM THEME</button>
+              </div>
+            </details>
+          </div>
+        </details>
+
+        <details class="setting-group collapsible-setting" id="branding-settings-group">
+          <summary class="collapsible-setting-summary">
+            <span>Branding</span>
+            <span class="setting-hint">Title, subtitle, logo, favicon</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <label for="branding-title">App title</label>
+              <input id="branding-title" type="text" maxlength="80" placeholder="OpenClaw Command Center">
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label for="branding-subtitle">Subtitle</label>
+              <input id="branding-subtitle" type="text" maxlength="140" placeholder="Mission Control">
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label class="companion-upload-field music-upload-field"><input id="branding-logo-upload" type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.svg"><span>Choose logo</span></label>
+              <button id="branding-logo-upload-btn" class="secondary-button" type="button">UPLOAD LOGO</button>
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label class="companion-upload-field music-upload-field"><input id="branding-favicon-upload" type="file" accept=".ico,.png,.svg,image/x-icon,image/png,image/svg+xml"><span>Choose favicon</span></label>
+              <button id="branding-favicon-upload-btn" class="secondary-button" type="button">UPLOAD FAVICON</button>
+            </div>
+            <div id="branding-status" class="setting-hint">Branding changes apply live after save/upload.</div>
+          </div>
+        </details>
+
+        <details class="setting-group collapsible-setting" id="layout-settings-group">
+          <summary class="collapsible-setting-summary">
+            <span>Layout</span>
+            <span class="setting-hint">Show/hide and collapse widgets</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <label class="setting-inline-check"><input id="layout-show-zone-mascot" type="checkbox" checked> Show STATUS</label>
+              <label class="setting-inline-check"><input id="layout-show-zone-terminal" type="checkbox" checked> Show ACTIVITY LOG</label>
+              <label class="setting-inline-check"><input id="layout-show-zone-office" type="checkbox" checked> Show AGENT WORKSPACE</label>
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label class="setting-inline-check"><input id="layout-collapse-zone-mascot" type="checkbox"> Collapse STATUS</label>
+              <label class="setting-inline-check"><input id="layout-collapse-zone-terminal" type="checkbox"> Collapse ACTIVITY LOG</label>
+              <label class="setting-inline-check"><input id="layout-collapse-zone-office" type="checkbox"> Collapse AGENT WORKSPACE</label>
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label>Widget order</label>
+              <div id="layout-order-list" class="layout-order-list"></div>
+            </div>
+            <div class="setting-group nested-setting-group">
+              <label for="layout-default-panel">Default panel</label>
+              <select id="layout-default-panel">
+                <option value="zone-mascot">STATUS</option>
+                <option value="zone-terminal">ACTIVITY LOG</option>
+                <option value="zone-office">AGENT WORKSPACE</option>
+              </select>
+            </div>
+            <div id="layout-status" class="setting-hint">Layout changes preview live and save with the main Save Settings button.</div>
+          </div>
+        </details>
+
+        <details class="setting-group collapsible-setting" id="workspace-rooms-settings-group">
+          <summary class="collapsible-setting-summary">
+            <span>Workspace Rooms</span>
+            <span class="setting-hint">Name rooms and move agents between rooms</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-row between">
+              <label>Agent rooms</label>
+              <button id="workspace-room-add-btn" class="secondary-button" type="button">ADD ROOM</button>
+            </div>
+            <div class="setting-hint">Applies only to the office workspace view. Each room supports up to 5 agents.</div>
+            <div id="workspace-room-editor" class="workspace-room-editor"></div>
+            <div id="workspace-room-status" class="setting-hint"></div>
+          </div>
+        </details>
+
+        <details class="setting-group collapsible-setting" id="intro-settings-group">
+          <summary class="collapsible-setting-summary">
+            <span>Startup Intro</span>
+            <span class="setting-hint">Play an intro video when the site opens</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <label class="setting-inline-check"><input id="intro-enabled" type="checkbox"> Enable startup intro video</label>
+
+            <div class="setting-group nested-setting-group">
+              <label for="intro-video-select">Selected intro video</label>
+              <select id="intro-video-select">
+                <option value="">No uploaded intro videos yet</option>
+              </select>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row between">
+                <label for="intro-volume">Intro volume</label>
+                <span id="intro-volume-value" class="setting-hint">70%</span>
+              </div>
+              <input id="intro-volume" type="range" min="0" max="100" step="1" value="70">
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label class="companion-upload-field music-upload-field">
+                <input id="intro-upload-input" type="file" accept="video/*,.mp4,.webm,.mov,.m4v">
+                <span>Choose intro video</span>
+              </label>
+              <button id="intro-upload-btn" class="secondary-button" type="button">UPLOAD INTRO</button>
+              <div id="intro-upload-status" class="setting-hint">No intro video uploaded yet. Use the upload button below.</div>
+            </div>
+          </div>
+        </details>
+
+        <details class="setting-group collapsible-setting" id="music-settings-group">
+          <summary class="collapsible-setting-summary">
+            <span>Music</span>
+            <span class="setting-hint">Looped background audio controls</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <label class="setting-inline-check"><input id="music-enabled" type="checkbox"> Enable background music</label>
+
+            <div class="setting-group nested-setting-group">
+              <label for="music-track-select">Selected track</label>
+              <select id="music-track-select">
+                <option value="">No uploaded tracks yet</option>
+              </select>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label for="music-playback-scope">Playback behavior</label>
+              <select id="music-playback-scope">
+                <option value="tab">Only play when this tab/site is active</option>
+                <option value="always">Always play even if I switch tabs</option>
+              </select>
+              <div class="setting-hint">Default is site-only, because yes, random hidden-tab music is demon behavior.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row between">
+                <label for="music-volume">Music volume</label>
+                <span id="music-volume-value" class="setting-hint">45%</span>
+              </div>
+              <input id="music-volume" type="range" min="0" max="100" step="1" value="45">
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row between">
+                <label for="music-speech-duck-level">Music while agent speaks</label>
+                <span id="music-speech-duck-level-value" class="setting-hint">35% of normal</span>
+              </div>
+              <input id="music-speech-duck-level" type="range" min="0" max="100" step="1" value="35">
+              <div class="setting-hint">Lower means the background music ducks more while a normal agent is speaking.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row between">
+                <label for="music-fairy-call-duck-level">Music during Fairy calls</label>
+                <span id="music-fairy-call-duck-level-value" class="setting-hint">22% of normal</span>
+              </div>
+              <input id="music-fairy-call-duck-level" type="range" min="0" max="100" step="1" value="22">
+              <div class="setting-hint">How loud the background music should stay while Fairy Live is active. Lower means Fairy gets the room instead of fighting the soundtrack.</div>
+            </div>
+
+            <div class="setting-group nested-setting-group">
+              <label class="companion-upload-field music-upload-field">
+                <input id="music-upload-input" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.webm">
+                <span>Choose audio file</span>
+              </label>
+              <button id="music-upload-btn" class="secondary-button" type="button">UPLOAD MUSIC</button>
+              <div id="music-upload-status" class="setting-hint">No music uploaded yet. Use the upload button below.</div>
+            </div>
+          </div>
+        </details>
+
+        <details id="vignette-settings-group" class="setting-group collapsible-setting">
+          <summary class="collapsible-setting-summary">
+            <span>Vignette</span>
+            <span class="setting-hint">Screen-edge shading and intensity</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row between">
+                <label for="vignette-strength">Vignette strength</label>
+                <span id="vignette-strength-value" class="setting-hint">96%</span>
+              </div>
+              <input id="vignette-strength" type="range" min="0" max="220" step="1" value="96">
+              <div class="setting-hint">Adjust the overall vignette intensity/size. Changes preview live and save when you save settings.</div>
+
+              <div class="setting-row between" style="margin-top:10px;">
+                <label for="vignette-top">Top intensity</label>
+                <span id="vignette-top-value" class="setting-hint">100%</span>
+              </div>
+              <input id="vignette-top" type="range" min="0" max="200" step="1" value="100">
+
+              <div class="setting-row between" style="margin-top:10px;">
+                <label for="vignette-side">Side intensity</label>
+                <span id="vignette-side-value" class="setting-hint">100%</span>
+              </div>
+              <input id="vignette-side" type="range" min="0" max="200" step="1" value="100">
+
+              <div class="setting-row between" style="margin-top:10px;">
+                <label for="vignette-bottom">Bottom intensity</label>
+                <span id="vignette-bottom-value" class="setting-hint">100%</span>
+              </div>
+              <input id="vignette-bottom" type="range" min="0" max="200" step="1" value="100">
+            </div>
+          </div>
+        </details>
+
+        <details id="fairy-recordings-settings-group" class="setting-group collapsible-setting">
+          <summary class="collapsible-setting-summary">
+            <span>Fairy Recordings</span>
+            <span class="setting-hint">View and download saved Fairy screen recordings</span>
+          </summary>
+          <div class="collapsible-setting-body">
+            <div class="setting-group nested-setting-group">
+              <div class="setting-row" style="gap:8px; flex-wrap:wrap; align-items:center;">
+                <button id="refresh-fairy-recordings-btn" class="secondary-button" type="button">REFRESH RECORDINGS</button>
+                <span id="fairy-recordings-status" class="setting-hint">No recordings loaded yet.</span>
+              </div>
+              <div id="fairy-recordings-list" class="fairy-diagnostics-settings setting-hint">No Fairy recordings loaded yet.</div>
+            </div>
+          </div>
+        </details>
+
+        <div id="settings-status" class="settings-status"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="change-password-btn" class="secondary-button" type="button">CHANGE PASSWORD</button>
+        <button id="save-settings-btn" class="primary-button" type="button">SAVE SETTINGS</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/picovoice/web-voice-processor.js"></script>
+  <script src="vendor/picovoice/porcupine-web.js"></script>
+  <script type="module" src="js/app.js?v=20260708-relay1"></script>
+</body>
+</html>

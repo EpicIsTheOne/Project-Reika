@@ -1,0 +1,1203 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CommandCenter API",
+    "version": "1.0.0",
+    "description": "API for agent lookup, session-based chat, SSE streaming, audio responses, bounded model-readable attachments, session search, voice assignment updates, and Fairy live inspection. Public listener requests require Authorization: Bearer YOUR_COMMANDCENTER_API_KEY. The optional no-key local API bypass is accepted only for a loopback peer connected to the configured local listener. Attachment responses include per-file attachmentStatuses; text/source content is bounded and inlined, PDFs are extracted server-side, and images are passed only when the selected backend has a verified image-input mechanism. The realtime WebSocket at /commandcenter/ws requires either a valid UI session cookie (with browser Origin validation) or an Authorization bearer header; credentials are not accepted in query strings."
+  },
+  "servers": [
+    {
+      "url": "https://your-domain.example/commandcenter/api/v1",
+      "description": "Public/network listener (bearer token required)"
+    },
+    {
+      "url": "http://127.0.0.1:3001/api/v1",
+      "description": "Optional localhost-only listener for trusted local programs (no bearer token required)"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": false
+          },
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "error",
+          "code"
+        ],
+        "example": {
+          "ok": false,
+          "error": "Unauthorized",
+          "code": "UNAUTHORIZED"
+        }
+      },
+      "SessionMeta": {
+        "description": "Stable session metadata shape for external/local clients. Safe fields to build against include id, agent, title, createdAt, updatedAt, messageCount, lastMessagePreview, and metadata.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "messageCount": {
+            "type": "integer"
+          },
+          "lastMessagePreview": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "id",
+          "agent",
+          "createdAt",
+          "updatedAt",
+          "messageCount"
+        ]
+      },
+      "Message": {
+        "description": "Stable transcript message shape for external/local clients. Safe fields to rely on are id, role, text, timestamp, and meta.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "text",
+          "timestamp"
+        ]
+      },
+      "AttachmentRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "file",
+              "link"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "originalName": {
+            "type": "string"
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "downloadUrl": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "mimeType"
+        ]
+      },
+      "FairyConfig": {
+        "type": "object",
+        "properties": {
+          "hasApiKey": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": "string"
+          },
+          "responseModalities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "thinkingLevel": {
+            "type": "string"
+          },
+          "voiceName": {
+            "type": "string"
+          },
+          "personaName": {
+            "type": "string"
+          },
+          "personalityPrompt": {
+            "type": "string"
+          },
+          "memoryEnabled": {
+            "type": "boolean"
+          },
+          "memoryNotes": {
+            "type": "string"
+          },
+          "availableVoiceNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hasApiKey",
+          "model",
+          "responseModalities",
+          "thinkingLevel",
+          "voiceName",
+          "personaName",
+          "memoryEnabled",
+          "availableVoiceNames",
+          "transport"
+        ],
+        "example": {
+          "hasApiKey": true,
+          "model": "gemini-3.1-flash-live-preview",
+          "responseModalities": [
+            "AUDIO"
+          ],
+          "thinkingLevel": "low",
+          "voiceName": "Sulafat",
+          "personaName": "Fairy",
+          "personalityPrompt": "Playful, observant, useful first.",
+          "memoryEnabled": true,
+          "memoryNotes": "Epic prefers concise UI-first answers.",
+          "availableVoiceNames": [
+            "Sulafat",
+            "Aoede",
+            "Kore"
+          ],
+          "source": "settings-file",
+          "transport": "server-websocket"
+        }
+      },
+      "FairyMemoryEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scope": {
+            "type": "string",
+            "example": "general"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "tags",
+          "scope",
+          "pinned",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ],
+        "example": {
+          "id": "fm_123",
+          "text": "Epic prefers UI-first iteration before backend cleanup.",
+          "tags": [
+            "preference",
+            "ui"
+          ],
+          "scope": "general",
+          "pinned": true,
+          "source": "fairy-live",
+          "createdAt": "2026-05-17T15:40:00.000Z",
+          "updatedAt": "2026-05-17T15:40:00.000Z"
+        }
+      },
+      "FairySession": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "persona": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "starting",
+              "ready",
+              "listening",
+              "thinking",
+              "speaking",
+              "task_running",
+              "ended",
+              "error"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUserText": {
+            "type": "string"
+          },
+          "lastAssistantText": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "example": {
+          "id": "call_abc123",
+          "agent": "orchestrator",
+          "mode": "gemini-live",
+          "persona": "fairy",
+          "state": "ready",
+          "createdAt": "2026-05-17T15:42:00.000Z",
+          "updatedAt": "2026-05-17T15:42:10.000Z",
+          "lastUserText": "What voice are you using?",
+          "lastAssistantText": "Sulafat right now. Dramatic, but employable."
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/agents": {
+      "get": {
+        "summary": "List agents",
+        "description": "Best first call for external/local clients. Returns the merged roster plus primaryAgentId. Build against stable fields like id, label, name, source, bridge, workspace, model, and aliases; treat color/voice/visual as presentation metadata.",
+        "responses": {
+          "200": {
+            "description": "Agent list"
+          }
+        }
+      }
+    },
+    "/agents/search": {
+      "get": {
+        "summary": "Search agents",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results"
+          }
+        }
+      }
+    },
+    "/files": {
+      "get": {
+        "summary": "List reusable files and links",
+        "description": "Returns the reusable attachment/link library. The current response shape uses top-level `items` for the collection. Each item also includes `downloadUrl`; clients should prefer following that returned URL directly instead of rebuilding download routes.",
+        "responses": {
+          "200": {
+            "description": "File list"
+          }
+        }
+      }
+    },
+    "/files/upload": {
+      "post": {
+        "summary": "Upload files directly to the API file library",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                },
+                "required": [
+                  "files"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Uploaded files"
+          }
+        }
+      }
+    },
+    "/files/link": {
+      "post": {
+        "summary": "Save a reusable link directly to the API file library",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved link"
+          }
+        }
+      }
+    },
+    "/files/{id}/download": {
+      "get": {
+        "summary": "Download a file or redirect to a saved link",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File download"
+          },
+          "302": {
+            "description": "Redirect for link items"
+          },
+          "404": {
+            "description": "File not found"
+          }
+        }
+      }
+    },
+    "/sessions": {
+      "get": {
+        "summary": "List sessions",
+        "parameters": [
+          {
+            "name": "agent",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create session",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                },
+                "required": [
+                  "agent"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session created"
+          }
+        }
+      }
+    },
+    "/sessions/search": {
+      "get": {
+        "summary": "Search sessions by content",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agent",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results"
+          }
+        }
+      }
+    },
+    "/sessions/{id}": {
+      "get": {
+        "summary": "Get session metadata",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session metadata"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/sessions/{id}/messages": {
+      "get": {
+        "summary": "Get session transcript",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session messages"
+          }
+        }
+      },
+      "post": {
+        "summary": "Send a message to an existing session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  },
+                  "fileIds": {
+                    "type": "array",
+                    "description": "Reusable managed attachment IDs. The response reports per-file consumed, truncated, unsupported, or rejected status.",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "audio": {
+                    "type": "boolean",
+                    "description": "If true, also return an audio rendition using the agent's configured CommandCenter voice."
+                  }
+                },
+                "required": [
+                  "message"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Turn completed"
+          }
+        }
+      }
+    },
+    "/sessions/{id}/messages/stream": {
+      "post": {
+        "summary": "Stream a message response over SSE",
+        "description": "Recommended for clients that want live event forwarding into their own UI or WebSocket layer. Typical event flow is accepted -> thinking -> response -> optional audio -> done, but providers/runtime failures can emit error instead. Event order is provider-dependent and should be handled defensively.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  },
+                  "fileIds": {
+                    "type": "array",
+                    "description": "Reusable managed attachment IDs. The final SSE event reports per-file attachment status.",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "audio": {
+                    "type": "boolean",
+                    "description": "If true, also return an audio rendition using the agent's configured CommandCenter voice."
+                  }
+                },
+                "required": [
+                  "message"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat": {
+      "post": {
+        "summary": "Convenience chat endpoint",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent": {
+                    "type": "string"
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "fileIds": {
+                    "type": "array",
+                    "description": "Reusable managed attachment IDs. The response reports per-file consumed, truncated, unsupported, or rejected status.",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "audio": {
+                    "type": "boolean",
+                    "description": "If true, also return an audio rendition using the agent's configured CommandCenter voice."
+                  }
+                },
+                "required": [
+                  "message"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Turn completed"
+          }
+        }
+      }
+    },
+    "/voice": {
+      "get": {
+        "summary": "Get CommandCenter voice settings and resolve the voice for an agent",
+        "parameters": [
+          {
+            "name": "agent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Voice settings"
+          }
+        }
+      },
+      "post": {
+        "summary": "Update voice settings or assign a voice to an agent",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "elevenlabs",
+                      "fish"
+                    ]
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "voiceId": {
+                    "type": "string"
+                  },
+                  "defaultVoiceId": {
+                    "type": "string"
+                  },
+                  "fishVoiceId": {
+                    "type": "string"
+                  },
+                  "elevenlabsAgentVoices": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "fishAgentVoices": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated voice settings"
+          }
+        }
+      }
+    },
+    "/voice/options": {
+      "get": {
+        "summary": "List available voices for the current provider or search Fish voices",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "elevenlabs",
+                "fish"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required for Fish voice search."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 8
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Voice list or Fish search results"
+          }
+        }
+      }
+    },
+    "/fairy/config": {
+      "get": {
+        "summary": "Get Fairy live runtime config",
+        "responses": {
+          "200": {
+            "description": "Fairy runtime config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "fairy": {
+                      "$ref": "#/components/schemas/FairyConfig"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "fairy"
+                  ],
+                  "example": {
+                    "ok": true,
+                    "fairy": {
+                      "hasApiKey": true,
+                      "model": "gemini-3.1-flash-live-preview",
+                      "responseModalities": [
+                        "AUDIO"
+                      ],
+                      "thinkingLevel": "low",
+                      "voiceName": "Sulafat",
+                      "personaName": "Fairy",
+                      "personalityPrompt": "Playful, observant, useful first.",
+                      "memoryEnabled": true,
+                      "memoryNotes": "Epic prefers concise UI-first answers.",
+                      "availableVoiceNames": [
+                        "Sulafat",
+                        "Aoede",
+                        "Kore"
+                      ],
+                      "source": "settings-file",
+                      "transport": "server-websocket"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fairy/memory": {
+      "get": {
+        "summary": "List Fairy memory entries",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fairy memory entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FairyMemoryEntry"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "entries",
+                    "count"
+                  ],
+                  "example": {
+                    "ok": true,
+                    "entries": [
+                      {
+                        "id": "fm_123",
+                        "text": "Epic prefers UI-first iteration before backend cleanup.",
+                        "tags": [
+                          "preference",
+                          "ui"
+                        ],
+                        "scope": "general",
+                        "pinned": true,
+                        "source": "fairy-live",
+                        "createdAt": "2026-05-17T15:40:00.000Z",
+                        "updatedAt": "2026-05-17T15:40:00.000Z"
+                      }
+                    ],
+                    "count": 1
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fairy/sessions": {
+      "get": {
+        "summary": "List Fairy call sessions",
+        "responses": {
+          "200": {
+            "description": "Fairy sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "sessions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FairySession"
+                      }
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "sessions"
+                  ],
+                  "example": {
+                    "ok": true,
+                    "sessions": [
+                      {
+                        "id": "call_abc123",
+                        "agent": "orchestrator",
+                        "mode": "gemini-live",
+                        "persona": "fairy",
+                        "state": "ready",
+                        "createdAt": "2026-05-17T15:42:00.000Z",
+                        "updatedAt": "2026-05-17T15:42:10.000Z",
+                        "lastUserText": "What voice are you using?",
+                        "lastAssistantText": "Sulafat right now. Dramatic, but employable."
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fairy/sessions/{id}": {
+      "get": {
+        "summary": "Get one Fairy call session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fairy session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "session": {
+                      "$ref": "#/components/schemas/FairySession"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "session"
+                  ],
+                  "example": {
+                    "ok": true,
+                    "session": {
+                      "id": "call_abc123",
+                      "agent": "orchestrator",
+                      "mode": "gemini-live",
+                      "persona": "fairy",
+                      "state": "ready",
+                      "createdAt": "2026-05-17T15:42:00.000Z",
+                      "updatedAt": "2026-05-17T15:42:10.000Z",
+                      "lastUserText": "What voice are you using?",
+                      "lastAssistantText": "Sulafat right now. Dramatic, but employable."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Fairy session not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
