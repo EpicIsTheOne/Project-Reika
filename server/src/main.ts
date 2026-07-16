@@ -186,7 +186,7 @@ const notifications = new NotificationStore();
 const memoryMesh = new MemoryMeshStore();
 const deviceEndpoint = { kind: 'device' as const, id: serverConfig.uplink.deviceId };
 const appEndpoint = { kind: 'app' as const, id: 'local-simulator' };
-const handleAgentChat: (payload: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; mode?: 'agent' | 'roleplay'; model?: string; fileIds?: string[] }) => Promise<import('./shared/protocol/messages.js').AgentChatResponsePayload> = async (payload) => {
+const handleAgentChat: (payload: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; mode?: 'agent' | 'roleplay'; model?: string; fileIds?: string[] }, onEvent?: (event: ProviderChatEvent) => void) => Promise<import('./shared/protocol/messages.js').AgentChatResponsePayload> = async (payload, onEvent) => {
   const result = await runChatTurn({
     sessionId: payload.sessionId,
     providerSessionId: payload.providerSessionId,
@@ -196,7 +196,7 @@ const handleAgentChat: (payload: { sessionId?: string; providerSessionId?: strin
     mode: payload.mode,
     model: payload.model,
     fileIds: payload.fileIds
-  });
+  }, onEvent);
   const responseMode = result.result.mode === 'roleplay' ? 'roleplay' : result.result.mode === 'agent' ? 'agent' : undefined;
   return {
     providerId: result.result.providerId,
@@ -961,7 +961,8 @@ async function executeChatTurn(session: ChatSession, input: { sessionId?: string
           ? session.metadata.hermesSessionId
           : typeof session.metadata.providerSessionIds === 'object' && session.metadata.providerSessionIds
             ? (session.metadata.providerSessionIds as Record<string, string>)[input.providerId || session.providerId]
-            : undefined
+            : undefined,
+      fileIds: attachedFiles.map((file) => file.id)
     }, providers, handler);
     session.providerId = result.providerId;
     session.agent = result.agentId;

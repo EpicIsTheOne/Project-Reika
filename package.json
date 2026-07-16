@@ -23,7 +23,7 @@
     "test:memory-mesh": "npx tsx server/scripts/test-memory-mesh.ts",
     "test:project-discovery": "npx tsx server/scripts/test-project-discovery.ts",
     "test:voice": "npx tsx client/scripts/test-voice-resolution.ts && node client/scripts/test-fish-toolkit.mjs",
-    "test:commandcenter": "npx tsx server/scripts/test-command-center-response.ts",
+    "test:commandcenter": "npx tsx server/scripts/test-command-center-response.ts && npx tsx client/scripts/test-chat-activity-contract.ts",
     "verify": "npm run check:protocol && npm test && npm run build",
     "test:chat-relay": "node scripts/test_chat_relay_contracts.mjs",
     "smoke:memory-mesh-relay": "npm run build --workspace project-reika-node && npm run build --workspace project-reika-relay && node scripts/smoke_memory_mesh_relay.mjs",

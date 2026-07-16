@@ -15,7 +15,6 @@ assert.equal(extractCommandCenterResponseText({ reply: { content: [{ type: 'text
 assert.equal(extractCommandCenterSessionId({ session: { id: 'ccs_nested' } }), 'ccs_nested');
 assert.equal(extractCommandCenterSessionId({ sessionId: 'ccs_top', session: { id: 'ccs_nested' } }), 'ccs_top');
 assert.equal(extractCommandCenterSessionId({}, 'ccs_existing'), 'ccs_existing');
+assert.equal(extractCommandCenterResponseText({ response: { content: [{ type: 'text', text: 'roleplay reply' }] }, mode: 'roleplay', model: 'openrouter/test' }), 'roleplay reply');
 
 console.log('Command Center response extraction contracts passed');
-
-assert.equal(extractCommandCenterResponseText({ response: { content: [{ type: 'text', text: 'roleplay reply' }] }, mode: 'roleplay', model: 'openrouter/test' }), 'roleplay reply');

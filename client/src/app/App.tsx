@@ -58,11 +58,15 @@ export function App() {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [pairingOpenRequest, setPairingOpenRequest] = useState(0);
   const relayConnectionRef = useRef<ReturnType<typeof connectRelayApp> | null>(null);
+  const [relayActivity, setRelayActivity] = useState<AgentHubEnvelope[]>([]);
   const artSeed = useMemo(() => makeArtRuntimeSeed(), []);
   const artRuntime = useMemo(() => createArtRuntime(artLibrary, artSeed), [artLibrary, artSeed]);
 
   const handleRelayEnvelope = useCallback((envelope: AgentHubEnvelope) => {
     setRelayDevices((current) => applyRelayEnvelope(current, envelope));
+    if (envelope.type === "agent.activity" || envelope.type === "agent.chat.response" || envelope.type.startsWith("command.")) {
+      setRelayActivity((current) => [...current.slice(-399), envelope]);
+    }
   }, []);
 
   const sendRelayChatThroughApp = useCallback((deviceId: string, payload: AgentChatRequestPayload, timeoutMs = 120000) => {
@@ -291,6 +295,7 @@ export function App() {
             relayUrl={settings.relayUrl}
             relayProviders={relayProviderState}
             onRelayChat={sendRelayChatThroughApp}
+            relayActivity={relayActivity}
             selectorSettings={settings.agentSelector}
             settings={settings}
             developerDiagnostics={settings.developerDiagnostics}

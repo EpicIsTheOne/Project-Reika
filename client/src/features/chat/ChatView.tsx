@@ -26,7 +26,7 @@ import {
   type ReikaSessionSummary,
   type ReikaStateResponse
 } from "../../lib/reikaApi";
-import type { AgentChatMode, AgentChatRequestPayload, AgentChatResponsePayload } from "../../shared/protocol";
+import type { AgentActivityPayload, AgentChatMode, AgentChatRequestPayload, AgentChatResponsePayload, AgentHubEnvelope } from "../../shared/protocol";
 import { artRerollSlot, makeArtRuntimeSeed, type ArtAgentLike, type ArtRenderAsset, type ArtRuntime } from "../../lib/artRuntime";
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
 import { StatusDot } from "../../components/status";
@@ -50,6 +50,7 @@ export function ChatView({
   relayUrl,
   relayProviders = [],
   onRelayChat,
+  relayActivity = [],
   selectorSettings,
   settings,
   developerDiagnostics,
@@ -61,6 +62,7 @@ export function ChatView({
   relayUrl?: string;
   relayProviders?: ReikaProviderRecord[];
   onRelayChat: (deviceId: string, payload: AgentChatRequestPayload) => Promise<AgentChatResponsePayload>;
+  relayActivity?: AgentHubEnvelope[];
   selectorSettings: ReikaAgentSelectorSettings;
   settings: ReikaSettings;
   developerDiagnostics: boolean;
@@ -83,6 +85,7 @@ export function ChatView({
   const [linkName, setLinkName] = useState("");
   const [busy, setBusy] = useState(false);
   const [delegationActivity, setDelegationActivity] = useState<Array<Record<string, unknown>>>([]);
+  const [turnActivity, setTurnActivity] = useState<Array<Record<string, unknown>>>([]);
   const [status, setStatus] = useState("Connecting to Reika server...");
   const [stateError, setStateError] = useState<string | null>(null);
   const [sessionListError, setSessionListError] = useState<string | null>(null);
@@ -107,6 +110,7 @@ export function ChatView({
   const lastAgentSpeechRef = useRef("");
   const listenResumeAtRef = useRef(0);
   const providerSessionIdRef = useRef<string | undefined>(undefined);
+  const activeRelayRequestIdRef = useRef<string | null>(null);
   const suppressedRelaySessionLoadRef = useRef<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const followLatestRef = useRef(true);
@@ -547,6 +551,9 @@ export function ChatView({
           relayUrl
         );
         if (!selectedSessionId) setSelectedSessionId(relaySessionId);
+        const requestId = crypto.randomUUID();
+        activeRelayRequestIdRef.current = requestId;
+        setTurnActivity([]);
         const result = await onRelayChat(selectedRelayDeviceId, {
           providerId: relayProviderId,
           agent: relayAgentId,
@@ -554,7 +561,8 @@ export function ChatView({
           providerSessionId: providerSessionIdRef.current,
           message,
           mode: chatMode,
-          fileIds: []
+          fileIds: [],
+          delivery: { idempotencyKey: requestId, statusMetadataVersion: 1 }
         });
         const now = new Date().toISOString();
         const agentMessage: ChatMessage = {
@@ -588,6 +596,7 @@ export function ChatView({
       let completedSessionId = selectedSessionId;
       let streamError = "";
       setDelegationActivity([]);
+      setTurnActivity([]);
       await streamChat({
         providerId: selectedProvider?.id,
         agent: selectedLiveAgent?.id ?? selectedAgentKey,
@@ -597,6 +606,9 @@ export function ChatView({
       }, (streamEvent) => {
         if (streamEvent.type === "delegation" && streamEvent.data && typeof streamEvent.data === "object") {
           setDelegationActivity((current) => [...current, streamEvent.data as Record<string, unknown>]);
+        }
+        if (["accepted", "thinking", "tool", "response", "error", "done"].includes(streamEvent.type) && streamEvent.data && typeof streamEvent.data === "object") {
+          setTurnActivity((current) => reduceTurnActivity(current, [{ type: "agent.activity", payload: { ...(streamEvent.data as Record<string, unknown>), status: mapStreamEventStatus(streamEvent.type), timestamp: new Date().toISOString() } as AgentActivityPayload } as AgentHubEnvelope]));
         }
         if (streamEvent.type === "error" && streamEvent.data && typeof streamEvent.data === "object") {
           streamError = String((streamEvent.data as { error?: unknown }).error || "Message failed.");
@@ -632,6 +644,7 @@ export function ChatView({
         if (navigator.onLine) window.setTimeout(() => void startListening(), 1200);
       }
     } finally {
+      activeRelayRequestIdRef.current = null;
       suppressedRelaySessionLoadRef.current = null;
       setBusy(false);
       setDelegationActivity([]);
@@ -705,6 +718,21 @@ export function ChatView({
     setSendError(null);
     setStatus(nextMode === "roleplay" ? `Roleplay mode with ${displayAgentName}` : `Agent mode with ${displayAgentName}`);
   };
+
+  useEffect(() => {
+    if (!selectedIsRelayProvider || !activeRelayRequestIdRef.current) return;
+    const matching = relayActivity.filter((envelope) => {
+      const activity = envelope.payload as AgentActivityPayload;
+      const requestId = activity?.requestId ?? activity?.correlationId ?? envelope.replyTo ?? envelope.correlationId;
+      if (requestId !== activeRelayRequestIdRef.current) return false;
+      const sessionId = activity?.sessionId;
+      if (sessionId && selectedSessionId && sessionId !== selectedSessionId) return false;
+      if (activity?.agent && relayAgentId && activity.agent !== relayAgentId) return false;
+      return envelope.type === "agent.activity";
+    });
+    if (!matching.length) return;
+    setTurnActivity((current) => reduceTurnActivity(current, matching));
+  }, [relayActivity, relayAgentId, selectedIsRelayProvider, selectedSessionId]);
 
   const visibleMessages = messages.slice(-500);
   const conversationMatches = useMemo(() => {
@@ -1109,7 +1137,7 @@ export function ChatView({
               </div>
             ) : null}
             {busy ? (
-              delegationActivity.length ? <DelegationActivityCard activity={delegationActivity} /> : (
+              delegationActivity.length ? <DelegationActivityCard activity={delegationActivity} /> : turnActivity.length ? <TurnActivityCard activity={turnActivity} agentAvatar={chatAvatar} agentName={displayAgentName} /> : (
                 <div className="typing-row" data-testid="thinking-row">
                   <img src={chatAvatar.src} alt="" style={chatAvatar.style} />
                   <span>{displayAgentName} is thinking</span>
@@ -1277,6 +1305,50 @@ function DelegationActivityCard({ activity }: { activity: Array<Record<string, u
   const agent = current.agent && typeof current.agent === "object" ? String((current.agent as { displayName?: unknown }).displayName || "") : "";
   const device = current.device && typeof current.device === "object" ? String((current.device as { name?: unknown }).name || "") : "";
   return <div className="delegation-card live" data-testid="delegation-activity"><Activity size={16} /><div><strong>{delegationStageLabels[stage] || stage}</strong>{agent || device ? <span>{[agent, device].filter(Boolean).join(" on ")}</span> : null}</div></div>;
+}
+
+function mapStreamEventStatus(type: string): AgentActivityPayload["status"] {
+  if (type === "response") return "responding";
+  if (type === "tool") return "tool_use";
+  if (type === "error") return "error";
+  if (type === "done") return "idle";
+  return "thinking";
+}
+
+function reduceTurnActivity(current: Array<Record<string, unknown>>, envelopes: AgentHubEnvelope[]) {
+  const next = [...current];
+  for (const envelope of envelopes) {
+    const payload = (envelope.payload ?? {}) as AgentActivityPayload;
+    const metadata = payload.metadata && typeof payload.metadata === "object" ? payload.metadata as Record<string, unknown> : {};
+    const key = String(payload.toolCallId || metadata.toolCallId || `${payload.status}:${payload.tool || payload.message || payload.timestamp || envelope.id}`);
+    const item: Record<string, unknown> = {
+      key,
+      status: payload.status,
+      message: payload.message,
+      tool: payload.tool,
+      toolCallId: payload.toolCallId,
+      requestId: payload.requestId,
+      sessionId: payload.sessionId,
+      providerSessionId: payload.providerSessionId,
+      timestamp: payload.timestamp,
+      metadata
+    };
+    const index = next.findIndex((entry) => String(entry.key || "") === key);
+    if (index >= 0) next[index] = { ...next[index], ...item };
+    else next.push(item);
+  }
+  return next.slice(-24);
+}
+
+function TurnActivityCard({ activity, agentAvatar, agentName }: { activity: Array<Record<string, unknown>>; agentAvatar: ArtRenderAsset; agentName: string }) {
+  const visible = activity.slice(-8);
+  return <div className="delegation-card live" data-testid="turn-activity"><img src={agentAvatar.src} alt="" style={agentAvatar.style} /><div className="delegation-timeline"><strong>{agentName} progress</strong>{visible.map((item, index) => {
+    const status = String(item.status || "thinking");
+    const tool = textField(item.tool);
+    const message = textField(item.message);
+    const summary = status === "tool_use" ? `${tool || "Tool"}${message ? ` · ${message}` : ""}` : message || status.replace(/_/g, " ");
+    return <span key={String(item.key || index)}><i />{summary}</span>;
+  })}</div></div>;
 }
 
 function DelegationSummaryCard({ value }: { value: Record<string, unknown> }) {

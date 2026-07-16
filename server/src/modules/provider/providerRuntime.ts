@@ -48,6 +48,7 @@ export interface ProviderChatRequest {
   tools?: ProviderToolDefinition[];
   requireToolCall?: boolean;
   executeTool?: (call: ProviderToolCall) => Promise<unknown>;
+  fileIds?: string[];
 }
 
 export interface ProviderToolDefinition {
@@ -181,6 +182,14 @@ async function readOpenClawGatewayConfig(): Promise<OpenClawGatewayConfig> {
   }
 }
 
+function commandCenterHeaders(extra: Record<string, string> = {}) {
+  const token = String(process.env.COMMANDCENTER_API_KEY || process.env.COMMANDCENTER_LOCAL_API_KEY || process.env.COMMANDCENTER_PASSWORD || '').trim();
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra
+  };
+}
+
 function openClawSessionKey(agentId: string, providerSessionId: string) {
   const safeAgent = cleanProviderSessionSegment(agentId) || 'main';
   const safeSession = cleanProviderSessionSegment(providerSessionId) || `prs_${Date.now().toString(36)}`;
@@ -235,6 +244,140 @@ function parseToolArguments(value: unknown): Record<string, unknown> {
   }
 }
 
+function summarizeToolValue(value: unknown) {
+  if (value === undefined || value === null) return value;
+  if (typeof value === 'string') return value.length > 500 ? `${value.slice(0, 497)}...` : value;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return String(value);
+  }
+}
+
+function summarizeEventMessage(data: Record<string, unknown>, fallback = '') {
+  for (const key of ['status', 'message', 'error', 'reason']) {
+    const value = data[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  if (fallback) return fallback;
+  return '';
+}
+
+function parseCommandCenterToolCalls(data: Record<string, unknown>): ProviderToolCall[] {
+  const candidates = [data.toolCalls, data.tool_calls, data.calls];
+  const raw = candidates.find((value) => Array.isArray(value));
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry, index) => {
+    const record = entry && typeof entry === 'object' ? entry as Record<string, unknown> : {};
+    const fn = record.function && typeof record.function === 'object' ? record.function as Record<string, unknown> : record;
+    return {
+      id: String(record.id || `tool_${index + 1}`),
+      name: String(fn.name || '').replace(/__/g, '.'),
+      arguments: parseToolArguments(fn.arguments)
+    };
+  }).filter((call) => call.name);
+}
+
+async function streamCommandCenterTurn(input: { sessionId: string; agentId: string; message: string; mode: 'agent' | 'roleplay'; model?: string; fileIds?: string[]; onEvent?: (event: ProviderChatEvent) => void }) {
+  const response = await providerFetch(`${commandCenterBaseUrl}/sessions/${encodeURIComponent(input.sessionId)}/messages/stream`, {
+    method: 'POST',
+    headers: commandCenterHeaders({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
+    body: JSON.stringify({ message: input.message, ...(input.fileIds?.length ? { fileIds: input.fileIds } : {}) })
+  });
+  if (!response.ok || !response.body) {
+    let message = `CommandCenter HTTP ${response.status}`;
+    try {
+      const body = await response.json() as Record<string, unknown>;
+      message = String(body.error || body.message || message);
+    } catch {
+      // ignore non-json errors
+    }
+    throw new Error(message);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalText = '';
+  let donePayload: Record<string, unknown> | undefined;
+  let lastResponseText = '';
+  const metadata: Record<string, unknown> = {
+    commandCenterSessionId: input.sessionId,
+    providerSessionId: input.sessionId,
+    mode: input.mode,
+    model: input.model
+  };
+
+  const emitChunk = async (chunk: string) => {
+    let type = 'message';
+    const dataLines: string[] = [];
+    for (const rawLine of chunk.split(/\r?\n/)) {
+      const line = rawLine.trimEnd();
+      if (line.startsWith('event:')) type = line.slice('event:'.length).trim() || 'message';
+      if (line.startsWith('data:')) dataLines.push(line.slice('data:'.length).trim());
+    }
+    if (!dataLines.length) return;
+    const rawData = dataLines.join('\n');
+    let data: Record<string, unknown> = {};
+    try {
+      data = JSON.parse(rawData) as Record<string, unknown>;
+    } catch {
+      data = { raw: rawData };
+    }
+
+    const eventSessionId = extractCommandCenterSessionId(data, input.sessionId) || input.sessionId;
+    metadata.commandCenterSessionId = eventSessionId;
+    metadata.providerSessionId = eventSessionId;
+    if (typeof data.model === 'string' && data.model.trim()) metadata.model = data.model.trim();
+
+    if (type === 'accepted') {
+      input.onEvent?.({ type: 'accepted', data: { providerId: 'commandcenter-local', agent: input.agentId, sessionId: eventSessionId, messageId: data.messageId, files: data.files } });
+      return;
+    }
+    if (type === 'thinking') {
+      const toolCalls = parseCommandCenterToolCalls(data);
+      if (toolCalls.length) {
+        for (const call of toolCalls) {
+          input.onEvent?.({ type: 'tool', data: { providerId: 'commandcenter-local', agent: input.agentId, stage: 'requested', toolCallId: call.id, name: call.name, arguments: summarizeToolValue(call.arguments), sessionId: eventSessionId, providerSessionId: eventSessionId, sourceEvent: type } });
+        }
+      }
+      input.onEvent?.({ type: 'thinking', data: { providerId: 'commandcenter-local', agent: input.agentId, status: summarizeEventMessage(data, 'Processing...'), sessionId: eventSessionId, providerSessionId: eventSessionId, sourceEvent: type } });
+      return;
+    }
+    if (type === 'response') {
+      const text = extractMessageText(data.text ?? data.response ?? data.reply ?? data.message);
+      if (text) {
+        lastResponseText = text;
+        finalText = text;
+        input.onEvent?.({ type: 'response', data: { providerId: 'commandcenter-local', agent: input.agentId, text, sessionId: eventSessionId, providerSessionId: eventSessionId, sourceEvent: type } });
+      }
+      return;
+    }
+    if (type === 'error') {
+      throw new Error(String(data.error || data.message || 'CommandCenter stream failed'));
+    }
+    if (type === 'done') {
+      donePayload = data;
+      return;
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split('\n\n');
+    buffer = chunks.pop() ?? '';
+    for (const chunk of chunks) await emitChunk(chunk);
+  }
+  if (buffer.trim()) await emitChunk(buffer);
+
+  const resultText = finalText || lastResponseText;
+  if (!resultText) throw new Error('Command Center returned no chat response.');
+  input.onEvent?.({ type: 'done', data: { providerId: 'commandcenter-local', agent: input.agentId, sessionId: String(donePayload?.sessionId || input.sessionId), providerSessionId: String(donePayload?.sessionId || input.sessionId), responseId: donePayload?.responseId, attachmentStatuses: donePayload?.attachmentStatuses } });
+  return { text: resultText, metadata: { ...metadata, done: donePayload } };
+}
+
 async function runOpenClawGatewayChat(input: { agentId: string; providerSessionId: string; message: string; model?: string; tools?: ProviderToolDefinition[]; requireToolCall?: boolean; executeTool?: (call: ProviderToolCall) => Promise<unknown>; onEvent?: (event: ProviderChatEvent) => void }) {
   const gateway = await readOpenClawGatewayConfig();
   const sessionKey = openClawSessionKey(input.agentId, input.providerSessionId);
@@ -282,11 +425,11 @@ async function runOpenClawGatewayChat(input: { agentId: string; providerSessionI
         name: String(fn.name || '').replace(/__/g, '.'),
         arguments: parseToolArguments(fn.arguments)
       };
-      input.onEvent?.({ type: 'tool', data: { stage: 'requested', toolCallId: call.id, name: call.name } });
+      input.onEvent?.({ type: 'tool', data: { stage: 'requested', toolCallId: call.id, name: call.name, arguments: summarizeToolValue(call.arguments) } });
       const result = await input.executeTool(call);
       const ok = !(result && typeof result === 'object' && 'ok' in result && (result as { ok?: unknown }).ok === false);
       executedToolCalls.push({ ...call, ok });
-      input.onEvent?.({ type: 'tool', data: { stage: 'completed', toolCallId: call.id, name: call.name, ok } });
+      input.onEvent?.({ type: 'tool', data: { stage: 'completed', toolCallId: call.id, name: call.name, ok, result: summarizeToolValue(result) } });
       messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
     }
   }
@@ -320,42 +463,42 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
   onEvent?.({ type: 'thinking', data: { providerId: provider.id, agent: agentId, status: `Routing to ${provider.name}...` } });
 
   if (provider.kind === 'commandcenter') {
-    let message = request.message;
+    const requestedMode = request.mode === 'roleplay' ? 'roleplay' : 'agent';
     let commandCenterSessionId = String(request.providerSessionId || '').trim();
-    const executedToolCalls: Array<ProviderToolCall & { ok: boolean }> = [];
-    for (let round = 0; round < 5; round += 1) {
-      const requestedMode = request.mode === 'roleplay' ? 'roleplay' : 'agent';
-      const response = await providerFetch(`${commandCenterBaseUrl}/chat/direct`, {
+    if (!commandCenterSessionId) {
+      const createResponse = await providerFetch(`${commandCenterBaseUrl}/sessions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent: agentId, ...(commandCenterSessionId ? { sessionId: commandCenterSessionId } : {}), message, mode: requestedMode, ...(request.model ? { model: request.model } : {}), ...(request.tools?.length ? { tools: request.tools, toolChoice: round === 0 && request.requireToolCall ? 'required' : 'auto' } : {}) })
+        headers: commandCenterHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          agent: agentId,
+          title: `Reika · ${String(agent.name || agentId).trim()}`,
+          mode: requestedMode,
+          ...(request.model ? { model: request.model } : {}),
+          metadata: { source: 'project-reika', localSessionId: sessionId }
+        })
       });
-      const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-      if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
-      commandCenterSessionId = extractCommandCenterSessionId(body, commandCenterSessionId);
-      const rawCalls = Array.isArray(body.toolCalls) ? body.toolCalls : Array.isArray(body.tool_calls) ? body.tool_calls : [];
-      if (!rawCalls.length) {
-        const text = extractCommandCenterResponseText(body);
-        if (!text) throw new Error('Command Center returned no chat response.');
-        onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text } });
-        onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: commandCenterSessionId } });
-        return { providerId: provider.id, agentId, sessionId: commandCenterSessionId, runtime: 'commandcenter', text, mode: requestedMode, model: String(body.model || request.model || '').trim() || undefined, metadata: { ...body, mode: requestedMode, model: String(body.model || request.model || '').trim() || undefined, providerSessionId: commandCenterSessionId, commandCenterSessionId, toolCalls: executedToolCalls } };
-      }
-      if (!request.executeTool) throw new Error('Command Center requested a Reika tool but no trusted executor was provided.');
-      const results: unknown[] = [];
-      for (const raw of rawCalls as Array<Record<string, unknown>>) {
-        const fn = raw.function && typeof raw.function === 'object' ? raw.function as Record<string, unknown> : raw;
-        const call: ProviderToolCall = { id: String(raw.id || `tool_${Date.now().toString(36)}`), name: String(fn.name || '').replace(/__/g, '.'), arguments: parseToolArguments(fn.arguments) };
-        onEvent?.({ type: 'tool', data: { stage: 'requested', toolCallId: call.id, name: call.name } });
-        const result = await request.executeTool(call);
-        const ok = !(result && typeof result === 'object' && 'ok' in result && (result as { ok?: unknown }).ok === false);
-        executedToolCalls.push({ ...call, ok });
-        results.push({ toolCallId: call.id, name: call.name, result });
-        onEvent?.({ type: 'tool', data: { stage: 'completed', toolCallId: call.id, name: call.name, ok } });
-      }
-      message = `Reika tool results:\n${JSON.stringify(results)}\nContinue the same request using these results.`;
+      const createBody = await createResponse.json().catch(() => ({})) as Record<string, unknown>;
+      if (!createResponse.ok || createBody.ok === false) throw new Error(String(createBody.error || `CommandCenter HTTP ${createResponse.status}`));
+      commandCenterSessionId = extractCommandCenterSessionId(createBody);
+      if (!commandCenterSessionId) throw new Error('Command Center did not return a session id.');
     }
-    throw new Error('Command Center exceeded the bounded Reika tool-call loop.');
+    const streamed = await streamCommandCenterTurn({ sessionId: commandCenterSessionId, agentId, message: request.message, mode: requestedMode, model: request.model, fileIds: request.fileIds, onEvent });
+    return {
+      providerId: provider.id,
+      agentId,
+      sessionId: commandCenterSessionId,
+      runtime: 'commandcenter',
+      text: streamed.text,
+      mode: requestedMode,
+      model: typeof (streamed.metadata as Record<string, unknown>).model === 'string' ? String((streamed.metadata as Record<string, unknown>).model) : request.model,
+      metadata: {
+        ...streamed.metadata,
+        mode: requestedMode,
+        providerSessionId: commandCenterSessionId,
+        commandCenterSessionId: commandCenterSessionId,
+        transport: 'commandcenter-sse'
+      }
+    };
   }
 
   if (provider.kind === 'openclaw') {
@@ -461,158 +604,99 @@ function parseHermesSessionsList(output: string, providerId: string): ProviderHi
   return sessions;
 }
 
-function parseOpenClawSessionsList(output: string, providerId: string): ProviderHistorySession[] {
-  try {
-    const parsed = JSON.parse(output) as { sessions?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
-    const sessions = Array.isArray(parsed) ? parsed : parsed.sessions || [];
-    return sessions.map((session) => {
-      const key = String(session.key || '');
-      const marker = ':reika:';
-      const providerSessionId = key.includes(marker) ? key.slice(key.indexOf(marker) + marker.length) : String(session.id || session.sessionId || '');
-      const updatedAt = typeof session.updatedAt === 'number'
-        ? new Date(session.updatedAt).toISOString()
-        : typeof session.updatedAt === 'string' ? session.updatedAt : undefined;
-      return ({
+function parseOpenClawSessions(output: string, providerId: string) {
+  const body = JSON.parse(output || '{}') as { sessions?: Array<Record<string, unknown>> };
+  return (body.sessions || []).map((session) => {
+    const key = String(session.key || '');
+    const marker = ':reika:';
+    const providerSessionId = key.includes(marker) ? key.slice(key.indexOf(marker) + marker.length) : String(session.id || session.sessionId || '');
+    return {
       providerId,
       providerSessionId,
-      agentId: String(session.agent || session.agentId || 'openclaw'),
+      agentId: String(session.agentId || session.agent || 'main'),
       title: String(session.title || session.preview || providerSessionId || 'OpenClaw session'),
-      createdAt: typeof session.createdAt === 'string' ? session.createdAt : undefined,
-      updatedAt,
-      messageCount: typeof session.messageCount === 'number' ? session.messageCount : undefined,
-      lastMessagePreview: typeof session.lastMessagePreview === 'string' ? session.lastMessagePreview : typeof session.preview === 'string' ? session.preview : undefined,
-      metadata: { openClawSessionId: String(session.sessionId || session.id || ''), openClawSessionKey: key }
-    });
-    }).filter((session) => session.providerSessionId);
-  } catch {
-    return output.split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line && !/^[-=\s]+$/.test(line) && !/^id\s+/i.test(line))
-      .map((line) => {
-        const parts = line.split(/\s{2,}|\t+/).filter(Boolean);
-        const id = parts.find((part) => /^[A-Za-z0-9_-]{6,}$/.test(part)) || parts[0] || '';
-        return {
-          providerId,
-          providerSessionId: id,
-          agentId: 'openclaw',
-          title: parts[1] || parts[0] || `OpenClaw ${id}`,
-          lastMessagePreview: parts.slice(2).join(' '),
-          metadata: { openClawSessionId: id, raw: line }
-        };
-      })
-      .filter((session) => session.providerSessionId);
-  }
-}
-
-function normalizeOpenClawMessages(output: string): ProviderHistoryMessage[] {
-  try {
-    const parsed = JSON.parse(output) as { messages?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
-    const messages = Array.isArray(parsed) ? parsed : parsed.messages || [];
-    return messages.map((message) => {
-      const role: ProviderHistoryMessage['role'] = message.role === 'assistant' || message.role === 'system' ? message.role : 'user';
-      return {
-        id: typeof message.id === 'string' ? message.id : undefined,
-        role,
-        text: String(message.text || message.content || message.message || ''),
-        timestamp: typeof message.timestamp === 'string' ? message.timestamp : typeof message.createdAt === 'string' ? message.createdAt : undefined,
-        meta: typeof message.meta === 'object' && message.meta ? message.meta as Record<string, unknown> : undefined
-      };
-    }).filter((message) => message.text);
-  } catch {
-    const jsonl = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
-      try {
-        const entry = JSON.parse(line) as Record<string, unknown>;
-        const raw = entry.message && typeof entry.message === 'object' ? entry.message as Record<string, unknown> : entry;
-        const rawRole = String(raw.role || '').toLowerCase();
-        if (rawRole !== 'user' && rawRole !== 'assistant' && rawRole !== 'system') return undefined;
-        const text = extractMessageText(raw.content ?? raw.text ?? raw.message);
-        if (!text) return undefined;
-        return {
-          id: typeof entry.id === 'string' ? entry.id : typeof raw.id === 'string' ? raw.id : undefined,
-          role: rawRole as ProviderHistoryMessage['role'],
-          text,
-          timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : typeof raw.timestamp === 'string' ? raw.timestamp : undefined
-        } satisfies ProviderHistoryMessage;
-      } catch {
-        return undefined;
-      }
-    }).filter(Boolean) as ProviderHistoryMessage[];
-    if (jsonl.length) return jsonl;
-    return output.split(/\r?\n/).map((line, index) => {
-      const match = line.match(/^(user|assistant|system|you|openclaw|agent)\s*:\s*(.+)$/i);
-      if (!match) return undefined;
-      const rawRole = String(match[1] || '').toLowerCase();
-      const role: ProviderHistoryMessage['role'] = rawRole === 'assistant' || rawRole === 'openclaw' || rawRole === 'agent' ? 'assistant' : rawRole === 'system' ? 'system' : 'user';
-      return {
-        id: `openclaw_text_${index}`,
-        role,
-        text: String(match[2] || '').trim()
-      };
-    }).filter(Boolean) as ProviderHistoryMessage[];
-  }
-}
-
-interface OpenClawSessionIndex {
-  stores?: Array<{ agentId?: string; path?: string }>;
-  sessions?: Array<{ key?: string; sessionId?: string; agentId?: string }>;
-}
-
-async function readOpenClawSessionIndex() {
-  const { stdout } = await runCommand(openClawBin, ['sessions', '--all-agents', '--json'], 30000);
-  return JSON.parse(stdout) as OpenClawSessionIndex;
-}
-
-async function readOpenClawSessionTranscript(providerSessionId: string) {
-  const index = await readOpenClawSessionIndex();
-  const marker = `:reika:${providerSessionId}`;
-  const session = (index.sessions || []).find((candidate) => String(candidate.key || '').endsWith(marker))
-    || (index.sessions || []).find((candidate) => candidate.sessionId === providerSessionId || candidate.key === providerSessionId);
-  if (!session?.key || !session.agentId) throw new Error(`OpenClaw session not found: ${providerSessionId}`);
-  const store = (index.stores || []).find((candidate) => candidate.agentId === session.agentId);
-  if (!store?.path) throw new Error(`OpenClaw session store not found for agent: ${session.agentId}`);
-  const records = JSON.parse(await readFile(store.path, 'utf8')) as Record<string, { sessionFile?: string; sessionId?: string }>;
-  const record = records[session.key];
-  const transcriptPath = record?.sessionFile || (record?.sessionId ? join(dirname(store.path), `${record.sessionId}.jsonl`) : '');
-  if (!transcriptPath) throw new Error(`OpenClaw transcript not found: ${providerSessionId}`);
-  const allowedRoot = resolve(join(homedir(), '.openclaw', 'agents'));
-  const safePath = resolve(transcriptPath);
-  if (safePath !== allowedRoot && !safePath.startsWith(`${allowedRoot}${sep}`)) throw new Error('OpenClaw transcript path escaped the configured agent store.');
-  return readFile(safePath, 'utf8');
-}
-
-export async function listProviderHistorySessions(providerId: string, providers: ProviderRecord[], limit = 25): Promise<ProviderHistorySession[]> {
-  const provider = findProvider(providers, providerId);
-  if (!provider) throw new Error(`Provider not found: ${providerId}`);
-
-  if (provider.kind === 'commandcenter') {
-    const response = await providerFetch(`${commandCenterBaseUrl}/sessions`);
-    const body = await response.json().catch(() => ({})) as { ok?: boolean; sessions?: Array<Record<string, unknown>>; error?: unknown };
-    if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
-    return (body.sessions || []).slice(0, limit).map((session) => ({
-      providerId: provider.id,
-      providerSessionId: String(session.id || ''),
-      agentId: String(session.agent || 'unknown'),
-      title: String(session.title || session.lastMessagePreview || session.id || 'CommandCenter session'),
       createdAt: typeof session.createdAt === 'string' ? session.createdAt : undefined,
       updatedAt: typeof session.updatedAt === 'string' ? session.updatedAt : undefined,
       messageCount: typeof session.messageCount === 'number' ? session.messageCount : undefined,
-      lastMessagePreview: typeof session.lastMessagePreview === 'string' ? session.lastMessagePreview : undefined,
-      metadata: { ...(typeof session.metadata === 'object' && session.metadata ? session.metadata as Record<string, unknown> : {}), commandCenterSessionId: String(session.id || '') }
-    })).filter((session) => session.providerSessionId);
-  }
+      lastMessagePreview: typeof session.preview === 'string' ? session.preview : undefined,
+      metadata: { openClawKey: key }
+    };
+  }).filter((session) => session.providerSessionId);
+}
 
-  if (provider.kind === 'hermes') {
-    const { stdout } = await runCommand(hermesBin, ['sessions', 'list', '--limit', String(limit)], 30000);
-    return parseHermesSessionsList(stdout, provider.id).slice(0, limit);
-  }
+async function listCommandCenterHistory(providerId: string) {
+  const response = await providerFetch(`${commandCenterBaseUrl}/sessions`, { headers: commandCenterHeaders() });
+  const body = await response.json().catch(() => ({})) as { ok?: boolean; sessions?: Array<Record<string, unknown>>; error?: string };
+  if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
+  return (body.sessions || []).map((session) => ({
+    providerId,
+    providerSessionId: String(session.id || session.sessionId || ''),
+    agentId: String(session.agent || 'reika'),
+    title: String(session.title || session.preview || session.id || 'CommandCenter session'),
+    createdAt: typeof session.createdAt === 'string' ? session.createdAt : undefined,
+    updatedAt: typeof session.updatedAt === 'string' ? session.updatedAt : undefined,
+    messageCount: typeof session.messageCount === 'number' ? session.messageCount : undefined,
+    lastMessagePreview: typeof session.lastMessagePreview === 'string' ? session.lastMessagePreview : typeof session.preview === 'string' ? session.preview : undefined,
+    metadata: { commandCenterSessionId: String(session.id || session.sessionId || '') }
+  })).filter((session) => session.providerSessionId);
+}
 
+async function readOpenClawSessionTranscript(providerSessionId: string) {
+  const raw = await readFile(join(homedir(), '.openclaw', 'sessions', 'index.json'), 'utf8');
+  const index = JSON.parse(raw) as { sessions?: Array<Record<string, unknown>> };
+  const marker = `:reika:${providerSessionId}`;
+  const session = (index.sessions || []).find((candidate) => String(candidate.key || '').includes(marker))
+    || (index.sessions || []).find((candidate) => candidate.sessionId === providerSessionId || candidate.key === providerSessionId);
+  if (!session?.key || !session.agentId) throw new Error(`OpenClaw session not found: ${providerSessionId}`);
+  const candidatePaths = [
+    join(homedir(), '.openclaw', 'sessions', String(session.agentId), `${String(session.key)}.jsonl`),
+    join(homedir(), '.openclaw', 'sessions', `${String(session.key)}.jsonl`)
+  ];
+  const transcriptPath = candidatePaths.find((path) => path && !path.includes(`..${sep}`));
+  if (!transcriptPath) throw new Error(`OpenClaw transcript not found: ${providerSessionId}`);
+  return readFile(transcriptPath, 'utf8');
+}
+
+function parseOpenClawTranscript(content: string): ProviderHistoryMessage[] {
+  return content.split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    try {
+      const record = JSON.parse(line) as Record<string, unknown>;
+      const role = String(record.role || '').toLowerCase();
+      const text = extractMessageText(record.content || record.text || record.message);
+      if (!text) return [];
+      return [{
+        id: typeof record.id === 'string' ? record.id : undefined,
+        role: role === 'assistant' ? 'assistant' : role === 'system' ? 'system' : 'user',
+        text,
+        timestamp: typeof record.timestamp === 'string' ? record.timestamp : undefined,
+        meta: record.meta && typeof record.meta === 'object' ? record.meta as Record<string, unknown> : undefined
+      } satisfies ProviderHistoryMessage];
+    } catch {
+      return [];
+    }
+  });
+}
+
+export async function listProviderHistorySessions(providerId: string, providers: ProviderRecord[], _limit = 25): Promise<ProviderHistorySession[]> {
+  const provider = findProvider(providers, providerId);
+  if (!provider) throw new Error(`Provider not found: ${providerId}`);
+  if (provider.kind === 'commandcenter') return listCommandCenterHistory(provider.id);
   if (provider.kind === 'openclaw') {
-    const { stdout, stderr } = await runCommand(openClawBin, ['sessions', '--all-agents', '--json'], 30000)
-      .catch(() => runCommand(openClawBin, ['sessions', 'list', '--json', '--limit', String(limit)], 30000));
-    return parseOpenClawSessionsList(stdout || stderr, provider.id).slice(0, limit);
+    const { stdout } = await runCommand(openClawBin, ['sessions', 'list', '--json'], 30000);
+    return parseOpenClawSessions(stdout, provider.id);
   }
-
-  return [];
+  if (provider.kind === 'hermes') {
+    const { stdout, stderr } = await runCommand(hermesBin, ['sessions'], 30000);
+    return parseHermesSessionsList(stdout || stderr, provider.id);
+  }
+  return [{
+    providerId: provider.id,
+    providerSessionId: 'mock_session',
+    agentId: provider.agents[0]?.id || 'reika',
+    title: `${provider.name} mock session`,
+    updatedAt: new Date().toISOString(),
+    lastMessagePreview: 'Mock provider does not keep historical sessions.'
+  }];
 }
 
 export async function getProviderHistoryMessages(providerId: string, providerSessionId: string, providers: ProviderRecord[]): Promise<ProviderHistoryMessage[]> {
@@ -625,27 +709,27 @@ export async function getProviderHistoryMessages(providerId: string, providerSes
           .catch(() => runCommand(openClawBin, ['sessions', 'show', providerSessionId], 30000));
         return stdout || stderr;
       });
-    return normalizeOpenClawMessages(transcript);
+    return parseOpenClawTranscript(transcript);
   }
-  if (provider.kind !== 'commandcenter') return [];
-  const response = await providerFetch(`${commandCenterBaseUrl}/sessions/${encodeURIComponent(providerSessionId)}/messages`);
-  const body = await response.json().catch(() => ({})) as { ok?: boolean; messages?: Array<Record<string, unknown>>; error?: unknown };
-  if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
-  return (body.messages || []).map((message) => {
-    const role: ProviderHistoryMessage['role'] = message.role === 'assistant' || message.role === 'system' ? message.role : 'user';
-    return {
-      id: typeof message.id === 'string' ? message.id : undefined,
-      role,
-      text: String(message.text || ''),
-      timestamp: typeof message.timestamp === 'string' ? message.timestamp : undefined,
-      meta: typeof message.meta === 'object' && message.meta ? message.meta as Record<string, unknown> : undefined
-    };
-  }).filter((message) => message.text);
-}
-
-export async function readOpenClawConfigAgents() {
-  const path = join(homedir(), '.openclaw', 'openclaw.json');
-  const raw = await readFile(path, 'utf8');
-  const json = JSON.parse(raw);
-  return { path, agents: Array.isArray(json?.agents?.list) ? json.agents.list : [] };
+  if (provider.kind === 'commandcenter') {
+    const response = await providerFetch(`${commandCenterBaseUrl}/sessions/${encodeURIComponent(providerSessionId)}/messages`, { headers: commandCenterHeaders() });
+    const body = await response.json().catch(() => ({})) as { ok?: boolean; messages?: Array<Record<string, unknown>>; error?: string };
+    if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
+    return (body.messages || []).map((message) => {
+      const role = String(message.role || 'user') === 'assistant' ? 'assistant' : String(message.role || 'user') === 'system' ? 'system' : 'user';
+      return {
+        id: typeof message.id === 'string' ? message.id : undefined,
+        role: role as ProviderHistoryMessage['role'],
+        text: extractMessageText(message.text || message.content || message.message),
+        timestamp: typeof message.timestamp === 'string' ? message.timestamp : undefined,
+        meta: message.meta && typeof message.meta === 'object' ? message.meta as Record<string, unknown> : undefined
+      };
+    }).filter((message) => message.text);
+  }
+  if (provider.kind === 'hermes') {
+    const { stdout, stderr } = await runCommand(hermesBin, ['session', 'show', providerSessionId], 30000).catch(() => runCommand(hermesBin, ['sessions', 'show', providerSessionId], 30000));
+    const text = String(stdout || stderr || '').trim();
+    return text ? [{ role: 'assistant', text }] : [];
+  }
+  return [];
 }

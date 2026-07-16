@@ -353,6 +353,7 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
     reject: (error: Error) => void;
     timer: number;
   }>();
+  const pendingActivities = new Map<string, Array<AgentHubEnvelope>>();
 
   const setStatus = (status: "connecting" | "online" | "offline") => {
     currentStatus = status;
@@ -402,6 +403,11 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
         if (!isAgentHubEnvelope(parsed)) return;
         const requestId = parsed.replyTo || parsed.correlationId;
         const pending = requestId ? pendingChats.get(requestId) : undefined;
+        if (parsed.type === "agent.activity" && requestId) {
+          const buffered = pendingActivities.get(requestId) ?? [];
+          buffered.push(parsed);
+          pendingActivities.set(requestId, buffered.slice(-200));
+        }
         if (pending && parsed.type === "agent.chat.response") {
           window.clearTimeout(pending.timer);
           pendingChats.delete(requestId!);
@@ -411,6 +417,8 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
           pendingChats.delete(requestId!);
           const payload = parsed.payload as { message?: string; reason?: string };
           pending.reject(new Error(payload.message ?? payload.reason ?? "Relay chat request failed."));
+        } else if (!pending && requestId) {
+          pendingActivities.delete(requestId);
         }
         onEnvelope(parsed);
       } catch {

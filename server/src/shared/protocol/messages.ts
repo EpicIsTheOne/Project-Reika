@@ -142,6 +142,10 @@ export interface AgentActivityPayload {
   source?: string;
   timestamp: string;
   metadata?: Record<string, unknown>;
+  requestId?: string;
+  commandId?: string;
+  correlationId?: string;
+  toolCallId?: string;
 }
 
 export interface CommandAcceptedPayload {
