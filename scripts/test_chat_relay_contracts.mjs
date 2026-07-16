@@ -51,7 +51,7 @@ assert(
 );
 
 assert(
-  chatView.includes("message,") && chatView.includes("text: message") && chatView.includes("providerSessionId: makeProviderSessionId(relaySessionId)"),
+  chatView.includes("message,") && chatView.includes("text: message") && chatView.includes("providerSessionId: result.sessionId"),
   "ChatView should send and persist the raw composer message."
 );
 
@@ -90,3 +90,18 @@ assert(
 );
 
 console.log("chat relay contracts ok");
+
+assert(
+  providerRuntime.includes("/chat/direct") &&
+    providerRuntime.includes("mode: requestedMode") &&
+    providerRuntime.includes("...(request.model ? { model: request.model } : {})"),
+  "CommandCenter chat must call /chat/direct and forward explicit mode/model metadata."
+);
+
+assert(
+  dispatcher.includes("mode: payload.mode === 'roleplay' ? 'roleplay' : payload.mode === 'agent' ? 'agent' : undefined") &&
+    serverMain.includes("mode: payload.mode") &&
+    serverMain.includes("mode: input.mode") &&
+    serverMain.includes("mode: result.result.mode"),
+  "Relay/device/server chat paths must preserve explicit chat mode metadata end-to-end."
+);

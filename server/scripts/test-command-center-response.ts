@@ -17,3 +17,5 @@ assert.equal(extractCommandCenterSessionId({ sessionId: 'ccs_top', session: { id
 assert.equal(extractCommandCenterSessionId({}, 'ccs_existing'), 'ccs_existing');
 
 console.log('Command Center response extraction contracts passed');
+
+assert.equal(extractCommandCenterResponseText({ response: { content: [{ type: 'text', text: 'roleplay reply' }] }, mode: 'roleplay', model: 'openrouter/test' }), 'roleplay reply');

@@ -186,22 +186,27 @@ const notifications = new NotificationStore();
 const memoryMesh = new MemoryMeshStore();
 const deviceEndpoint = { kind: 'device' as const, id: serverConfig.uplink.deviceId };
 const appEndpoint = { kind: 'app' as const, id: 'local-simulator' };
-const handleAgentChat = async (payload: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; model?: string; fileIds?: string[] }) => {
+const handleAgentChat: (payload: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; mode?: 'agent' | 'roleplay'; model?: string; fileIds?: string[] }) => Promise<import('./shared/protocol/messages.js').AgentChatResponsePayload> = async (payload) => {
   const result = await runChatTurn({
     sessionId: payload.sessionId,
     providerSessionId: payload.providerSessionId,
     providerId: payload.providerId,
     agent: payload.agent,
     message: payload.message,
+    mode: payload.mode,
     model: payload.model,
     fileIds: payload.fileIds
   });
+  const responseMode = result.result.mode === 'roleplay' ? 'roleplay' : result.result.mode === 'agent' ? 'agent' : undefined;
   return {
     providerId: result.result.providerId,
     agent: result.result.agentId,
     sessionId: result.result.sessionId,
     text: result.result.text,
-    runtime: result.result.runtime
+    runtime: result.result.runtime,
+    mode: responseMode,
+    model: result.result.model,
+    providerSessionId: typeof (result.result.metadata as Record<string, unknown> | undefined)?.providerSessionId === 'string' ? String((result.result.metadata as Record<string, unknown>).providerSessionId) : result.result.sessionId
   };
 };
 const recoverAgentChat = async (input: { providerId: string; agent: string; sessionId: string; providerSessionId: string }) => {
@@ -760,7 +765,7 @@ function enqueueChatTurn<T>(sessionId: string, task: () => Promise<T>): Promise<
   return current;
 }
 
-async function runChatTurn(input: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; model?: string; title?: string; metadata?: Record<string, unknown>; fileIds?: unknown }, onEvent?: (event: ProviderChatEvent) => void) {
+async function runChatTurn(input: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; mode?: 'agent' | 'roleplay'; model?: string; title?: string; metadata?: Record<string, unknown>; fileIds?: unknown }, onEvent?: (event: ProviderChatEvent) => void) {
   const session = getOrCreateSession(input);
   return enqueueChatTurn(session.id, () => executeChatTurn(session, input, onEvent));
 }
@@ -875,7 +880,7 @@ function routeExplanation(task: RoutingTask) {
   return [`I could not route this task for ${decision.project?.name || 'that project'}.`, ...decision.reasons, ...details].join('\n');
 }
 
-async function executeChatTurn(session: ChatSession, input: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; model?: string; title?: string; metadata?: Record<string, unknown>; fileIds?: unknown }, onEvent?: (event: ProviderChatEvent) => void) {
+async function executeChatTurn(session: ChatSession, input: { sessionId?: string; providerSessionId?: string; providerId?: string; agent?: string; message: string; mode?: 'agent' | 'roleplay'; model?: string; title?: string; metadata?: Record<string, unknown>; fileIds?: unknown }, onEvent?: (event: ProviderChatEvent) => void) {
   const providers = state.snapshot().providers;
   const requestedProviderId = input.providerId || session.providerId;
   const provider = findProvider(providers, requestedProviderId);
@@ -898,7 +903,7 @@ async function executeChatTurn(session: ChatSession, input: { sessionId?: string
       handler({ type: 'delegation', data: { stage: 'clarification_required', candidates } });
       const text = `I found multiple matching projects: ${candidates.join(', ')}. Which one did you mean?`;
       const assistantMessage = appendMessage(session, 'assistant', text, { providerId: session.providerId, agent: session.agent, runtime: 'memory-mesh', memoryMesh: { status: 'ambiguous', lifecycle, candidates } });
-      return { session, userMessage, assistantMessage, result: { providerId: session.providerId, agentId: session.agent, sessionId: session.id, runtime: 'memory-mesh' as const, text, metadata: { memoryMesh: assistantMessage.meta?.memoryMesh } } };
+      return { session, userMessage, assistantMessage, result: { providerId: session.providerId, agentId: session.agent, sessionId: session.id, runtime: 'memory-mesh' as const, text, mode: input.mode === 'roleplay' ? 'roleplay' : 'agent', model: input.model, metadata: { memoryMesh: assistantMessage.meta?.memoryMesh } } };
     }
     if (projectReference.status === 'resolved' && projectReference.project) {
       const lifecycle: Array<Record<string, unknown>> = [];
@@ -940,7 +945,7 @@ async function executeChatTurn(session: ChatSession, input: { sessionId?: string
       const lifecycleMeta = [...task.lifecycle, ...lifecycle.filter((item) => item.stage === 'memory_updated')];
       const meshMeta = { taskId: task.id, status: task.status, projectId: task.projectId, projectName: task.decision.project?.name, targetAgentId: task.targetAgentId, targetAgentName: task.decision.agent?.displayName, targetDeviceId: task.targetDeviceId, targetDeviceName: task.decision.device?.name, executeLocally: task.decision.executeLocally, reasons: task.decision.reasons, result: task.result, error: task.error, memoryWritebackIds: task.memoryWritebackIds, originConversationId: task.originConversationId, originMessageId: task.originMessageId, originProviderTools, lifecycle: lifecycleMeta };
       const assistantMessage = appendMessage(session, 'assistant', text, { providerId: session.providerId, agent: session.agent, runtime: 'memory-mesh', memoryMesh: meshMeta });
-      return { session, userMessage, assistantMessage, result: { providerId: session.providerId, agentId: session.agent, sessionId: session.id, runtime: 'memory-mesh' as const, text, metadata: { memoryMesh: meshMeta } } };
+      return { session, userMessage, assistantMessage, result: { providerId: session.providerId, agentId: session.agent, sessionId: session.id, runtime: 'memory-mesh' as const, text, mode: input.mode === 'roleplay' ? 'roleplay' : 'agent', model: input.model, metadata: { memoryMesh: meshMeta } } };
     }
     const result = await runProviderChat({
       providerId: input.providerId || session.providerId,
@@ -948,6 +953,7 @@ async function executeChatTurn(session: ChatSession, input: { sessionId?: string
       sessionId: session.id,
       message: context ? `${input.message}\n\nAttached files/links:\n${context}` : input.message,
       history: sessionHistory(session).slice(0, -1),
+      mode: input.mode,
       model: input.model,
       providerSessionId: typeof input.providerSessionId === 'string' && input.providerSessionId.trim()
         ? input.providerSessionId.trim()

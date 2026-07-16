@@ -42,6 +42,7 @@ export interface ProviderChatRequest {
   sessionId?: string;
   message: string;
   history?: ProviderChatMessage[];
+  mode?: 'agent' | 'roleplay';
   model?: string;
   providerSessionId?: string;
   tools?: ProviderToolDefinition[];
@@ -73,6 +74,8 @@ export interface ProviderChatResult {
   runtime: 'commandcenter' | 'openclaw' | 'hermes' | 'mock' | 'memory-mesh';
   text: string;
   raw?: string;
+  mode?: 'agent' | 'roleplay';
+  model?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -321,10 +324,11 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
     let commandCenterSessionId = String(request.providerSessionId || '').trim();
     const executedToolCalls: Array<ProviderToolCall & { ok: boolean }> = [];
     for (let round = 0; round < 5; round += 1) {
-      const response = await providerFetch(`${commandCenterBaseUrl}/chat`, {
+      const requestedMode = request.mode === 'roleplay' ? 'roleplay' : 'agent';
+      const response = await providerFetch(`${commandCenterBaseUrl}/chat/direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent: agentId, ...(commandCenterSessionId ? { sessionId: commandCenterSessionId } : {}), message, ...(request.tools?.length ? { tools: request.tools, toolChoice: round === 0 && request.requireToolCall ? 'required' : 'auto' } : {}) })
+        body: JSON.stringify({ agent: agentId, ...(commandCenterSessionId ? { sessionId: commandCenterSessionId } : {}), message, mode: requestedMode, ...(request.model ? { model: request.model } : {}), ...(request.tools?.length ? { tools: request.tools, toolChoice: round === 0 && request.requireToolCall ? 'required' : 'auto' } : {}) })
       });
       const body = await response.json().catch(() => ({})) as Record<string, unknown>;
       if (!response.ok || body.ok === false) throw new Error(String(body.error || `CommandCenter HTTP ${response.status}`));
@@ -335,7 +339,7 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
         if (!text) throw new Error('Command Center returned no chat response.');
         onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text } });
         onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId: commandCenterSessionId } });
-        return { providerId: provider.id, agentId, sessionId: commandCenterSessionId, runtime: 'commandcenter', text, metadata: { ...body, providerSessionId: commandCenterSessionId, commandCenterSessionId, toolCalls: executedToolCalls } };
+        return { providerId: provider.id, agentId, sessionId: commandCenterSessionId, runtime: 'commandcenter', text, mode: requestedMode, model: String(body.model || request.model || '').trim() || undefined, metadata: { ...body, mode: requestedMode, model: String(body.model || request.model || '').trim() || undefined, providerSessionId: commandCenterSessionId, commandCenterSessionId, toolCalls: executedToolCalls } };
       }
       if (!request.executeTool) throw new Error('Command Center requested a Reika tool but no trusted executor was provided.');
       const results: unknown[] = [];
@@ -375,6 +379,8 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
       runtime: 'openclaw',
       text: gatewayResult.text,
       raw: gatewayResult.raw,
+      mode: request.mode === 'roleplay' ? 'roleplay' : 'agent',
+      model: request.model,
       metadata: {
         providerSessionId: openClawSessionId,
         openClawSessionId,
@@ -413,6 +419,8 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
       runtime: 'hermes',
       text: parsed.text,
       raw: parsed.raw,
+      mode: request.mode === 'roleplay' ? 'roleplay' : 'agent',
+      model,
       metadata: {
         hermesProfile: profile,
         hermesSource: hermesSessionSource,
@@ -425,7 +433,7 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
   const text = `Mock ${agent.name || agentId}: ${request.message}`;
   onEvent?.({ type: 'response', data: { providerId: provider.id, agent: agentId, text } });
   onEvent?.({ type: 'done', data: { providerId: provider.id, agent: agentId, sessionId } });
-  return { providerId: provider.id, agentId, sessionId, runtime: 'mock', text };
+  return { providerId: provider.id, agentId, sessionId, runtime: 'mock', text, mode: request.mode === 'roleplay' ? 'roleplay' : 'agent', model: request.model };
 }
 
 function parseHermesSessionsList(output: string, providerId: string): ProviderHistorySession[] {

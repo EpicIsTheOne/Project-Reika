@@ -299,6 +299,27 @@ Supported requests return snapshot/response envelopes directly. The current disp
 
 Chat requests are intentionally limited to provider/agent/message/session fields and route through the same local provider service used by `POST /chat`. Sessions/messages and provider-native session IDs are persisted locally so restarts can keep Project Reika history and resume-capable providers aligned.
 
+### Relay chat mode contract
+
+`agent.chat.request` now accepts optional chat mode metadata:
+
+- `mode?: 'agent' | 'roleplay'` — omitted means legacy/default agent chat
+- `model?: string` — optional provider model hint; for CommandCenter roleplay this is forwarded to CommandCenter's direct chat API
+- `providerSessionId?: string` — provider-native resume token/session id when the client has one
+
+`agent.chat.response` may return:
+
+- `mode?: 'agent' | 'roleplay'` — echoes the effective mode used by the device provider
+- `model?: string` — effective provider model when known
+- `providerSessionId?: string` — provider-native session id suitable for future resume
+
+Compatibility notes:
+
+- Older clients can omit `mode` and keep using normal agent chat unchanged.
+- Relays only preserve/forward the metadata; the device-side provider decides whether roleplay is supported.
+- CommandCenter forwarding uses `POST /commandcenter/api/v1/chat/direct` with `{ agent, sessionId?, message, mode, model? }`. Reika does not spoof a provider identity for roleplay.
+- If a non-CommandCenter provider receives `mode: 'roleplay'`, Reika preserves the metadata in responses but falls back to that provider's normal chat path.
+
 Intentionally unsupported in this phase:
 
 - shell execution

@@ -40,12 +40,15 @@ export interface AgentRosterSnapshotPayload {
   agents: ProviderRecord['agents'];
 }
 
+export type AgentChatMode = 'agent' | 'roleplay';
+
 export interface AgentChatRequestPayload {
   providerId?: string;
   agent?: string;
   sessionId?: string;
   providerSessionId?: string;
   message: string;
+  mode?: AgentChatMode;
   model?: string;
   fileIds?: string[];
   delivery?: {
@@ -103,6 +106,9 @@ export interface AgentChatResponsePayload {
   sessionId: string;
   text: string;
   runtime: string;
+  mode?: AgentChatMode;
+  model?: string;
+  providerSessionId?: string;
 }
 
 export interface AgentVoiceRequestPayload {

@@ -101,6 +101,7 @@ export class CommandDispatcher {
       sessionId: typeof payload.sessionId === 'string' ? payload.sessionId : undefined,
       providerSessionId: typeof payload.providerSessionId === 'string' ? payload.providerSessionId : undefined,
       message: payload.message,
+      mode: payload.mode === 'roleplay' ? 'roleplay' : payload.mode === 'agent' ? 'agent' : undefined,
       model: typeof payload.model === 'string' ? payload.model : undefined,
       fileIds: Array.isArray(payload.fileIds) ? payload.fileIds.map(String) : undefined
       ,delivery: payload.delivery?.statusMetadataVersion === 1 ? payload.delivery : undefined
@@ -129,13 +130,13 @@ export class CommandDispatcher {
         agent: result.agent,
         sessionId: result.sessionId,
         message: result.text,
-        metadata: { runtime: result.runtime }
+        metadata: { runtime: result.runtime, mode: result.mode, model: result.model }
       });
       this.emitActivity(request, chatPayload, 'idle', {
         providerId: result.providerId,
         agent: result.agent,
         sessionId: result.sessionId,
-        metadata: { runtime: result.runtime }
+        metadata: { runtime: result.runtime, mode: result.mode, model: result.model }
       });
       const response = createEnvelope<AgentChatResponsePayload>({
         type: 'agent.chat.response',
