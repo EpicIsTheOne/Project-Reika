@@ -464,8 +464,7 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
 
   if (provider.kind === 'commandcenter') {
     const requestedMode = request.mode === 'roleplay' ? 'roleplay' : 'agent';
-    let commandCenterSessionId = String(request.providerSessionId || '').trim();
-    if (!commandCenterSessionId) {
+    const createCommandCenterSession = async () => {
       const createResponse = await providerFetch(`${commandCenterBaseUrl}/sessions`, {
         method: 'POST',
         headers: commandCenterHeaders({ 'Content-Type': 'application/json' }),
@@ -479,10 +478,25 @@ export async function runProviderChat(request: ProviderChatRequest, providers: P
       });
       const createBody = await createResponse.json().catch(() => ({})) as Record<string, unknown>;
       if (!createResponse.ok || createBody.ok === false) throw new Error(String(createBody.error || `CommandCenter HTTP ${createResponse.status}`));
-      commandCenterSessionId = extractCommandCenterSessionId(createBody);
-      if (!commandCenterSessionId) throw new Error('Command Center did not return a session id.');
+      const createdSessionId = extractCommandCenterSessionId(createBody);
+      if (!createdSessionId) throw new Error('Command Center did not return a session id.');
+      return createdSessionId;
+    };
+
+    let commandCenterSessionId = String(request.providerSessionId || '').trim();
+    const resumedExistingSession = Boolean(commandCenterSessionId);
+    if (!commandCenterSessionId) commandCenterSessionId = await createCommandCenterSession();
+
+    let streamed;
+    try {
+      streamed = await streamCommandCenterTurn({ sessionId: commandCenterSessionId, agentId, message: request.message, mode: requestedMode, model: request.model, fileIds: request.fileIds, onEvent });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || '');
+      if (!resumedExistingSession || !/session\s+not\s+found/i.test(message)) throw error;
+      onEvent?.({ type: 'thinking', data: { providerId: provider.id, agent: agentId, status: 'Recovering expired CommandCenter session...' } });
+      commandCenterSessionId = await createCommandCenterSession();
+      streamed = await streamCommandCenterTurn({ sessionId: commandCenterSessionId, agentId, message: request.message, mode: requestedMode, model: request.model, fileIds: request.fileIds, onEvent });
     }
-    const streamed = await streamCommandCenterTurn({ sessionId: commandCenterSessionId, agentId, message: request.message, mode: requestedMode, model: request.model, fileIds: request.fileIds, onEvent });
     return {
       providerId: provider.id,
       agentId,
