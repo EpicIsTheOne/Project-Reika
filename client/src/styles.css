@@ -1750,6 +1750,48 @@ img {
   gap: 7px;
 }
 
+.chat-mode-switch {
+  display: inline-flex;
+  padding: 4px;
+  border: 1px solid rgba(87, 148, 255, 0.22);
+  border-radius: 11px;
+  background: rgba(6, 17, 40, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.chat-mode-switch button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 8px;
+  color: #8797bd;
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-mode-switch button:hover:not(:disabled) {
+  color: #dce8ff;
+  background: rgba(70, 126, 224, 0.12);
+}
+
+.chat-mode-switch button.active {
+  color: #f3f7ff;
+  background: linear-gradient(145deg, rgba(46, 108, 225, 0.86), rgba(31, 70, 158, 0.92));
+  box-shadow: 0 5px 14px rgba(12, 52, 133, 0.28);
+}
+
+.chat-mode-switch button.active.roleplay {
+  background: linear-gradient(145deg, rgba(137, 79, 224, 0.9), rgba(76, 45, 158, 0.94));
+  box-shadow: 0 5px 16px rgba(87, 42, 169, 0.3);
+}
+
+.chat-mode-switch button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .conversation-search-bar {
   display: grid;
   grid-template-columns: auto minmax(140px, 1fr) auto repeat(3, 34px);
@@ -5993,6 +6035,11 @@ img {
 
   .chat-header {
     grid-template-columns: auto 1fr;
+  }
+
+  .chat-mode-switch {
+    grid-column: 1 / -1;
+    justify-self: start;
   }
 
   .chat-header .secondary-action,

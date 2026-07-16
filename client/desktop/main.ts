@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain, session, shell } from "electron";
 import { join } from "node:path";
 import { startDesktopServer, type DesktopServer } from "./localServer.js";
-import { ensureLocalAgent, stopLocalAgent, type LocalAgentRuntime } from "./localAgent.js";
+import { ensureLocalAgent, getLocalAgentExecutablePath, stopLocalAgent, stopLocalAgentAndWait, type LocalAgentRuntime } from "./localAgent.js";
+import { rebuildAgentFromCheckout } from "./agentMaintenance.js";
 import { migrateLegacyUserData } from "./userDataMigration.js";
 import { registerVoiceRuntime } from "./voiceRuntime.js";
 import { ensureLocalCommandCenter, stopLocalCommandCenter, type LocalCommandCenterRuntime } from "./localCommandCenter.js";
@@ -12,6 +13,7 @@ let desktopServer: DesktopServer | undefined;
 let localAgent: LocalAgentRuntime | undefined;
 let commandCenter: LocalCommandCenterRuntime | undefined;
 let mainWindow: BrowserWindow | undefined;
+let agentMaintenance: Promise<{ message: string; logPath: string }> | undefined;
 
 async function createWindow() {
   const iconPath = app.isPackaged
@@ -99,6 +101,52 @@ async function recoverLocalAgent() {
   return localAgent.url;
 }
 
+async function rebuildAndRestartLocalAgent() {
+  if (agentMaintenance) return agentMaintenance;
+  agentMaintenance = performAgentMaintenance().finally(() => {
+    agentMaintenance = undefined;
+  });
+  return agentMaintenance;
+}
+
+async function performAgentMaintenance() {
+  if (!localAgent) throw new Error("Rebuild and restart is available in the packaged Reika desktop app.");
+  if (!localAgent.started) throw new Error("This agent is managed outside Reika, so Reika cannot safely replace or restart it.");
+
+  const target = localAgent.url;
+  const targetAgentPath = getLocalAgentExecutablePath();
+  await stopLocalAgentAndWait();
+  let rebuildResult: Awaited<ReturnType<typeof rebuildAgentFromCheckout>> | undefined;
+  let rebuildError: unknown;
+  try {
+    rebuildResult = await rebuildAgentFromCheckout(targetAgentPath);
+  } catch (error) {
+    rebuildError = error;
+  }
+
+  localAgent = await ensureLocalAgent({ target, exePath: targetAgentPath, waitMs: 12_000 });
+  if (!await localAgentIsHealthy(target)) {
+    throw new Error("Agent restart did not become healthy. Check the Reika node and agent rebuild logs.");
+  }
+  if (rebuildError) {
+    const message = rebuildError instanceof Error ? rebuildError.message : String(rebuildError);
+    throw new Error(`${message} The previous agent was restarted.`);
+  }
+  return {
+    message: "Agent rebuilt and restarted successfully.",
+    logPath: rebuildResult?.logPath ?? ""
+  };
+}
+
+async function localAgentIsHealthy(url: string) {
+  try {
+    const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(1500) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 app.setName("Reika");
 
 app.on("web-contents-created", (_event, contents) => {
@@ -122,6 +170,7 @@ app.whenReady().then(async () => {
   migrateLegacyUserData(app.getPath("appData"), app.getPath("userData"));
   registerVoiceRuntime();
   ipcMain.handle("reika-command-center:url", () => commandCenter?.url || "");
+  ipcMain.handle("reika-agent:rebuild-and-restart", () => rebuildAndRestartLocalAgent());
   await createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();

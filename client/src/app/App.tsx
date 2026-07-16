@@ -66,7 +66,10 @@ export function App() {
   }, []);
 
   const sendRelayChatThroughApp = useCallback((deviceId: string, payload: AgentChatRequestPayload, timeoutMs = 120000) => {
-    return sendRelayChat(deviceId, payload, settings.relayUrl, timeoutMs);
+    const relay = relayConnectionRef.current;
+    return relay
+      ? relay.requestChat(deviceId, payload, timeoutMs)
+      : sendRelayChat(deviceId, payload, settings.relayUrl, timeoutMs);
   }, [settings.relayUrl]);
 
   useEffect(() => {

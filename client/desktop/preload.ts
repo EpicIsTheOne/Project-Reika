@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld("reikaDesktop", {
   commandCenter: {
     url: () => ipcRenderer.invoke("reika-command-center:url") as Promise<string>
   },
+  agent: {
+    rebuildAndRestart: () => ipcRenderer.invoke("reika-agent:rebuild-and-restart") as Promise<{ message: string; logPath: string }>
+  },
   voice: {
     secretStatus: () => invokeVoice("reika-voice:secret-status"),
     saveSecret: (apiKey: string) => invokeVoice("reika-voice:save-secret", { apiKey }),

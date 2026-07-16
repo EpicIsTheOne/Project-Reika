@@ -200,6 +200,10 @@ export async function sendRelayChat(
     source: { kind: "app", id: "agenthub-client" },
     target: { kind: "device", id: deviceId }
   });
+  request.payload = {
+    ...request.payload,
+    delivery: { idempotencyKey: request.id, statusMetadataVersion: 1 }
+  };
   const directUrl = getRelayAppWebSocketUrl(relayUrl);
   const sameOriginUrl = sameOriginRelayAppWebSocketUrl();
   const urls = [...new Set([sameOriginUrl, directUrl].filter((url): url is string => Boolean(url)))];
@@ -271,10 +275,6 @@ function sendRelayChatOverSocket(
       if (!settled) finish(() => reject(transportError("Relay app socket closed before chat completed.")));
     });
   });
-  request.payload = {
-    ...request.payload,
-    delivery: { idempotencyKey: request.id, statusMetadataVersion: 1 }
-  };
 }
 
 export async function sendRelayVoice(
@@ -348,6 +348,11 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
     reject: (error: Error) => void;
     timer: number;
   }>();
+  const pendingChats = new Map<string, {
+    resolve: (payload: AgentChatResponsePayload) => void;
+    reject: (error: Error) => void;
+    timer: number;
+  }>();
 
   const setStatus = (status: "connecting" | "online" | "offline") => {
     currentStatus = status;
@@ -370,6 +375,14 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
     openWaiters.clear();
   };
 
+  const rejectPendingChats = (message: string) => {
+    for (const pending of pendingChats.values()) {
+      window.clearTimeout(pending.timer);
+      pending.reject(new Error(message));
+    }
+    pendingChats.clear();
+  };
+
   const connect = () => {
     setStatus("connecting");
     const socketUrl = socketUrls[socketUrlIndex] ?? getRelayAppWebSocketUrl(relayUrl);
@@ -386,7 +399,20 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
       void (async () => {
       try {
         const parsed = JSON.parse(await readWebSocketMessage(event.data)) as unknown;
-        if (isAgentHubEnvelope(parsed)) onEnvelope(parsed);
+        if (!isAgentHubEnvelope(parsed)) return;
+        const requestId = parsed.replyTo || parsed.correlationId;
+        const pending = requestId ? pendingChats.get(requestId) : undefined;
+        if (pending && parsed.type === "agent.chat.response") {
+          window.clearTimeout(pending.timer);
+          pendingChats.delete(requestId!);
+          pending.resolve(parsed.payload as AgentChatResponsePayload);
+        } else if (pending && (parsed.type === "command.rejected" || parsed.type === "command.failed")) {
+          window.clearTimeout(pending.timer);
+          pendingChats.delete(requestId!);
+          const payload = parsed.payload as { message?: string; reason?: string };
+          pending.reject(new Error(payload.message ?? payload.reason ?? "Relay chat request failed."));
+        }
+        onEnvelope(parsed);
       } catch {
         // Ignore malformed dev relay messages; the relay should not send them.
       }
@@ -395,6 +421,7 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
 
     socket.addEventListener("close", () => {
       if (closed) return;
+      rejectPendingChats("Relay app socket closed before chat completed.");
       setStatus("offline");
       if (!opened && socketUrlIndex < socketUrls.length - 1) {
         socketUrlIndex += 1;
@@ -444,6 +471,33 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
       }
       socket.send(JSON.stringify(envelope));
     },
+    async requestChat(deviceId: string, payload: AgentChatRequestPayload, timeoutMs = 120000) {
+      const envelope = createEnvelope("agent.chat.request", payload, {
+        deviceId,
+        source: { kind: "app", id: "agenthub-client" },
+        target: { kind: "device", id: deviceId }
+      });
+      envelope.payload = {
+        ...envelope.payload,
+        delivery: { idempotencyKey: envelope.id, statusMetadataVersion: 1 }
+      };
+      const response = new Promise<AgentChatResponsePayload>((resolve, reject) => {
+        const timer = window.setTimeout(() => {
+          pendingChats.delete(envelope.id);
+          reject(new Error("Relay chat timed out waiting for the device response."));
+        }, timeoutMs);
+        pendingChats.set(envelope.id, { resolve, reject, timer });
+      });
+      try {
+        await this.sendEnvelopeWhenOpen(envelope);
+      } catch (error) {
+        const pending = pendingChats.get(envelope.id);
+        if (pending) window.clearTimeout(pending.timer);
+        pendingChats.delete(envelope.id);
+        throw error;
+      }
+      return response;
+    },
     status() {
       return currentStatus;
     },
@@ -451,6 +505,7 @@ export function connectRelayApp(onEnvelope: (envelope: AgentHubEnvelope) => void
       closed = true;
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       rejectOpenWaiters("Relay app socket was closed.");
+      rejectPendingChats("Relay app socket was closed.");
       socket?.close();
     }
   };

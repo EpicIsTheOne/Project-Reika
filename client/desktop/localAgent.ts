@@ -72,6 +72,24 @@ export function stopLocalAgent() {
   child = undefined;
 }
 
+export async function stopLocalAgentAndWait(timeoutMs = 5000) {
+  const activeChild = child;
+  child = undefined;
+  if (!activeChild || activeChild.exitCode !== null) return;
+  activeChild.kill();
+  await Promise.race([
+    new Promise<void>((resolveExit) => activeChild.once("exit", () => resolveExit())),
+    sleep(timeoutMs)
+  ]);
+  if (activeChild.exitCode === null) throw new Error("Local Reika agent did not stop within five seconds.");
+}
+
+export function getLocalAgentExecutablePath(): string {
+  const executablePath = resolveBundledAgentPath();
+  if (!executablePath) throw new Error("Local Reika agent executable path is not configured.");
+  return executablePath;
+}
+
 function resolveBundledAgentPath() {
   if (process.env.REIKA_NODE_EXE || process.env.AGENTHUB_AGENT_EXE) return process.env.REIKA_NODE_EXE ?? process.env.AGENTHUB_AGENT_EXE;
   if (app.isPackaged) return join(process.resourcesPath, "reika-node", "reika-node.exe");

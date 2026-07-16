@@ -8,6 +8,9 @@ interface Window {
     commandCenter?: {
       url: () => Promise<string>;
     };
+    agent?: {
+      rebuildAndRestart(): Promise<{ message: string; logPath: string }>;
+    };
     platform: string;
     version: string;
     voice: {

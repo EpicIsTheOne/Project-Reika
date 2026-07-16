@@ -26,7 +26,7 @@ import {
   type ReikaSessionSummary,
   type ReikaStateResponse
 } from "../../lib/reikaApi";
-import type { AgentChatRequestPayload, AgentChatResponsePayload } from "../../shared/protocol";
+import type { AgentChatMode, AgentChatRequestPayload, AgentChatResponsePayload } from "../../shared/protocol";
 import { artRerollSlot, makeArtRuntimeSeed, type ArtAgentLike, type ArtRenderAsset, type ArtRuntime } from "../../lib/artRuntime";
 import { cx, motionDelay, pageMotionClass } from "../../lib/motion";
 import { StatusDot } from "../../components/status";
@@ -74,6 +74,7 @@ export function ChatView({
   const [sessions, setSessions] = useState<ReikaSessionSummary[]>([]);
   const [sessionSearch, setSessionSearch] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [chatMode, setChatMode] = useState<AgentChatMode>("agent");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [files, setFiles] = useState<ReikaFileItem[]>([]);
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
@@ -169,20 +170,33 @@ export function ChatView({
   );
   const selectedRelayDeviceId = getRelayDeviceId(selectedProvider, selectedLiveAgent) ?? (shouldUseRequestedAgentRoute && requestedHasRelayIdentity ? agent.deviceId : undefined);
   const selectedIsRelayProvider = Boolean(selectedRelayDeviceId);
+  const roleplayRoute = useMemo(() => {
+    if (!selectedRelayDeviceId || !selectedLiveAgent) return undefined;
+    for (const provider of availableProviders) {
+      if (!isCommandCenterProvider(provider)) continue;
+      const roleplayAgent = provider.agents.find((item) => agentNamesMatch(item, selectedLiveAgent));
+      if (!roleplayAgent || getRelayDeviceId(provider, roleplayAgent) !== selectedRelayDeviceId) continue;
+      return { provider, agent: roleplayAgent };
+    }
+    return undefined;
+  }, [availableProviders, selectedLiveAgent, selectedRelayDeviceId]);
+  const roleplayAvailable = Boolean(roleplayRoute);
+  const activeRelayProvider = chatMode === "roleplay" ? roleplayRoute?.provider : selectedProvider;
+  const activeRelayAgent = chatMode === "roleplay" ? roleplayRoute?.agent : selectedLiveAgent;
+  const relayProviderId = activeRelayProvider ? getRelayProviderId(activeRelayProvider) : "";
+  const relayAgentId = getRelayAgentId(activeRelayAgent) ?? activeRelayAgent?.id ?? selectedAgentKey;
   const relayConversationKey =
-    selectedIsRelayProvider && selectedRelayDeviceId && selectedProvider && selectedLiveAgent
+    selectedIsRelayProvider && selectedRelayDeviceId && activeRelayProvider && activeRelayAgent
       ? makeRelayConversationKey(
           selectedRelayDeviceId,
-          (shouldUseRequestedAgentRoute ? agent.relayProviderId : undefined) ?? getRelayProviderId(selectedProvider),
-          (shouldUseRequestedAgentRoute ? agent.relayAgentId : undefined) ?? getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent.id
+          relayProviderId,
+          relayAgentId,
+          chatMode
         )
       : null;
-  const relayProviderId = (shouldUseRequestedAgentRoute && requestedHasRelayIdentity ? agent.relayProviderId : undefined) ?? (selectedProvider ? getRelayProviderId(selectedProvider) : "");
-  const relayAgentId =
-    (shouldUseRequestedAgentRoute && requestedHasRelayIdentity ? agent.relayAgentId : undefined) ?? getRelayAgentId(selectedLiveAgent) ?? selectedLiveAgent?.id ?? selectedAgentKey;
   const relayRouteSummary =
     selectedIsRelayProvider && selectedRelayDeviceId
-      ? `${selectedRelayDeviceId} / ${relayProviderId || "provider?"} / ${relayAgentId || "agent?"}${selectedSessionId ? ` / ${selectedSessionId}` : ""}`
+      ? `${chatMode} / ${selectedRelayDeviceId} / ${relayProviderId || "provider?"} / ${relayAgentId || "agent?"}${selectedSessionId ? ` / ${selectedSessionId}` : ""}`
       : "";
   const relayRouteReady = Boolean(selectedIsRelayProvider && selectedRelayDeviceId && relayProviderId && relayAgentId);
   const headerAgentName = selectedLiveAgent?.name ?? agent.name;
@@ -266,7 +280,7 @@ export function ChatView({
 
   const loadSessionRows = async (query = sessionSearch, providerId = selectedProvider?.id, agentId = selectedLiveAgent?.id) => {
     if (selectedIsRelayProvider) {
-      if (!selectedRelayDeviceId || !selectedProvider) {
+      if (!selectedRelayDeviceId || !relayProviderId || !relayAgentId) {
         setSessions([]);
         setSessionListError(null);
         return;
@@ -277,12 +291,12 @@ export function ChatView({
             limit: 30,
             q: query.trim() || undefined,
             deviceId: selectedRelayDeviceId,
-            providerId: getRelayProviderId(selectedProvider),
-            agent: getRelayAgentId(selectedLiveAgent) ?? agentId
+            providerId: relayProviderId,
+            agent: relayAgentId
           },
           relayUrl
         );
-        setSessions(result);
+        setSessions(result.filter((session) => sessionMatchesChatMode(session, chatMode)));
         setSessionListError(null);
       } catch (loadError) {
         setSessionListError(normalizeChatError(loadError, "Could not load relay sessions."));
@@ -316,12 +330,21 @@ export function ChatView({
 
   useEffect(() => {
     setAgentSelectionDirty(false);
+    setChatMode("agent");
     setSelectedAgentKey(agent.id);
     setSelectedProviderId(agent.providerId);
     setSelectedSessionId(null);
     setMessages([]);
     setSendError(null);
   }, [requestedAgentRouteKey]);
+
+  useEffect(() => {
+    if (chatMode !== "roleplay" || roleplayAvailable) return;
+    setChatMode("agent");
+    providerSessionIdRef.current = undefined;
+    setSelectedSessionId(null);
+    setMessages([]);
+  }, [chatMode, roleplayAvailable]);
 
   useEffect(() => {
     if (agentSelectionDirty) return;
@@ -362,7 +385,7 @@ export function ChatView({
       void loadSessionRows();
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [relayUrl, selectedIsRelayProvider, selectedRelayDeviceId, sessionSearch, selectedProvider?.id, selectedLiveAgent?.id]);
+  }, [chatMode, relayAgentId, relayProviderId, relayUrl, selectedIsRelayProvider, selectedRelayDeviceId, sessionSearch, selectedProvider?.id, selectedLiveAgent?.id]);
 
   useEffect(() => {
     if (!selectedIsRelayProvider) return;
@@ -432,8 +455,8 @@ export function ChatView({
             deviceId: selectedRelayDeviceId,
             providerId: relayProviderId,
             agent: relayAgentId,
-            title: `${selectedLiveAgent?.name ?? headerAgentName} session`,
-            metadata: { relayConversationKey }
+            title: `${selectedLiveAgent?.name ?? headerAgentName} ${chatMode === "roleplay" ? "roleplay" : "agent"} chat`,
+            metadata: { relayConversationKey, chatMode }
           },
           relayUrl
         );
@@ -510,8 +533,8 @@ export function ChatView({
               deviceId: selectedRelayDeviceId,
               providerId: relayProviderId,
               agent: relayAgentId,
-              title: `${selectedLiveAgent?.name ?? headerAgentName} session`,
-              metadata: { relayConversationKey }
+              title: `${selectedLiveAgent?.name ?? headerAgentName} ${chatMode === "roleplay" ? "roleplay" : "agent"} chat`,
+              metadata: { relayConversationKey, chatMode }
             },
             relayUrl
             )
@@ -520,7 +543,7 @@ export function ChatView({
         const userTimestamp = new Date().toISOString();
         await appendRelayChatMessages(
           relaySessionId,
-          [{ id: userMessage.id, role: "user", text: message, timestamp: userTimestamp }],
+          [{ id: userMessage.id, role: "user", text: message, timestamp: userTimestamp, meta: { chatMode } }],
           relayUrl
         );
         if (!selectedSessionId) setSelectedSessionId(relaySessionId);
@@ -530,6 +553,7 @@ export function ChatView({
           sessionId: relaySessionId,
           providerSessionId: providerSessionIdRef.current,
           message,
+          mode: chatMode,
           fileIds: []
         });
         const now = new Date().toISOString();
@@ -539,18 +563,19 @@ export function ChatView({
           body: result.text,
           time: formatClock(now)
         };
-        providerSessionIdRef.current = result.sessionId;
+        const providerSessionId = result.providerSessionId || result.sessionId;
+        providerSessionIdRef.current = providerSessionId;
         setMessages((current) => {
           const next = [...current, agentMessage];
           return next;
         });
         await appendRelayChatMessages(
           relaySessionId,
-          [{ id: agentMessage.id, role: "assistant", text: result.text, timestamp: now, meta: { runtime: result.runtime, providerSessionId: result.sessionId } }],
+          [{ id: agentMessage.id, role: "assistant", text: result.text, timestamp: now, meta: { runtime: result.runtime, providerSessionId, chatMode: result.mode ?? chatMode, model: result.model } }],
           relayUrl
         );
         await loadSessionRows("", relayProviderId, relayAgentId);
-        setStatus(`Routed through relay ${result.runtime}`);
+        setStatus(chatMode === "roleplay" ? `Roleplay via relay ${result.runtime}` : `Routed through relay ${result.runtime}`);
         setFiles((current) => current.filter((file) => !selectedFileIds.includes(file.id)));
         setSelectedFileIds([]);
         setSendError(null);
@@ -662,11 +687,23 @@ export function ChatView({
     const selected = selectableAgents.find((item) => item.key === optionKey);
     if (!selected) return;
     setAgentSelectionDirty(true);
+    setChatMode("agent");
     setSelectedProviderId(selected.provider.id);
     setSelectedAgentKey(selected.agent.id);
     setSelectedSessionId(null);
     setMessages([]);
     setSendError(null);
+  };
+
+  const handleChatModeChange = (nextMode: AgentChatMode) => {
+    if (nextMode === chatMode || busy || (nextMode === "roleplay" && !roleplayAvailable)) return;
+    void speechPlayback.stop();
+    setChatMode(nextMode);
+    providerSessionIdRef.current = undefined;
+    setSelectedSessionId(null);
+    setMessages([]);
+    setSendError(null);
+    setStatus(nextMode === "roleplay" ? `Roleplay mode with ${displayAgentName}` : `Agent mode with ${displayAgentName}`);
   };
 
   const visibleMessages = messages.slice(-500);
@@ -997,6 +1034,16 @@ export function ChatView({
               </p>
             )}
           </div>
+          {selectedIsRelayProvider ? (
+            <div className="chat-mode-switch" role="group" aria-label="Chat mode">
+              <button type="button" className={chatMode === "agent" ? "active" : ""} aria-pressed={chatMode === "agent"} onClick={() => handleChatModeChange("agent")} disabled={busy}>
+                Agent
+              </button>
+              <button type="button" className={chatMode === "roleplay" ? "active roleplay" : ""} aria-pressed={chatMode === "roleplay"} onClick={() => handleChatModeChange("roleplay")} disabled={busy || !roleplayAvailable} title={roleplayAvailable ? "Chat in character without agent tools" : "No Command Center roleplay route is connected for this agent"}>
+                Roleplay
+              </button>
+            </div>
+          ) : null}
           <div className="chat-header-actions">
             <button className="icon-button" type="button" onClick={() => void (callOpen ? endCall() : startCall())} aria-label={callOpen ? "End voice call" : `Call ${displayAgentName}`} title={!callAllowed ? "Calls are disabled for this agent in Settings" : callOpen ? "End call" : `Call ${displayAgentName}`} disabled={!resolvedVoice?.available || !callAllowed}>{callOpen ? <PhoneOff size={20} /> : <Phone size={20} />}</button>
             <button className="icon-button" type="button" onClick={() => setConversationSearchOpen((current) => !current)} aria-label="Search this conversation" title="Search conversation (Ctrl+Shift+F)"><Search size={20} /></button>
@@ -1058,7 +1105,7 @@ export function ChatView({
             {!busy && visibleMessages.length === 0 && !sendError && (!stateError || selectedIsRelayProvider) ? (
               <div className="chat-empty-state">
                 <MessageCircle size={22} />
-                <span>No messages yet. Start a new conversation when you are ready.</span>
+                <span>{chatMode === "roleplay" ? `Start a relaxed, in-character chat with ${displayAgentName}. Agent tools stay off.` : "No messages yet. Start a new conversation when you are ready."}</span>
               </div>
             ) : null}
             {busy ? (
@@ -1075,7 +1122,7 @@ export function ChatView({
           </div>
 
           <form className="chat-composer" data-testid="chat-composer" onSubmit={handleSubmit}>
-            <input data-testid="chat-input" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`Message ${displayAgentName}...`} />
+            <input data-testid="chat-input" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={chatMode === "roleplay" ? `Roleplay with ${displayAgentName}...` : `Message ${displayAgentName}...`} />
             {selectedAttachments.length > 0 ? (
               <div className="selected-attachment-chips">
                 {selectedAttachments.map((file) => (
@@ -1318,8 +1365,13 @@ function makeAgentOptionKey(providerId: string, agentId: string) {
   return `${providerId}::${agentId}`;
 }
 
-function makeRelayConversationKey(deviceId: string, providerId: string, agentId: string) {
-  return `agenthub:relay-chat:${deviceId}:${providerId}:${agentId}`;
+function makeRelayConversationKey(deviceId: string, providerId: string, agentId: string, chatMode: AgentChatMode) {
+  return `agenthub:relay-chat:${deviceId}:${providerId}:${agentId}:${chatMode}`;
+}
+
+function sessionMatchesChatMode(session: ReikaSessionSummary, chatMode: AgentChatMode) {
+  const sessionMode = session.metadata?.chatMode;
+  return chatMode === "roleplay" ? sessionMode === "roleplay" : sessionMode !== "roleplay";
 }
 
 type SelectableAgentOption = {

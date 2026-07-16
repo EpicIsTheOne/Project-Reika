@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Bell, Box, Brush, ChevronDown, ChevronRight, Code2, Globe2, Info, KeyRound, Monitor, Palette, Play, Search, Shield, Users, Volume2 } from "lucide-react";
+import { Bell, Box, Brush, ChevronDown, ChevronRight, Code2, Globe2, Info, KeyRound, Monitor, Palette, Play, RefreshCw, Search, Shield, Users, Volume2 } from "lucide-react";
 import { defaultReikaRelayDeviceUrl } from "../../config/relay";
 import { getLocalAgentStartup, setLocalAgentStartup, type LocalAgentStartupStatus } from "../../data/startup";
 import { assets } from "../../data/assets";
@@ -65,6 +65,7 @@ export function SettingsView({
   const [openRouterKeyDraft, setOpenRouterKeyDraft] = useState("");
   const [openRouterStatus, setOpenRouterStatus] = useState<ReikaVoiceSecretStatus | null>(null);
   const [openRouterBusy, setOpenRouterBusy] = useState(false);
+  const [agentMaintenanceBusy, setAgentMaintenanceBusy] = useState(false);
   const [agentSearch, setAgentSearch] = useState("");
   const [agentProviderFilter, setAgentProviderFilter] = useState("all");
   const artInstanceKey = useMemo(() => makeArtRuntimeSeed(), []);
@@ -302,6 +303,23 @@ export function SettingsView({
       .finally(() => setBusySetting(null));
   };
 
+  const rebuildAndRestartAgent = async () => {
+    if (!window.reikaDesktop?.agent) {
+      setSettingsError("Agent rebuild and restart requires the packaged Reika desktop app.");
+      return;
+    }
+    setAgentMaintenanceBusy(true);
+    setSettingsError("Rebuilding the local agent. Reika may appear offline briefly.");
+    try {
+      const result = await window.reikaDesktop.agent.rebuildAndRestart();
+      setSettingsError(`${result.message}${result.logPath ? ` Log: ${result.logPath}` : ""}`);
+    } catch (error) {
+      setSettingsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAgentMaintenanceBusy(false);
+    }
+  };
+
   const settingsScene = artRuntime.agentArt("reika", "portrait-chat", assets.reika.halfBody, artRerollSlot("settings-portrait", artInstanceKey));
 
   return (
@@ -527,6 +545,12 @@ export function SettingsView({
               <>
                 <SettingRow title="Diagnostics" detail="Show extra backend details while building Project Reika.">
                   <Toggle checked={settings.developerDiagnostics} disabled={busySetting === "developerDiagnostics"} onClick={() => updateSetting("developerDiagnostics", !settings.developerDiagnostics)} />
+                </SettingRow>
+                <SettingRow title="Local Agent Build" detail="Rebuild the agent from this Project Reika checkout, replace the bundled copy, and restart it. Reika may be offline briefly.">
+                  <button className="primary-action small" type="button" onClick={() => void rebuildAndRestartAgent()} disabled={agentMaintenanceBusy}>
+                    <RefreshCw size={16} className={agentMaintenanceBusy ? "spin" : undefined} />
+                    {agentMaintenanceBusy ? "Rebuilding…" : "Rebuild & Restart"}
+                  </button>
                 </SettingRow>
                 <SettingRow title="Automatic App Updates" detail={settings.autoUpdateServer && settings.autoUpdateClient ? "Reika and its bundled server can update together." : "Updates are checked and applied manually."}>
                   <Toggle checked={settings.autoUpdateServer && settings.autoUpdateClient} disabled={busySetting === "automaticUpdates"} onClick={() => updateAutomaticUpdates(!(settings.autoUpdateServer && settings.autoUpdateClient))} />
