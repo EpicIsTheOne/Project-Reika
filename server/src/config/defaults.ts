@@ -28,6 +28,7 @@ export const serverConfig = {
     deviceKeyPath: process.env.REIKA_DEVICE_KEY_PATH || '',
     pairingToken: process.env.REIKA_PAIRING_TOKEN || '',
     heartbeatMs: intFromEnv('REIKA_HEARTBEAT_MS', 25_000),
+    watchdogMs: intFromEnv('REIKA_WATCHDOG_MS', Math.max(45_000, intFromEnv('REIKA_HEARTBEAT_MS', 25_000) + Math.max(15_000, Math.floor(intFromEnv('REIKA_HEARTBEAT_MS', 25_000) / 2)))),
     reconnectMinMs: intFromEnv('REIKA_RECONNECT_MIN_MS', 1_000),
     reconnectMaxMs: intFromEnv('REIKA_RECONNECT_MAX_MS', 30_000)
   }

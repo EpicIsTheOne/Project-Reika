@@ -208,6 +208,8 @@ To connect another device server through the relay, open Reika, choose **Add Dev
 
 The local Windows Reika Node auto-pairs itself to the saved relay URL on boot when the relay is reachable and the device is not already registered. Set `REIKA_AUTO_PAIR_LOCAL_RELAY=false` to disable that local convenience behavior.
 
+When the agent server and relay are co-hosted on the same machine, configure the agent with the local loopback device socket `ws://127.0.0.1:8790/v1/device`. Reserve your public `wss://.../v1/device` relay URL for remote devices connecting over the network so local installs do not hairpin through the public edge.
+
 Manual relay environment for development:
 
 ```env
@@ -230,7 +232,11 @@ The Windows executable opens a local pairing UI with startup controls. Startup c
 Linux remains CLI-first, and the one-line installer enables the user-level startup service by default:
 
 ```bash
+# Co-hosted agent + relay on the same machine
 curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh | bash -s -- --code <pairing code> --relay ws://127.0.0.1:8790/v1/device
+
+# Remote device connecting to a hosted relay
+curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh | bash -s -- --code <pairing code> --relay wss://relay.example.com/v1/device
 ```
 
 After install, Linux users can list commands with:

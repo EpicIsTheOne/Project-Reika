@@ -32,6 +32,7 @@ export class RelayClient {
   private socket?: WebSocket;
   private heartbeatTimer?: NodeJS.Timeout;
   private reconnectTimer?: NodeJS.Timeout;
+  private watchdogTimer?: NodeJS.Timeout;
   private reconnectDelay = serverConfig.uplink.reconnectMinMs;
   private lastConnectedAt?: string;
   private lastError?: string;
@@ -57,7 +58,7 @@ export class RelayClient {
       return;
     }
 
-    if (!serverConfig.uplink.relayUrl) {
+    if (!this.relayUrl) {
       this.fail('REIKA_RELAY_URL is required when uplink is enabled');
       return;
     }
@@ -79,8 +80,9 @@ export class RelayClient {
 
   stop(disableReconnect = true) {
     if (disableReconnect) this.enabled = false;
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.clearHeartbeatTimer();
+    this.clearReconnectTimer();
+    this.clearWatchdogTimer();
     const socket = this.socket;
     this.socket = undefined;
     socket?.close();
@@ -100,6 +102,10 @@ export class RelayClient {
 
   private connect() {
     if (!this.enabled) return;
+    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return;
+    this.clearReconnectTimer();
+    this.clearHeartbeatTimer();
+    this.clearWatchdogTimer();
     this.status = 'connecting';
     this.events.emit('uplink.connecting', { relayUrl: this.relayUrl });
 
@@ -110,19 +116,20 @@ export class RelayClient {
 
       const socket = new WebSocket(url);
       this.socket = socket;
-      socket.addEventListener('open', () => this.onOpen());
+      socket.addEventListener('open', () => this.onOpen(socket));
       socket.addEventListener('message', (event) => void this.onMessage(event.data));
       socket.addEventListener('close', () => this.onClose(socket));
-      socket.addEventListener('error', () => this.fail('Relay WebSocket error'));
+      socket.addEventListener('error', () => this.handleSocketFailure(socket, 'Relay WebSocket error'));
     } catch (error) {
       this.fail(error instanceof Error ? error.message : String(error));
       this.scheduleReconnect();
     }
   }
 
-  private onOpen() {
+  private onOpen(socket: WebSocket) {
+    if (this.socket !== socket) return;
     if (!this.enabled) {
-      this.socket?.close();
+      socket.close();
       return;
     }
     this.status = 'connected';
@@ -130,15 +137,16 @@ export class RelayClient {
     this.lastError = undefined;
     this.reconnectDelay = serverConfig.uplink.reconnectMinMs;
     this.events.emit('uplink.connected', { relayUrl: this.relayUrl });
+    this.startHeartbeatLoop();
     this.sendHello();
     this.sendStateSnapshots();
-    this.heartbeatTimer = setInterval(() => this.sendHeartbeat(), serverConfig.uplink.heartbeatMs);
   }
 
   private onClose(socket: WebSocket) {
     if (this.socket !== socket) return;
     this.socket = undefined;
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.clearHeartbeatTimer();
+    this.clearWatchdogTimer();
     this.status = this.enabled ? 'disconnected' : 'disabled';
     this.events.emit('uplink.disconnected', {});
     this.scheduleReconnect();
@@ -173,7 +181,10 @@ export class RelayClient {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     const delay = this.reconnectDelay;
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, serverConfig.uplink.reconnectMaxMs);
-    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      this.connect();
+    }, delay);
     this.events.emit('uplink.reconnect_scheduled', { delayMs: delay });
   }
 
@@ -238,7 +249,74 @@ export class RelayClient {
   }
 
   private send(envelope: AgentHubEnvelope) {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-    this.socket.send(JSON.stringify(envelope));
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      if (this.enabled && this.status === 'connected') {
+        this.handleSocketFailure(socket, 'Relay socket is not open');
+      }
+      return;
+    }
+
+    try {
+      socket.send(JSON.stringify(envelope));
+      this.bumpWatchdog(socket);
+    } catch (error) {
+      this.handleSocketFailure(socket, error instanceof Error ? error.message : 'Relay socket send failed');
+    }
+  }
+
+  private startHeartbeatLoop() {
+    this.clearHeartbeatTimer();
+    this.sendHeartbeat();
+    this.heartbeatTimer = setInterval(() => this.sendHeartbeat(), serverConfig.uplink.heartbeatMs);
+  }
+
+  private bumpWatchdog(socket: WebSocket) {
+    if (this.socket !== socket || !this.enabled) return;
+    this.clearWatchdogTimer();
+    this.watchdogTimer = setTimeout(() => {
+      if (this.socket !== socket || !this.enabled) return;
+      this.handleSocketFailure(socket, 'Relay heartbeat watchdog expired');
+    }, serverConfig.uplink.watchdogMs);
+  }
+
+  private handleSocketFailure(socket: WebSocket | undefined, message: string) {
+    if (this.socket && socket && this.socket !== socket) return;
+    this.fail(message);
+    this.clearHeartbeatTimer();
+    this.clearWatchdogTimer();
+    const activeSocket = socket ?? this.socket;
+    if (activeSocket && activeSocket.readyState !== WebSocket.CLOSED && activeSocket.readyState !== WebSocket.CLOSING) {
+      try {
+        activeSocket.close();
+        return;
+      } catch {
+        // Fall through to forced cleanup.
+      }
+    }
+    if (this.socket === activeSocket) {
+      this.socket = undefined;
+      this.status = this.enabled ? 'disconnected' : 'disabled';
+      this.events.emit('uplink.disconnected', {});
+    }
+    this.scheduleReconnect();
+  }
+
+  private clearHeartbeatTimer() {
+    if (!this.heartbeatTimer) return;
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = undefined;
+  }
+
+  private clearReconnectTimer() {
+    if (!this.reconnectTimer) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+  }
+
+  private clearWatchdogTimer() {
+    if (!this.watchdogTimer) return;
+    clearTimeout(this.watchdogTimer);
+    this.watchdogTimer = undefined;
   }
 }

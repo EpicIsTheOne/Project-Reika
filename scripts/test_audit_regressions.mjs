@@ -19,7 +19,15 @@ const protocol = read("shared/protocol/index.ts");
 const dispatcher = read("server/src/modules/commands/dispatcher.ts");
 const assets = read("client/src/data/assets.ts");
 
-assert(uplink.includes("if (disableReconnect) this.enabled = false") && uplink.includes("if (!this.enabled) return;"), "RELAY-001 manual stop must suppress reconnect.");
+assert(
+  uplink.includes("if (disableReconnect) this.enabled = false") &&
+    uplink.includes("if (!this.enabled) return;") &&
+    uplink.includes("this.sendHeartbeat();") &&
+    uplink.includes("Relay heartbeat watchdog expired") &&
+    uplink.includes("Relay socket is not open") &&
+    uplink.includes("socket.addEventListener('error', () => this.handleSocketFailure(socket, 'Relay WebSocket error'))"),
+  "RELAY-001 uplink must stop reconnects manually, heartbeat immediately, and tear down stale/error sockets cleanly."
+);
 assert(server.includes("enqueueChatTurn(session.id") && server.indexOf("findProvider(providers") < server.indexOf("const userMessage = appendMessage"), "AGENT-001/PROTOCOL-001 must validate then serialize before persistence.");
 assert(provider.includes("homedir()") && provider.includes("join(homedir(), '.openclaw'") && provider.includes("path.delimiter") === false && provider.includes("delimiter"), "AGENT-002 must use platform path APIs.");
 assert(provider.includes("AbortSignal.timeout(providerHttpTimeoutMs)"), "AGENT-003 provider HTTP requires a deadline.");

@@ -186,6 +186,7 @@ REIKA_DEVICE_ID=
 REIKA_DEVICE_KEY_PATH=
 REIKA_PAIRING_TOKEN=
 REIKA_HEARTBEAT_MS=25000
+REIKA_WATCHDOG_MS=45000
 REIKA_RECONNECT_MIN_MS=1000
 REIKA_RECONNECT_MAX_MS=30000
 REIKA_SESSION_STORE_PATH=~/.local/share/project-reika/sessions.json
@@ -216,6 +217,8 @@ http://127.0.0.1:47840/
 
 Create a pairing code in Reika, paste it into the UI, and approve the device in the app. The device still connects outbound to the relay; no inbound public port is required.
 
+If the agent server and relay run on the same machine, keep the agent pointed at the local loopback relay URL: `ws://127.0.0.1:8790/v1/device`. Use a public `wss://.../v1/device` relay URL only for remote devices that are reaching that host over the network.
+
 The Windows UI includes startup controls. It registers the current user's Run key so the agent starts when Windows signs in. The main Reika Settings page can also toggle this while the local agent is reachable.
 
 For headless Windows testing:
@@ -233,7 +236,11 @@ For headless Windows testing:
 Linux stays terminal-first:
 
 ```bash
+# Co-hosted agent + relay on the same machine
 curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh | bash -s -- --code <approved pairing code> --relay ws://127.0.0.1:8790/v1/device
+
+# Remote device connecting across the network to a hosted relay
+curl -fsSL https://raw.githubusercontent.com/EpicIsTheOne/Project-Reika/main/server/scripts/install-linux.sh | bash -s -- --code <approved pairing code> --relay wss://relay.example.com/v1/device
 ```
 
 The installer clones/updates the repo, builds the server, creates `~/.local/bin/reika-node`, enables the user-level startup service by default, and starts the CLI pairing flow. Users can list commands with:
