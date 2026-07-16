@@ -29,6 +29,13 @@ exports.default = async function afterPackIcon(context) {
 };
 
 function findRcedit() {
+  try {
+    const packagedRcedit = require.resolve("rcedit/bin/rcedit-x64.exe");
+    if (existsSync(packagedRcedit)) return packagedRcedit;
+  } catch {
+    // Fall back to electron-builder's cache for older development installs.
+  }
+
   const cacheRoot = join(homedir(), "AppData", "Local", "electron-builder", "Cache", "winCodeSign");
   if (!existsSync(cacheRoot)) return undefined;
 

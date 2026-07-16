@@ -43,6 +43,7 @@
     "electron": "^31.7.7",
     "electron-builder": "^24.13.3",
     "esbuild": "^0.24.2",
+    "rcedit": "^4.0.1",
     "tsx": "^4.19.2"
   }
 }
