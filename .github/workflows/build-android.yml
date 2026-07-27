@@ -7,7 +7,6 @@ on:
       - "shared/**"
       - ".github/workflows/build-android.yml"
   push:
-    branches: [main]
     paths:
       - "apps/android/**"
       - "shared/**"
