@@ -16,5 +16,5 @@
         android:fillColor="#21E6C1"
         android:centerX="64"
         android:centerY="64"
-        android:radius="6" />
+        android:radius="6dp" />
 </vector>
