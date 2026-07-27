@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.Reika" parent="android:Theme.Material.NoActionBar" />
+</resources>

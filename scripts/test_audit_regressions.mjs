@@ -11,13 +11,12 @@ const uplink = read("server/src/modules/uplink/relayClient.ts");
 const server = read("server/src/main.ts");
 const provider = read("server/src/modules/provider/providerRuntime.ts");
 const relay = read("Relay/src/relay/server.ts");
-const relayClient = read("client/src/data/relay.ts");
-const chat = read("client/src/features/chat/ChatView.tsx");
-const desktop = read("client/desktop/main.ts");
-const home = read("client/src/features/home/HomePage.tsx");
-const protocol = read("shared/protocol/index.ts");
+const relayClient = read("apps/desktop/src/data/relay.ts");
+const chat = read("apps/desktop/src/features/chat/ChatView.tsx");
+const desktop = read("apps/desktop/electron/main.ts");
+const home = read("apps/desktop/src/features/home/HomePage.tsx");
+const assets = read("apps/desktop/src/data/assets.ts");
 const dispatcher = read("server/src/modules/commands/dispatcher.ts");
-const assets = read("client/src/data/assets.ts");
 
 assert(
   uplink.includes("if (disableReconnect) this.enabled = false") &&

@@ -4,24 +4,22 @@ import { extname, join } from "node:path";
 
 const root = process.cwd();
 const read = (path) => readFileSync(join(root, path), "utf8");
-const builder = JSON.parse(read("client/electron-builder.json"));
-
+const builder = JSON.parse(read("apps/desktop/electron-builder.json"));
 assert.equal(builder.productName, "Reika");
 assert.equal(builder.artifactName, "${productName} Setup ${version}.${ext}");
 assert.equal(builder.nsis.shortcutName, "Reika");
 assert(builder.files.includes("!dist-desktop/**/*.map"));
 assert.equal(builder.appId, "dev.agenthub.reika", "The legacy app ID must remain stable for installed-app compatibility.");
 assert(builder.extraResources.some((item) => item.to === "reika-node/reika-node.exe"));
-assert(read("client/desktop/main.ts").includes('app.setName("Reika")'));
-assert(read("server/scripts/build-windows-exe.mjs").includes("release/reika-node.exe"));
-assert(read("client/scripts/after-pack-icon.cjs").includes('"FileDescription", "An operating system for AI agents."'));
-assert(read("client/scripts/after-pack-icon.cjs").includes('"--set-product-version", version'));
+assert(read("apps/desktop/electron/main.ts").includes('app.setName("Reika")'));
+assert(read("apps/desktop/scripts/after-pack-icon.cjs").includes('"FileDescription", "An operating system for AI agents."'));
+assert(read("apps/desktop/scripts/after-pack-icon.cjs").includes('"--set-product-version", version'));
 assert(read("README.md").includes("## Product Naming"));
 
 const visibleRoots = [
-  "client/src/features",
-  "client/src/components",
-  "client/index.html",
+  "apps/desktop/src/features",
+  "apps/desktop/src/components",
+  "apps/desktop/index.html",
   "server/src/ui/pairingPage.ts",
   "server/src/cli/args.ts"
 ];

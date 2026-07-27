@@ -24,7 +24,7 @@ Implemented in this repo:
 - safe command dispatcher
 - local `/commands/simulate` endpoint for contract testing
 - Phase 1 dev relay in `Relay/`
-- Phase 1 client relay UI in `client/`
+- Phase 1 client relay UI in `apps/desktop/`
 
 Still intentionally not implemented:
 
@@ -126,7 +126,7 @@ The device agent should:
 
 ## Client Responsibilities
 
-The Phase 1 client in `client/` does:
+The Phase 1 client in `apps/desktop/` does:
 
 - show paired devices
 - show online/offline presence

@@ -6,7 +6,7 @@ Current implementation folders still compile independently:
 
 ```text
 server/
-client/
+apps/desktop/
 Relay/
 ```
 

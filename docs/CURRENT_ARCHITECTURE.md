@@ -19,7 +19,7 @@ Relay defaults to `ws://127.0.0.1:8790/v1/device` and is private, single-operato
 
 The Reika Node is the final idempotency authority before provider/tool execution. Its ledger is keyed by device, session, and request ID. Requests without delivery metadata are marked legacy but still deduplicated. No existing session or relay-store migration is required; the ledger is created on first use.
 
-Original PNG art remains under `client/assets/reika_phase1_generated`. Production imports use generated WebP derivatives under `client/assets/reika_phase1_webp`; regenerate them with `npm run assets:webp --workspace reika-phase1-ui`.
+Original PNG art remains under `apps/desktop/assets/reika_phase1_generated`. Production imports use generated WebP derivatives under `apps/desktop/assets/reika_phase1_webp`; regenerate them with `npm run assets:webp --workspace reika-phase1-ui`.
 
 Remote attachments are intentionally unavailable because local file IDs are not portable. Tray behavior and reactions are intentionally unavailable rather than presented as working controls.
 
