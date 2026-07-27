@@ -15,9 +15,13 @@ temporary-call-recordings/
 server/node_modules
 server/dist
 server/release
-client/node_modules
-client/dist
-client/dist-desktop
-client/release
+apps/desktop/node_modules
+apps/desktop/dist
+apps/desktop/dist-desktop
+apps/desktop/release
 Relay/node_modules
 Relay/dist
+
+# Local relay runtime logs (may contain device metadata) — never commit.
+logs/
+*.log

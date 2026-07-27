@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { migrateLegacyUserData } from "../desktop/userDataMigration";
+import { migrateLegacyUserData } from "../electron/userDataMigration";
 
 const root = mkdtempSync(join(tmpdir(), "reika-user-data-migration-"));
 

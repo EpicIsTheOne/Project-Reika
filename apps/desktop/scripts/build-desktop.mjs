@@ -9,7 +9,7 @@ mkdirSync(outdir, { recursive: true });
 
 await Promise.all([
   build({
-    entryPoints: [resolve(root, "desktop/main.ts")],
+    entryPoints: [resolve(root, "electron/main.ts")],
     outfile: resolve(outdir, "main.cjs"),
     bundle: true,
     platform: "node",
@@ -19,7 +19,7 @@ await Promise.all([
     sourcemap: true
   }),
   build({
-    entryPoints: [resolve(root, "desktop/preload.ts")],
+    entryPoints: [resolve(root, "electron/preload.ts")],
     outfile: resolve(outdir, "preload.cjs"),
     bundle: true,
     platform: "node",

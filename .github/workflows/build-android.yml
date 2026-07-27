@@ -1,0 +1,75 @@
+name: build-android
+
+on:
+  pull_request:
+    paths:
+      - "apps/android/**"
+      - "shared/**"
+      - ".github/workflows/build-android.yml"
+  push:
+    paths:
+      - "apps/android/**"
+      - "shared/**"
+      - ".github/workflows/build-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ANDROID_HOME: ${{ github.workspace }}/android-sdk
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools build-tools;34.0.0 platforms;android-34"
+
+      - name: Install Gradle 8.9
+        run: |
+          curl -fsSL -o /tmp/gradle-8.9-bin.zip https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q -o /tmp/gradle-8.9-bin.zip -d "$HOME/gradle-home"
+          echo "$HOME/gradle-home/gradle-8.9/bin" >> "$GITHUB_PATH"
+
+      - name: Grant execute permission for gradle
+        run: chmod +x apps/android/gradlew 2>/dev/null || true
+
+      - name: Lint & unit tests
+        working-directory: apps/android
+        run: gradle lintDebug testDebugUnitTest
+
+      - name: Build debug APK
+        working-directory: apps/android
+        run: gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reika-Android-debug-${{ github.sha }}
+          path: apps/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload lint & test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reika-Android-reports-${{ github.sha }}
+          path: |
+            apps/android/app/build/reports/**
+            apps/android/app/build/test-results/**
+          if-no-files-found: ignore
+          retention-days: 14

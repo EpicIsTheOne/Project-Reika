@@ -24,7 +24,7 @@ The repo is split into clear lanes so Astra and Codex can work in parallel witho
 
 ```text
 server/  Device-side Reika Node
-client/  Main Reika app/client
+apps/desktop/  Main Reika desktop app/client
 Relay/   Tiny dev relay service
 shared/  Canonical Phase 1 protocol/model reference
 ```
@@ -72,7 +72,7 @@ docs/REIKA_MEMORY_MESH.md
 docs/REIKA_MEMORY_MESH_NATIVE_TOOLS.md
 ```
 
-### `client/`
+### `apps/desktop/`
 
 Implemented:
 
@@ -93,7 +93,7 @@ Implemented:
 See:
 
 ```text
-client/README.md
+apps/desktop/README.md
 docs/CLIENT_ARCHITECTURE.md
 ```
 

@@ -93,7 +93,7 @@ export function getLocalAgentExecutablePath(): string {
 function resolveBundledAgentPath() {
   if (process.env.REIKA_NODE_EXE || process.env.AGENTHUB_AGENT_EXE) return process.env.REIKA_NODE_EXE ?? process.env.AGENTHUB_AGENT_EXE;
   if (app.isPackaged) return join(process.resourcesPath, "reika-node", "reika-node.exe");
-  return resolve(__dirname, "../../server/release/reika-node.exe");
+  return resolve(__dirname, "../../../server/release/reika-node.exe");
 }
 
 async function waitForAgent(url: string, timeoutMs: number) {

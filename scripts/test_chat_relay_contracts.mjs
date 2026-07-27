@@ -14,8 +14,8 @@ function assert(condition, message) {
 const providerRuntime = read("server/src/modules/provider/providerRuntime.ts");
 const serverMain = read("server/src/main.ts");
 const dispatcher = read("server/src/modules/commands/dispatcher.ts");
-const chatView = read("client/src/features/chat/ChatView.tsx");
-const relayClient = read("client/src/data/relay.ts");
+const chatView = read("apps/desktop/src/features/chat/ChatView.tsx");
+const relayClient = read("apps/desktop/src/data/relay.ts");
 const deviceUplink = read("server/src/modules/uplink/relayClient.ts");
 
 for (const forbidden of [

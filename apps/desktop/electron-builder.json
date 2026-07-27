@@ -21,7 +21,7 @@
       "to": "assets/brand/reika_app_icon.png"
     },
     {
-      "from": "../server/release/reika-node.exe",
+      "from": "../../server/release/reika-node.exe",
       "to": "reika-node/reika-node.exe"
     }
   ],
