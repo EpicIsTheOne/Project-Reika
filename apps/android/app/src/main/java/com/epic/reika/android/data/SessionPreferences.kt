@@ -4,23 +4,30 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
 
 private val Context.dataStore by preferencesDataStore(name = "reika_session")
 
-class SessionPreferences(private val context: Context) {
-    private val relayOriginKey = stringPreferencesKey("relay_origin")
-    private val lastDeviceIdKey = stringPreferencesKey("last_device_id")
-
-    val relayOrigin: Flow<String?> = context.dataStore.data.map { it[relayOriginKey] }
-    val lastDeviceId: Flow<String?> = context.dataStore.data.map { it[lastDeviceIdKey] }
+/**
+ * Persists the relay origin the user last connected to (and, later, the last
+ * paired device id). On first launch the relay origin defaults to the
+ * deployment's own Reika Relay so the app "just works" without typing a URL.
+ */
+@Singleton
+class SessionPreferences @Inject constructor(private val context: Context) {
+    val relayOrigin = context.dataStore.data
+        .map { prefs -> prefs[KEY_RELAY_ORIGIN] ?: RelayConfig.DEFAULT_RELAY_ORIGIN }
 
     suspend fun saveRelayOrigin(origin: String) {
-        context.dataStore.edit { it[relayOriginKey] = origin }
+        context.dataStore.edit { prefs -> prefs[KEY_RELAY_ORIGIN] = origin }
     }
 
-    suspend fun saveLastDeviceId(deviceId: String) {
-        context.dataStore.edit { it[lastDeviceIdKey] = deviceId }
+    suspend fun getRelayOrigin(): String = relayOrigin.first()
+
+    companion object {
+        private val KEY_RELAY_ORIGIN = stringPreferencesKey("relay_origin")
     }
 }

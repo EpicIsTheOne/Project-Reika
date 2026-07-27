@@ -63,7 +63,7 @@ fun RelayConfigScreen(
             value = url,
             onValueChange = viewModel::onUrlChange,
             label = { Text("Relay URL") },
-            placeholder = { Text("https://relay.example.com  or  ws://127.0.0.1:8790") },
+            placeholder = { Text("https://relay.techexplore.us  (default)") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             modifier = Modifier.fillMaxWidth(),

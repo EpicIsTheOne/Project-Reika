@@ -30,7 +30,8 @@ class RelayConfigViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            _url.value = session.relayOrigin.first().orEmpty()
+            // Pre-fill with the stored origin, or the deployment default.
+            _url.value = session.relayOrigin.first()
         }
     }
 
