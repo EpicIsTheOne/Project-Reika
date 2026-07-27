@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.epic.reika.android.data.ConnectionCheck
 import com.epic.reika.android.data.RelayConfig
 import com.epic.reika.android.data.RelayRepository
+import com.epic.reika.android.data.RelaySession
 import com.epic.reika.android.data.SessionPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow

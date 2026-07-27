@@ -30,7 +30,7 @@ fun RelayConfigScreen(
     viewModel: RelayConfigViewModel = hiltViewModel(),
     onConnected: () -> Unit = {},
 ) {
-    val url by viewModel.url
+    val url by viewModel.url.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     // Once connected, advance to the device roster.

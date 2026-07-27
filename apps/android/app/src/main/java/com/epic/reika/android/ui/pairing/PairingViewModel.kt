@@ -9,7 +9,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -48,7 +47,7 @@ class PairingViewModel @Inject constructor(
 
     private suspend fun poll(config: com.epic.reika.android.data.RelayConfig, code: String) {
         var claimed = false
-        while (isActive) {
+        while (viewModelScope.isActive) {
             val status = runCatching { repository.pairingStatus(config, code) }.getOrNull()
             when (status?.pairing?.status) {
                 "claimed" -> {

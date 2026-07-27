@@ -39,9 +39,9 @@ data class RelayConfig(
 
 private fun normalize(raw: String, scheme: String, endpoint: String): String {
     // Allow ws:// / wss:// / http(s):// inputs; force the requested scheme family.
-    val base = raw
-        .replace(Regex("^wss?://", RegexOption.IGNORECASE), "https://")
-        .replace(Regex("^https?://", RegexOption.IGNORECASE), "https://")
+    val base = raw.lowercase()
+        .replace(Regex("^wss?://"), "https://")
+        .replace(Regex("^https?://"), "https://")
     val withoutQuery = base.replace(Regex("[?#].*$"), "")
     val stripped = withoutQuery.replace(Regex("/v1/?$"), "").replace(Regex("/+$"), "")
     val wsScheme = if (scheme == "wss") "wss://" else "https://"
