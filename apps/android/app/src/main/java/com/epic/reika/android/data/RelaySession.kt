@@ -1,6 +1,5 @@
 package com.epic.reika.android.data
 
-import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
@@ -9,7 +8,7 @@ import javax.inject.Singleton
  * call the relay without re-entering the URL.
  */
 @Singleton
-class RelaySession @Inject constructor() {
+class RelaySession {
     var config: RelayConfig? = null
         private set
 

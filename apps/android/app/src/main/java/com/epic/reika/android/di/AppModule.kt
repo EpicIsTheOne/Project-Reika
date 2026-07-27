@@ -2,6 +2,7 @@ package com.epic.reika.android.di
 
 import android.content.Context
 import com.epic.reika.android.data.RelayRepository
+import com.epic.reika.android.data.RelaySession
 import com.epic.reika.android.data.SessionPreferences
 import dagger.Module
 import dagger.Provides
@@ -16,6 +17,10 @@ object AppModule {
     @Provides
     @Singleton
     fun provideRelayRepository(): RelayRepository = RelayRepository()
+
+    @Provides
+    @Singleton
+    fun provideRelaySession(): RelaySession = RelaySession()
 
     @Provides
     @Singleton
